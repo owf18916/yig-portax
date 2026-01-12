@@ -22,6 +22,7 @@ class TaxCaseController extends ApiController
             'fiscalYear',
             'period',
             'status',
+            'currency',
             'user'
         ]);
 
@@ -64,27 +65,58 @@ class TaxCaseController extends ApiController
      */
     public function store(Request $request): JsonResponse
     {
+        $user = auth()->user();
+        
+        if (!$user) {
+            return $this->error('Unauthorized', 401);
+        }
+
         $validated = $request->validate([
             'entity_id' => 'required|exists:entities,id',
-            'fiscal_year_id' => 'required|exists:fiscal_years,id',
-            'period_id' => 'nullable|exists:periods,id',
             'case_type' => 'required|in:CIT,VAT',
-            'spt_number' => 'required|string|unique:tax_cases',
-            'filing_date' => 'required|date',
-            'received_date' => 'nullable|date',
-            'reported_amount' => 'required|numeric|min:0',
+            'fiscal_year_id' => 'nullable|exists:fiscal_years,id',
+            'period' => 'nullable|string',
+            'case_number' => 'required|string|unique:tax_cases',
             'disputed_amount' => 'required|numeric|min:0',
+            'spt_number' => 'nullable|string|unique:tax_cases,spt_number',
+            'filing_date' => 'nullable|date',
+            'received_date' => 'nullable|date',
+            'reported_amount' => 'nullable|numeric|min:0',
             'vat_in_amount' => 'nullable|numeric|min:0',
             'vat_out_amount' => 'nullable|numeric|min:0',
+            'period_id' => 'nullable|exists:periods,id',
             'description' => 'nullable|string',
         ]);
 
-        // Generate case number
-        $validated['case_number'] = $this->generateCaseNumber($validated['entity_id']);
-        $validated['user_id'] = auth()->id();
+        // Verify user can create case for this entity
+        // Admin dapat membuat untuk entity apapun, non-admin hanya untuk entity mereka
+        if ($user->role_id !== 1 && $validated['entity_id'] != $user->entity_id) {
+            return $this->error('You can only create cases for your assigned entity', 403);
+        }
+
+        // Auto-generate SPT number if not provided
+        if (!isset($validated['spt_number']) || empty($validated['spt_number'])) {
+            $validated['spt_number'] = $this->generateSptNumber($validated['entity_id'], $validated['case_type']);
+        }
+
+        // Set filing date to today if not provided
+        if (!isset($validated['filing_date']) || empty($validated['filing_date'])) {
+            $validated['filing_date'] = now()->toDateString();
+        }
+
+        // Set reported amount to disputed amount if not provided
+        if (!isset($validated['reported_amount']) || empty($validated['reported_amount'])) {
+            $validated['reported_amount'] = $validated['disputed_amount'];
+        }
+
+        // Set user and system defaults
+        $validated['user_id'] = $user->id;
         $validated['current_stage'] = 1;
         $validated['case_status_id'] = 1; // OPEN status
         $validated['currency_id'] = 1; // IDR default
+
+        // Remove fields that don't belong to the table
+        unset($validated['period']);
 
         $taxCase = TaxCase::create($validated);
 
@@ -105,6 +137,7 @@ class TaxCaseController extends ApiController
             'fiscalYear',
             'period',
             'status',
+            'currency',
             'user',
             'submittedBy',
             'approvedBy',
@@ -217,6 +250,27 @@ class TaxCaseController extends ApiController
         return sprintf(
             'TAX-%s-%04d',
             $entity->code,
+            $count
+        );
+    }
+
+    /**
+     * Generate unique SPT number
+     */
+    private function generateSptNumber(int $entityId, string $caseType): string
+    {
+        $entity = Entity::find($entityId);
+        $year = date('Y');
+        $typeCode = $caseType === 'CIT' ? 'C' : 'V';
+        $count = TaxCase::where('entity_id', $entityId)
+            ->where('case_type', $caseType)
+            ->whereYear('created_at', $year)
+            ->count() + 1;
+
+        return sprintf(
+            'SPT%s%s%04d',
+            $typeCode,
+            $year,
             $count
         );
     }

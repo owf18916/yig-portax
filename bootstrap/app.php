@@ -12,7 +12,19 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        $middleware->api(prepend: [
+            \Illuminate\Cookie\Middleware\EncryptCookies::class,
+            \Illuminate\Session\Middleware\StartSession::class,
+            \Illuminate\View\Middleware\ShareErrorsFromSession::class,
+            \Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class,
+        ]);
+        
+        // Exclude CSRF verification for login and public API endpoints
+        $middleware->validateCsrfTokens(except: [
+            'api/login',
+            'api/health',
+            'api/test',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

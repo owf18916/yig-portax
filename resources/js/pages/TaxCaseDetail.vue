@@ -35,8 +35,12 @@
           <div>
             <p class="text-sm text-gray-600">Status</p>
             <p class="inline-block px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
-              {{ formatStatus(caseData.status) }}
+              {{ formatStatus(caseData.status?.name || caseData.status || 'Draft') }}
             </p>
+          </div>
+          <div>
+            <p class="text-sm text-gray-600">Disputed Amount</p>
+            <p class="text-lg font-bold">{{ formatCurrency(caseData.disputed_amount || 0, caseData.currency?.code) }}</p>
           </div>
         </div>
       </Card>
@@ -110,12 +114,34 @@ const workflowStages = ref([
 
 onMounted(async () => {
   try {
-    const response = await fetch(`/api/tax-cases/${route.params.id}`)
+    const response = await fetch(`/api/tax-cases/${route.params.id}`, {
+      credentials: 'include',
+      headers: { 'Accept': 'application/json' }
+    })
     if (!response.ok) throw new Error('Failed to load case')
-    caseData.value = await response.json()
-    caseNumber.value = caseData.value.case_number
+    const responseData = await response.json()
+    
+    // Handle API response wrapper: { success, message, data: {...} }
+    if (responseData.data) {
+      const data = responseData.data
+      // If it's the case object itself (not pagination)
+      if (data.id && data.case_number) {
+        caseData.value = data
+      } else if (Array.isArray(data)) {
+        // Shouldn't happen for single case, but handle it
+        caseData.value = data[0] || {}
+      } else {
+        caseData.value = data
+      }
+    } else {
+      caseData.value = responseData
+    }
+    
+    caseNumber.value = caseData.value.case_number || 'TAX-2026-001'
+    console.log('Case data loaded:', caseData.value)
   } catch (error) {
     apiError.value = error.message
+    console.error('Failed to load case:', error)
   } finally {
     loading.value = false
   }
@@ -126,6 +152,25 @@ const canAccessStage = (stageId) => {
 }
 
 const formatStatus = (status) => {
+  if (!status) return 'Draft'
   return status.charAt(0).toUpperCase() + status.slice(1)
+}
+
+const formatCurrency = (amount, currencyCode = 'IDR') => {
+  // Map currency codes to locale and options
+  const currencyMap = {
+    'IDR': { locale: 'id-ID', code: 'IDR' },
+    'USD': { locale: 'en-US', code: 'USD' },
+    'EUR': { locale: 'de-DE', code: 'EUR' },
+    'SGD': { locale: 'en-SG', code: 'SGD' }
+  }
+  
+  const currencyConfig = currencyMap[currencyCode] || currencyMap['IDR']
+  
+  return new Intl.NumberFormat(currencyConfig.locale, {
+    style: 'currency',
+    currency: currencyConfig.code,
+    minimumFractionDigits: 0
+  }).format(amount)
 }
 </script>

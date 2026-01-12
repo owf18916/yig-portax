@@ -78,7 +78,7 @@
           <h3 class="text-lg font-semibold text-gray-900">📊 Tax Cases in This Stage</h3>
           
           <div v-if="cases.length === 0" class="text-center py-8 text-gray-500">
-            <p class="text-lg">Belum Ada Data</p>
+            <p class="text-lg">No Data Available</p>
             <p class="text-sm">No cases in this stage yet</p>
           </div>
 
@@ -157,7 +157,7 @@ const stageDefinitions = {
     name: 'SPT Filing',
     subtitle: 'Initial Tax Return Submission',
     emoji: '📋',
-    description: 'File your initial tax return (SPT - Surat Pemberitahuan) with the tax authority. This is the first step in the tax dispute process.',
+    description: 'File your initial tax return (SPT - Tax Return Notification) with the tax authority. This is the first step in the tax dispute resolution process.',
     requiredDocs: [
       'SPT (Tax Return) form',
       'Supporting financial statements',
@@ -168,7 +168,7 @@ const stageDefinitions = {
       'Entity Name',
       'Fiscal Period',
       'Currency',
-      'Nilai Sengketa (Disputed Amount)',
+      'Disputed Amount',
       'Filing Decision (Filed/Not Filed)'
     ]
   },
@@ -176,7 +176,7 @@ const stageDefinitions = {
     name: 'SP2 Record',
     subtitle: 'Second Level Tax Record',
     emoji: '📑',
-    description: 'Record the SP2 (Surat Pemberitahuan Pemeriksaan) - the notification that the tax authority has initiated an audit examination.',
+    description: 'Record the SP2 - the tax authority notification indicating initiation of tax audit examination.',
     requiredDocs: [
       'SP2 letter from tax authority',
       'Auditor details',
@@ -192,9 +192,9 @@ const stageDefinitions = {
   },
   3: {
     name: 'SPHP Record',
-    subtitle: 'Tax Correction Record',
+    subtitle: 'Audit Findings Notification',
     emoji: '✏️',
-    description: 'Record the SPHP (Surat Pemberitahuan Hasil Pemeriksaan) - the notification of audit findings and corrections.',
+    description: 'Record the SPHP - the notification of audit findings and tax correction requirements.',
     requiredDocs: [
       'SPHP letter from tax authority',
       'Audit findings breakdown',
@@ -213,17 +213,17 @@ const stageDefinitions = {
     name: 'SKP Record',
     subtitle: 'Tax Assessment Letter',
     emoji: '🔍',
-    description: 'Record the SKP (Surat Ketetapan Pajak) - the tax assessment letter that determines the final tax amount and classification.',
+    description: 'Record the SKP - the tax assessment letter that determines the final tax amount and classification.',
     requiredDocs: [
       'SKP letter from tax authority',
       'Tax assessment details',
-      'SKP type classification (LB/NIHIL/KB)'
+      'SKP type classification'
     ],
     inputFields: [
       'SKP Number',
       'Issue Date',
       'Receipt Date',
-      'SKP Type (Lebih Bayar/NIHIL/Kurang Bayar)',
+      'SKP Type (Overpaid/Neutral/Underpaid)',
       'SKP Amount',
       'Audit Corrections Breakdown'
     ]
@@ -232,9 +232,9 @@ const stageDefinitions = {
     name: 'Objection',
     subtitle: 'Formal Objection Filing',
     emoji: '⚠️',
-    description: 'File a formal objection (Surat Keberatan) against the tax authority\'s decision if you disagree with the assessment.',
+    description: 'File a formal objection against the tax authority\'s decision if you disagree with the assessment.',
     requiredDocs: [
-      'Surat Keberatan (Objection Letter)',
+      'Objection Letter',
       'Supporting evidence',
       'Legal basis for objection'
     ],
@@ -323,25 +323,38 @@ const loadCases = async () => {
   loading.value = true
   try {
     // Fetch all cases
-    const response = await fetch('/api/tax-cases')
+    const response = await fetch('/api/tax-cases?limit=1000')
     if (response.ok) {
-      let allCases = await response.json()
+      const responseData = await response.json()
       
-      // Handle different response formats
-      if (!Array.isArray(allCases)) {
-        if (allCases.data && Array.isArray(allCases.data)) {
-          allCases = allCases.data
-        } else {
-          allCases = []
+      console.log('WorkflowStage API Response:', responseData)
+      
+      let allCases = []
+      
+      // Handle API response format: {success, message, data: {...}}
+      if (responseData.success && responseData.data) {
+        // API returns paginated data with structure: {current_page, data: [...], last_page, total, ...}
+        if (responseData.data.data && Array.isArray(responseData.data.data)) {
+          allCases = responseData.data.data
+        } else if (Array.isArray(responseData.data)) {
+          allCases = responseData.data
         }
+      } else if (Array.isArray(responseData)) {
+        allCases = responseData
+      } else if (responseData.data && Array.isArray(responseData.data)) {
+        allCases = responseData.data
       }
       
-      // Filter cases by stage (mock - in Phase 3 this will be real)
-      cases.value = allCases.filter(c => c.current_stage === props.stageId)
+      console.log('Total cases loaded:', allCases.length, 'Filtering for stage:', props.stageId)
+      
+      // Filter cases by stage
+      cases.value = allCases.filter(c => c && c.current_stage === props.stageId)
+      
+      console.log('Cases in stage:', cases.value.length)
     }
   } catch (error) {
     console.error('Failed to load cases:', error)
-    cases.value = [] // Fallback to empty array
+    cases.value = []
   } finally {
     loading.value = false
   }

@@ -2,7 +2,10 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\TaxCaseController;
+use App\Http\Controllers\Api\EntityController;
+use App\Http\Controllers\Api\FiscalYearController;
 use App\Http\Controllers\Api\Sp2RecordController;
 use App\Http\Controllers\Api\SphpRecordController;
 use App\Http\Controllers\Api\SkpRecordController;
@@ -16,6 +19,15 @@ use App\Http\Controllers\Api\SupremeCourtSubmissionController;
 use App\Http\Controllers\Api\SupremeCourtDecisionController;
 use App\Http\Controllers\Api\RefundProcessController;
 use App\Http\Controllers\Api\KianSubmissionController;
+use App\Http\Controllers\Api\DashboardAnalyticsController;
+use App\Http\Controllers\Api\AnnouncementController;
+
+// ============================================================================
+// AUTHENTICATION ROUTES - Public
+// ============================================================================
+Route::post('/login', [AuthController::class, 'login']);
+Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth');
+Route::get('/me', [AuthController::class, 'me'])->middleware('auth');
 
 // ============================================================================
 // HEALTH & TEST ENDPOINTS
@@ -41,9 +53,9 @@ Route::get('/test', function () {
 });
 
 // ============================================================================
-// TAX CASE ROUTES - Core case management
+// TAX CASE ROUTES - Core case management (require auth)
 // ============================================================================
-Route::prefix('tax-cases')->group(function () {
+Route::middleware('auth')->prefix('tax-cases')->group(function () {
     Route::get('/', [TaxCaseController::class, 'index'])->name('tax-cases.index');
     Route::post('/', [TaxCaseController::class, 'store'])->name('tax-cases.store');
     
@@ -133,24 +145,34 @@ Route::prefix('tax-cases')->group(function () {
 });
 
 // ============================================================================
-// REFERENCE DATA ROUTES - Master data for forms
+// REFERENCE DATA ROUTES - Master data for forms (require auth)
 // ============================================================================
-Route::get('/entities', function () {
-    return response()->json(\App\Models\Entity::where('is_active', true)->get());
-});
+Route::middleware('auth')->group(function () {
+    Route::get('/entities', [EntityController::class, 'index']);
+    Route::get('/fiscal-years', [FiscalYearController::class, 'index']);
 
-Route::get('/fiscal-years', function () {
-    return response()->json(\App\Models\FiscalYear::where('is_active', true)->orderBy('year', 'desc')->get());
-});
+    Route::get('/currencies', function () {
+        return response()->json(\App\Models\Currency::where('is_active', true)->get());
+    });
+    Route::get('/case-statuses', function () {
+        return response()->json(\App\Models\CaseStatus::where('is_active', true)->orderBy('sort_order')->get());
+    });
 
-Route::get('/currencies', function () {
-    return response()->json(\App\Models\Currency::where('is_active', true)->get());
-});
+    Route::get('/user', function (Request $request) {
+        return response()->json($request->user());
+    });
 
-Route::get('/case-statuses', function () {
-    return response()->json(\App\Models\CaseStatus::where('is_active', true)->orderBy('sort_order')->get());
-});
+    // ============================================================================
+    // ANNOUNCEMENTS ROUTES
+    // ============================================================================
+    Route::apiResource('announcements', AnnouncementController::class);
 
-Route::get('/user', function (Request $request) {
-    return response()->json($request->user());
+    // ============================================================================
+    // DASHBOARD ANALYTICS ROUTES
+    // ============================================================================
+    Route::prefix('dashboard')->group(function () {
+        Route::get('/charts', [DashboardAnalyticsController::class, 'dashboardCharts']);
+        Route::get('/open-cases', [DashboardAnalyticsController::class, 'openCasesPerEntity']);
+        Route::get('/disputed-amounts', [DashboardAnalyticsController::class, 'disputedAmountPerEntity']);
+    });
 });

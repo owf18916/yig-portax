@@ -1,7 +1,7 @@
 <template>
   <div class="min-h-screen bg-gray-50">
-    <!-- Navigation Header -->
-    <nav class="bg-white shadow-sm border-b">
+    <!-- Navigation Header (hanya tampil saat bukan login) -->
+    <nav v-if="$route.path !== '/login'" class="bg-white shadow-sm border-b">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between h-16">
           <div class="flex items-center space-x-8">
@@ -24,20 +24,30 @@
             </div>
           </div>
           <div class="flex items-center space-x-4">
-            <span class="text-sm text-gray-600">January 1, 2026</span>
-            <div class="w-8 h-8 bg-blue-600 rounded-full"></div>
+            <span v-if="currentUser" class="text-sm text-gray-700">
+              <span class="font-medium">{{ currentUser.name }}</span>
+              <span class="text-gray-500"> ({{ currentUser.entity?.name || 'No Entity' }})</span>
+            </span>
+            <button
+              v-if="currentUser"
+              @click="handleLogout"
+              class="px-3 py-1 bg-red-50 text-red-700 rounded text-sm hover:bg-red-100 transition"
+            >
+              Logout
+            </button>
+            <div v-else class="w-8 h-8 bg-blue-600 rounded-full"></div>
           </div>
         </div>
       </div>
     </nav>
 
     <!-- Main Content -->
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+    <main :class="$route.path === '/login' ? '' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12'">
       <router-view />
     </main>
 
-    <!-- Footer -->
-    <footer class="bg-gray-100 border-t mt-12">
+    <!-- Footer (hanya tampil saat bukan login) -->
+    <footer v-if="$route.path !== '/login'" class="bg-gray-100 border-t mt-12">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 text-center text-sm text-gray-600">
         <p>PORTAX Tax Case Management System | Vue.js 3 + Laravel REST API</p>
       </div>
@@ -46,9 +56,38 @@
 </template>
 
 <script setup>
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
+const currentUser = ref(null)
+
+onMounted(() => {
+  // Get user from localStorage
+  const userStr = localStorage.getItem('user')
+  if (userStr) {
+    currentUser.value = JSON.parse(userStr)
+  }
+})
+
+const handleLogout = async () => {
+  try {
+    await fetch('/api/logout', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
+      },
+      credentials: 'include'
+    })
+  } catch (err) {
+    console.error('Logout error:', err)
+  } finally {
+    // Clear local storage and redirect
+    localStorage.removeItem('user')
+    await router.push('/login')
+  }
+}
 </script>
 
 <style scoped>

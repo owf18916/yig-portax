@@ -61,6 +61,8 @@ class TaxCase extends Model
         'deleted_at' => 'datetime',
     ];
 
+    protected $appends = ['entity_name'];
+
     // Relationships
     public function user(): BelongsTo
     {
@@ -194,5 +196,11 @@ class TaxCase extends Model
     {
         return $this->hasMany(Revision::class, 'revisable_id')
             ->where('revisable_type', self::class);
+    }
+
+    // Accessors
+    public function getEntityNameAttribute()
+    {
+        return $this->entity?->name ?? 'Unknown Entity';
     }
 }
