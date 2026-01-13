@@ -25,14 +25,27 @@
       @submit="handleSubmit"
       @saveDraft="handleSaveDraft"
     />
+
+    <!-- REVISION HISTORY PANEL - Integrated -->
+    <RevisionHistoryPanel 
+      v-if="!isLoading && currentUser"
+      :case-id="caseId"
+      :tax-case="{ submitted_at: prefillData.submitted_at }"
+      :revisions="revisions"
+      :current-user="currentUser"
+      :available-fields="availableFields"
+      @revision-requested="loadRevisions"
+      @refresh="loadRevisions"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import StageForm from '../components/StageForm.vue'
 import Alert from '../components/Alert.vue'
+import RevisionHistoryPanel from '../components/RevisionHistoryPanel.vue'
 
 const route = useRoute()
 const caseId = route.params.id
@@ -40,6 +53,8 @@ const caseNumber = ref('TAX-2026-001')
 const preFilledMessage = ref('Loading...')
 const isLoading = ref(true)
 const caseStatus = ref(null)
+const revisions = ref([])
+const currentUser = ref(null)
 
 const fields = ref([
   {
@@ -75,6 +90,32 @@ const fields = ref([
     readonly: false
   }
 ])
+
+// Available fields untuk revisi
+const availableFields = [
+  'entity_name',
+  'period_id',
+  'currency_id',
+  'disputed_amount'
+]
+
+// Cek apakah field sedang di-lock (tidak bisa diedit)
+const isFieldLocked = (fieldName) => {
+  // Jika belum submitted, semua field bisa diedit
+  if (!prefillData.value.submitted_at) {
+    return false
+  }
+
+  // Jika tidak ada approved revision, semuanya lock
+  const currentRevision = revisions.value.find(r => r.revision_status === 'APPROVED')
+  if (!currentRevision) {
+    return true
+  }
+
+  // Jika ada approved revision, hanya field yang di-approve bisa diedit
+  return !currentRevision.original_data || 
+         !currentRevision.original_data.hasOwnProperty(fieldName)
+}
 
 // Pre-fill form data dengan nilai dari tax case
 const prefillData = ref({
@@ -132,12 +173,36 @@ onMounted(async () => {
     caseStatus.value = caseData.case_status_id
     preFilledMessage.value = `✅ Pre-filled from ${caseData.case_type} case (${caseData.case_number})`
 
+    // Load revisions untuk form ini
+    await loadRevisions()
+
+    // Load current user info
+    try {
+      const userRes = await fetch('/api/user')
+      if (userRes.ok) {
+        currentUser.value = await userRes.json()
+      }
+    } catch (err) {
+      console.error('Failed to load user:', err)
+    }
+
   } catch (error) {
     preFilledMessage.value = '❌ Error loading case data'
   } finally {
     isLoading.value = false
   }
 })
+
+// Load revisions untuk case ini
+const loadRevisions = async () => {
+  try {
+    const response = await fetch(`/api/tax-cases/${caseId}/revisions`)
+    const data = await response.json()
+    revisions.value = data.data || []
+  } catch (err) {
+    console.error('Failed to load revisions:', err)
+  }
+}
 
 const handleSubmit = (event) => {
   // Handle form submission

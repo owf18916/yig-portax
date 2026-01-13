@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\AppealSubmissionController;
 use App\Http\Controllers\Api\ObjectionDecisionController;
 use App\Http\Controllers\Api\DashboardAnalyticsController;
 use App\Http\Controllers\Api\ObjectionSubmissionController;
+use App\Http\Controllers\Api\RevisionController;
 use App\Http\Controllers\Api\SupremeCourtDecisionController;
 use App\Http\Controllers\Api\SupremeCourtSubmissionController;
 use App\Http\Controllers\Api\AppealExplanationRequestController;
@@ -82,6 +83,29 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         Route::get('/workflow-history', [TaxCaseController::class, 'workflowHistory'])->name('tax-cases.workflow-history');
         Route::get('/documents', [TaxCaseController::class, 'documents'])->name('tax-cases.documents');
         Route::post('/complete', [TaxCaseController::class, 'complete'])->name('tax-cases.complete');
+        
+        // ========================================================================
+        // REVISION ROUTES - SPT Filling (Stage 1) Revision Management
+        // ========================================================================
+        Route::prefix('revisions')->group(function () {
+            // List all revisions for this tax case
+            Route::get('/', [RevisionController::class, 'listRevisions'])->name('revisions.list');
+            
+            // Request a new revision
+            Route::post('/request', [RevisionController::class, 'requestRevision'])->name('revisions.request');
+            
+            // Approve or reject revision request (Holding only)
+            Route::patch('/{revision}/approve', [RevisionController::class, 'approveRevision'])->name('revisions.approve');
+            
+            // Submit revised data (User/PIC only, after approval)
+            Route::patch('/{revision}/submit', [RevisionController::class, 'submitRevision'])->name('revisions.submit');
+            
+            // Decide on submitted revision (Holding only)
+            Route::patch('/{revision}/decide', [RevisionController::class, 'decideRevision'])->name('revisions.decide');
+            
+            // Get revision detail with before-after comparison
+            Route::get('/{revision}', [RevisionController::class, 'showRevision'])->name('revisions.show');
+        });
         
         // Generic workflow endpoint for all stages - save draft or submit
         Route::post('/workflow/{stage}', function (Request $request, TaxCase $taxCase, $stage) {

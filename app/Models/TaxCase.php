@@ -145,9 +145,15 @@ class TaxCase extends Model
         return $this->hasOne(AppealExplanationRequest::class);
     }
 
-    public function appealDecision(): HasOne
+    // Revision relationship
+    public function revisions(): HasMany
     {
-        return $this->hasOne(AppealDecision::class);
+        return $this->hasMany(Revision::class, 'revisable_id')->where('revisable_type', 'TaxCase');
+    }
+
+    public function lastRevision(): BelongsTo
+    {
+        return $this->belongsTo(Revision::class, 'last_revision_id');
     }
 
     public function supremeCourtSubmission(): HasOne
@@ -190,12 +196,6 @@ class TaxCase extends Model
     public function workflowHistories(): HasMany
     {
         return $this->hasMany(WorkflowHistory::class);
-    }
-
-    public function revisions(): HasMany
-    {
-        return $this->hasMany(Revision::class, 'revisable_id')
-            ->where('revisable_type', self::class);
     }
 
     // Accessors
