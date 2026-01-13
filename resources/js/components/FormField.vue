@@ -35,7 +35,7 @@ defineProps({
     type: String,
     default: 'text'
   },
-  modelValue: String,
+  modelValue: [String, Number],
   placeholder: String,
   required: Boolean,
   disabled: Boolean,

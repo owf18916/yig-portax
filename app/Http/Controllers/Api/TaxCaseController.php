@@ -85,6 +85,7 @@ class TaxCaseController extends ApiController
             'vat_in_amount' => 'nullable|numeric|min:0',
             'vat_out_amount' => 'nullable|numeric|min:0',
             'period_id' => 'nullable|exists:periods,id',
+            'currency_id' => 'nullable|exists:currencies,id',
             'description' => 'nullable|string',
         ]);
 
@@ -113,7 +114,11 @@ class TaxCaseController extends ApiController
         $validated['user_id'] = $user->id;
         $validated['current_stage'] = 1;
         $validated['case_status_id'] = 1; // OPEN status
-        $validated['currency_id'] = 1; // IDR default
+        
+        // Set currency_id to IDR default hanya jika tidak dikirim dari frontend
+        if (!isset($validated['currency_id']) || empty($validated['currency_id'])) {
+            $validated['currency_id'] = 1; // IDR default
+        }
 
         // Remove fields that don't belong to the table
         unset($validated['period']);

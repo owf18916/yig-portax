@@ -136,6 +136,7 @@ const successMessage = ref('')
 // Reference data from API
 const entities = ref([])
 const fiscalYears = ref([])
+const periods = ref([])  // NEW: Store periods
 const currencies = ref([])
 const loadingEntities = ref(false)
 const loadingFiscalYears = ref(false)
@@ -177,6 +178,7 @@ const previewCaseNumber = computed(() => {
 onMounted(() => {
   loadCurrentUser()
   fetchFiscalYears()
+  fetchPeriods()
   fetchCurrencies()
 })
 
@@ -248,6 +250,17 @@ const fetchFiscalYears = async () => {
     console.error('Error fetching fiscal years:', error)
   } finally {
     loadingFiscalYears.value = false
+  }
+}
+
+const fetchPeriods = async () => {
+  try {
+    const response = await fetch('/api/periods')
+    if (!response.ok) throw new Error('Failed to fetch periods')
+    const data = await response.json()
+    periods.value = Array.isArray(data) ? data : data.data || []
+  } catch (error) {
+    console.error('Error fetching periods:', error)
   }
 }
 
@@ -342,6 +355,15 @@ const submitForm = async () => {
       throw new Error('Fiscal year data not found')
     }
     
+    // Find period_id for March (month = 3) dari fiscal year yang dipilih
+    const marchPeriod = periods.value.find(p => 
+      p.fiscal_year_id === fiscalYearRecord.id && p.month === 3
+    )
+    
+    if (!marchPeriod) {
+      throw new Error(`March period not found for fiscal year ${formData.fiscal_year}`)
+    }
+    
     const yearCode = String(formData.fiscal_year).slice(-2)
     const caseNumber = `${entity.code}${yearCode}MarC`
 
@@ -361,7 +383,7 @@ const submitForm = async () => {
         case_number: caseNumber,
         case_type: 'CIT',
         fiscal_year_id: fiscalYearRecord.id,
-        period: `${formData.fiscal_year}-03`,
+        period_id: marchPeriod.id,  // CHANGED: kirim period_id, bukan period string
         status: 'PENDING',
         disputed_amount: formData.amount,
         currency_id: formData.currency_id

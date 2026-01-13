@@ -24,6 +24,7 @@ class DatabaseSeeder extends Seeder
             CaseStatusesSeeder::class,
             EntitiesSeeder::class,
             UsersSeeder::class,
+            TaxCaseSeeder::class,
         ]);
     }
 }

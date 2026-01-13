@@ -10,48 +10,57 @@ return new class extends Migration
     {
         Schema::create('documents', function (Blueprint $table) {
             $table->id();
+            
+            // Polymorphic relationship
+            $table->string('documentable_type');
+            $table->unsignedBigInteger('documentable_id');
+            
+            // Tax case reference for easy filtering
             $table->unsignedBigInteger('tax_case_id');
             
-            // Polymorphic
-            $table->string('documentable_type')->nullable();
-            $table->unsignedBigInteger('documentable_id')->nullable();
-            
-            $table->integer('stage_number')->nullable();
+            // Document classification
             $table->string('document_type');
+            $table->string('stage_code');
             
-            // File Info
+            // File information
             $table->string('original_filename');
-            $table->string('stored_filename');
             $table->string('file_path');
-            $table->string('mime_type');
-            $table->integer('file_size'); // in bytes
+            $table->string('file_mime_type')->nullable();
+            $table->bigInteger('file_size')->nullable(); // in bytes
+            $table->string('hash')->nullable(); // For duplicate detection and integrity check
             
+            // Meta
             $table->text('description')->nullable();
             
-            // Upload Info
-            $table->unsignedBigInteger('uploaded_by');
-            $table->timestamp('uploaded_at');
+            // Upload tracking
+            $table->unsignedBigInteger('uploaded_by')->nullable();
+            $table->dateTime('uploaded_at');
             
-            // Verification
-            $table->boolean('is_verified')->default(false);
-            $table->unsignedBigInteger('verified_by')->nullable();
-            $table->timestamp('verified_at')->nullable();
-            $table->text('verification_notes')->nullable();
+            // Versioning
+            $table->integer('version')->default(1);
+            $table->unsignedBigInteger('previous_version_id')->nullable();
             
-            // Audit
+            // Workflow status
+            $table->enum('status', ['DRAFT', 'ACTIVE', 'ARCHIVED', 'DELETED'])->default('ACTIVE');
+            
+            // Audit timestamps
             $table->timestamps();
             $table->softDeletes();
             
             // Foreign Keys
             $table->foreign('tax_case_id')->references('id')->on('tax_cases')->onDelete('cascade');
-            $table->foreign('uploaded_by')->references('id')->on('users')->onDelete('restrict');
-            $table->foreign('verified_by')->references('id')->on('users')->onDelete('set null');
+            $table->foreign('uploaded_by')->references('id')->on('users')->onDelete('set null');
+            $table->foreign('previous_version_id')->references('id')->on('documents')->onDelete('set null');
             
-            // Indexes
-            $table->index(['tax_case_id', 'stage_number']);
+            // Indexes for performance
             $table->index(['documentable_type', 'documentable_id']);
+            $table->index('tax_case_id');
+            $table->index('document_type');
+            $table->index('stage_code');
+            $table->index('uploaded_by');
+            $table->index('previous_version_id');
+            $table->index('status');
             $table->index('uploaded_at');
-            $table->index('is_verified');
         });
     }
 

@@ -1,11 +1,13 @@
 <template>
   <div>
-    <Alert
-      v-if="preFilledMessage"
-      type="info"
-      title="📋 Review Mode"
-      :message="preFilledMessage"
-    />
+    <!-- Loading Overlay -->
+    <div v-if="isLoading" class="fixed inset-0 backdrop-blur-sm bg-white/30 flex items-center justify-center z-50">
+      <div class="bg-white rounded-xl p-8 text-center shadow-2xl border border-white/50">
+        <div class="animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-500 mx-auto mb-4"></div>
+        <p class="text-gray-700 font-medium">Loading form data...</p>
+      </div>
+    </div>
+
     <StageForm
       :stageName="`Stage 1: SPT Filing (Review & Submit)`"
       :stageDescription="`Review your initial tax return submission created during case creation`"
@@ -16,6 +18,10 @@
       :fields="fields"
       :apiEndpoint="`/api/tax-cases/${caseId}/workflow/1`"
       :isReviewMode="true"
+      :isLoading="isLoading"
+      :caseStatus="caseStatus"
+      :preFilledMessage="preFilledMessage"
+      :prefillData="prefillData"
       @submit="handleSubmit"
       @saveDraft="handleSaveDraft"
     />
@@ -31,7 +37,9 @@ import Alert from '../components/Alert.vue'
 const route = useRoute()
 const caseId = route.params.id
 const caseNumber = ref('TAX-2026-001')
-const preFilledMessage = ref('This form is pre-filled with data from your case creation. Review and submit to confirm.')
+const preFilledMessage = ref('Loading...')
+const isLoading = ref(true)
+const caseStatus = ref(null)
 
 const fields = ref([
   {
@@ -39,97 +47,103 @@ const fields = ref([
     type: 'text',
     key: 'entity_name',
     label: 'Entity Name',
-    placeholder: 'e.g., PT. Maju Jaya Abadi',
     required: true,
-    value: '',
     readonly: true
   },
   {
     id: 2,
-    type: 'text',
-    key: 'period',
+    type: 'select',
+    key: 'period_id',
     label: 'Fiscal Period',
     required: true,
-    value: '',
-    readonly: true
+    options: []
   },
   {
     id: 3,
-    type: 'text',
-    key: 'currency',
+    type: 'select',
+    key: 'currency_id',
     label: 'Currency',
     required: true,
-    value: 'IDR',
-    readonly: true
+    options: []
   },
   {
     id: 4,
     type: 'number',
-    key: 'amount',
+    key: 'disputed_amount',
     label: 'Nilai Sengketa (Disputed Amount)',
-    placeholder: 'e.g., 5000000000',
     required: true,
-    value: '',
-    readonly: true
-  },
-  {
-    id: 5,
-    type: 'radio',
-    key: 'filing_decision',
-    label: 'SPT Filing Status',
-    options: [
-      { value: 'filed', label: 'SPT has been filed' },
-      { value: 'not_filed', label: 'SPT has NOT been filed' }
-    ],
-    required: true,
-    value: 'filed'
+    readonly: false
   }
 ])
 
+// Pre-fill form data dengan nilai dari tax case
+const prefillData = ref({
+  entity_name: '',
+  period_id: null,
+  currency_id: null,
+  disputed_amount: null
+})
+
 onMounted(async () => {
   try {
-    // Fetch case data to pre-fill form
-    const response = await fetch(`/api/tax-cases/${caseId}`)
-    if (response.ok) {
-      const caseData = await response.json()
-      caseNumber.value = caseData.case_number
-      
-      // Pre-fill fields from case data
-      const entityField = fields.value.find(f => f.key === 'entity_name')
-      if (entityField) entityField.value = caseData.entity_name || ''
-      
-      const periodField = fields.value.find(f => f.key === 'period')
-      if (periodField) {
-        // Format period based on case type
-        if (caseData.case_type === 'CIT') {
-          periodField.value = `March ${caseData.fiscal_year}` // CIT is always March
-        } else {
-          periodField.value = caseData.period || ''
-        }
-      }
-      
-      const currencyField = fields.value.find(f => f.key === 'currency')
-      if (currencyField) currencyField.value = caseData.currency || 'IDR'
-      
-      const amountField = fields.value.find(f => f.key === 'amount')
-      if (amountField) amountField.value = caseData.amount || ''
-      
-      preFilledMessage.value = `✅ Pre-filled with data from ${caseData.case_type} case creation (${caseData.case_number}). Review and confirm to proceed.`
+    // Fetch everything in parallel
+    const [currRes, periodRes, caseRes] = await Promise.all([
+      fetch('/api/currencies'),
+      fetch('/api/periods'),
+      fetch(`/api/tax-cases/${caseId}`)
+    ])
+
+    // Check response status
+    if (!currRes.ok || !periodRes.ok || !caseRes.ok) {
+      throw new Error('API request failed')
     }
+
+    const currencies = await currRes.json()
+    const periods = await periodRes.json()
+    const caseResponse = await caseRes.json()
+    
+    // Handle wrapped response (if API returns {success, data: {...}})
+    const caseData = caseResponse.data ? caseResponse.data : caseResponse
+
+    if (!caseData || !caseData.id) {
+      throw new Error('Case data not found')
+    }
+
+    // Set dropdown options
+    fields.value[1].options = periods.map(p => ({
+      value: p.id,
+      label: p.period_code
+    }))
+
+    fields.value[2].options = currencies.map(c => ({
+      value: c.id,
+      label: `${c.code} - ${c.name}`
+    }))
+
+    // Set pre-fill data dengan nilai dari tax case (benar-benar linked!)
+    prefillData.value = {
+      entity_name: caseData.entity_name || '',
+      period_id: caseData.period_id,  // Ini akan di-bind langsung di StageForm
+      currency_id: caseData.currency_id,  // Ini akan di-bind langsung di StageForm
+      disputed_amount: caseData.disputed_amount ? parseFloat(caseData.disputed_amount) : null
+    }
+
+    caseNumber.value = caseData.case_number || 'N/A'
+    caseStatus.value = caseData.case_status_id
+    preFilledMessage.value = `✅ Pre-filled from ${caseData.case_type} case (${caseData.case_number})`
+
   } catch (error) {
-    console.error('Failed to load case data:', error)
-    preFilledMessage.value = '⚠️ Could not pre-fill data, please enter details manually'
+    preFilledMessage.value = '❌ Error loading case data'
+  } finally {
+    isLoading.value = false
   }
 })
 
 const handleSubmit = (event) => {
-  // event contains { stageId, nextStageId, caseId, data }
-  console.log('SPT Filing submitted:', event)
-  // Navigation handled by StageForm component
-  // After submit, SPT stage is marked as completed
+  // Handle form submission
 }
 
 const handleSaveDraft = (event) => {
-  console.log('SPT Filing draft saved:', event)
+  // Handle draft saving
 }
 </script>

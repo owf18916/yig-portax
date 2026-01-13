@@ -1,26 +1,28 @@
 <?php
 
+use App\Models\TaxCase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\TaxCaseController;
 use App\Http\Controllers\Api\EntityController;
-use App\Http\Controllers\Api\FiscalYearController;
-use App\Http\Controllers\Api\Sp2RecordController;
-use App\Http\Controllers\Api\SphpRecordController;
+use App\Http\Controllers\Api\TaxCaseController;
 use App\Http\Controllers\Api\SkpRecordController;
-use App\Http\Controllers\Api\ObjectionSubmissionController;
+use App\Http\Controllers\Api\Sp2RecordController;
+use App\Http\Controllers\Api\FiscalYearController;
+use App\Http\Controllers\Api\SphpRecordController;
 use App\Http\Controllers\Api\SpuhRecordController;
-use App\Http\Controllers\Api\ObjectionDecisionController;
-use App\Http\Controllers\Api\AppealSubmissionController;
-use App\Http\Controllers\Api\AppealExplanationRequestController;
-use App\Http\Controllers\Api\AppealDecisionController;
-use App\Http\Controllers\Api\SupremeCourtSubmissionController;
-use App\Http\Controllers\Api\SupremeCourtDecisionController;
-use App\Http\Controllers\Api\RefundProcessController;
-use App\Http\Controllers\Api\KianSubmissionController;
-use App\Http\Controllers\Api\DashboardAnalyticsController;
 use App\Http\Controllers\Api\AnnouncementController;
+use App\Http\Controllers\Api\RefundProcessController;
+use App\Http\Controllers\Api\AppealDecisionController;
+use App\Http\Controllers\Api\KianSubmissionController;
+use App\Http\Controllers\Api\AppealSubmissionController;
+use App\Http\Controllers\Api\ObjectionDecisionController;
+use App\Http\Controllers\Api\DashboardAnalyticsController;
+use App\Http\Controllers\Api\ObjectionSubmissionController;
+use App\Http\Controllers\Api\SupremeCourtDecisionController;
+use App\Http\Controllers\Api\SupremeCourtSubmissionController;
+use App\Http\Controllers\Api\AppealExplanationRequestController;
+use App\Http\Controllers\DocumentController;
 
 // ============================================================================
 // AUTHENTICATION ROUTES - Public
@@ -28,6 +30,21 @@ use App\Http\Controllers\Api\AnnouncementController;
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth');
 Route::get('/me', [AuthController::class, 'me'])->middleware('auth');
+
+// Development: Quick login for testing
+if (config('app.debug')) {
+    Route::post('/dev-login', function () {
+        $user = \App\Models\User::first() ?? \App\Models\User::create([
+            'name' => 'Test User',
+            'email' => 'test@example.com',
+            'password' => \Illuminate\Support\Facades\Hash::make('password'),
+            'is_active' => true,
+        ]);
+        
+        \Illuminate\Support\Facades\Auth::login($user);
+        return response()->json(['success' => true, 'message' => 'Dev login successful', 'user' => $user]);
+    });
+}
 
 // ============================================================================
 // HEALTH & TEST ENDPOINTS
@@ -65,6 +82,36 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         Route::get('/workflow-history', [TaxCaseController::class, 'workflowHistory'])->name('tax-cases.workflow-history');
         Route::get('/documents', [TaxCaseController::class, 'documents'])->name('tax-cases.documents');
         Route::post('/complete', [TaxCaseController::class, 'complete'])->name('tax-cases.complete');
+        
+        // Generic workflow endpoint for all stages - save draft or submit
+        Route::post('/workflow/{stage}', function (Request $request, TaxCase $taxCase, $stage) {
+            $isDraft = $request->has('draft') && $request->get('draft') === 'true';
+            
+            // Update tax case with form data (only updatable fields)
+            $updateData = [];
+            if ($request->has('period_id')) $updateData['period_id'] = $request->input('period_id');
+            if ($request->has('currency_id')) $updateData['currency_id'] = $request->input('currency_id');
+            if ($request->has('disputed_amount')) $updateData['disputed_amount'] = $request->input('disputed_amount');
+            
+            if (!empty($updateData)) {
+                $taxCase->update($updateData);
+            }
+            
+            if ($isDraft) {
+                return response()->json([
+                    'success' => true,
+                    'message' => "Stage $stage draft saved successfully",
+                    'data' => $taxCase
+                ]);
+            }
+            
+            // Submit stage
+            return response()->json([
+                'success' => true,
+                'message' => "Stage $stage submitted successfully",
+                'data' => $taxCase
+            ]);
+        })->name('tax-cases.workflow');
         
         // SPHP Records - Stage 3
         Route::post('/sphp-records', [SphpRecordController::class, 'store'])->name('sphp-records.store');
@@ -150,6 +197,10 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
 Route::middleware('auth')->group(function () {
     Route::get('/entities', [EntityController::class, 'index']);
     Route::get('/fiscal-years', [FiscalYearController::class, 'index']);
+    
+    Route::get('/periods', function () {
+        return response()->json(\App\Models\Period::where('is_closed', false)->orderBy('year')->orderBy('month')->get());
+    });
 
     Route::get('/currencies', function () {
         return response()->json(\App\Models\Currency::where('is_active', true)->get());
@@ -174,5 +225,15 @@ Route::middleware('auth')->group(function () {
         Route::get('/charts', [DashboardAnalyticsController::class, 'dashboardCharts']);
         Route::get('/open-cases', [DashboardAnalyticsController::class, 'openCasesPerEntity']);
         Route::get('/disputed-amounts', [DashboardAnalyticsController::class, 'disputedAmountPerEntity']);
+    });
+
+    // ============================================================================
+    // DOCUMENT UPLOAD & DOWNLOAD ROUTES
+    // ============================================================================
+    Route::prefix('documents')->group(function () {
+        Route::get('/', [DocumentController::class, 'index'])->name('documents.index');
+        Route::post('/', [DocumentController::class, 'store'])->name('documents.store');
+        Route::get('/{document}/download', [DocumentController::class, 'download'])->name('documents.download');
+        Route::delete('/{document}', [DocumentController::class, 'destroy'])->name('documents.destroy');
     });
 });

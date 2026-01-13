@@ -4,37 +4,40 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Document extends Model
 {
+    use SoftDeletes;
+
     protected $table = 'documents';
 
     protected $fillable = [
-        'tax_case_id',
         'documentable_type',
         'documentable_id',
-        'stage_number',
+        'tax_case_id',
         'document_type',
+        'stage_code',
+        'original_filename',
         'file_path',
-        'file_name',
-        'mime_type',
+        'file_mime_type',
         'file_size',
+        'hash',
+        'description',
         'uploaded_by',
         'uploaded_at',
-        'is_verified',
-        'verified_by',
-        'verified_at',
-        'verification_notes',
+        'version',
+        'previous_version_id',
+        'status',
     ];
 
     protected $casts = [
         'file_size' => 'integer',
-        'stage_number' => 'integer',
-        'is_verified' => 'boolean',
+        'version' => 'integer',
         'uploaded_at' => 'datetime',
-        'verified_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
+        'deleted_at' => 'datetime',
     ];
 
     // Relationships
@@ -48,13 +51,18 @@ class Document extends Model
         return $this->belongsTo(User::class, 'uploaded_by');
     }
 
-    public function verifiedBy(): BelongsTo
+    public function previousVersion(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'verified_by');
+        return $this->belongsTo(Document::class, 'previous_version_id');
+    }
+
+    public function nextVersions()
+    {
+        return $this->hasMany(Document::class, 'previous_version_id', 'id');
     }
 
     /**
-     * Get the documentable model
+     * Get the documentable model (polymorphic relationship)
      */
     public function documentable()
     {

@@ -123,6 +123,7 @@ const company = ref({
   code: ''
 })
 
+const periods = ref([])  // NEW: Store all periods
 const loadingCompany = ref(true)
 
 const formData = reactive({
@@ -172,8 +173,20 @@ const getDirectionColor = () => {
   return direction === 'Overpayment' ? 'text-green-600' : 'text-red-600'
 }
 
+const fetchPeriods = async () => {
+  try {
+    const response = await fetch('/api/periods')
+    if (!response.ok) throw new Error('Failed to fetch periods')
+    const data = await response.json()
+    periods.value = Array.isArray(data) ? data : data.data || []
+  } catch (error) {
+    console.error('Error fetching periods:', error)
+  }
+}
+
 onMounted(() => {
   loadCurrentUser()
+  fetchPeriods()
 })
 
 const loadCurrentUser = () => {
@@ -298,6 +311,18 @@ const submitForm = async () => {
 
   try {
     const [year, month] = formData.period.split('-')
+    
+    // Find period_id dari dropdown period yang dipilih user
+    const selectedPeriod = periods.value.find(p => {
+      const pYear = String(p.year)
+      const pMonth = String(p.month).padStart(2, '0')
+      return `${pYear}-${pMonth}` === formData.period
+    })
+    
+    if (!selectedPeriod) {
+      throw new Error(`Period ${formData.period} not found in database`)
+    }
+    
     const yearCode = year.slice(-2)
     const monthCode = monthCodes[month]
     const caseNumber = `${company.value.code}${yearCode}${monthCode}V`
@@ -317,8 +342,8 @@ const submitForm = async () => {
         entity_id: company.value.id,
         case_number: caseNumber,
         case_type: 'VAT',
-        fiscal_year: parseInt(year),
-        period: formData.period,
+        fiscal_year_id: selectedPeriod.fiscal_year_id,  // CHANGED: use fiscal_year_id dari period
+        period_id: selectedPeriod.id,  // CHANGED: kirim period_id, bukan period string
         ppn_masukan: parseFloat(formData.ppn_masukan),
         ppn_keluaran: parseFloat(formData.ppn_keluaran),
         disputed_amount: calculateDispute()

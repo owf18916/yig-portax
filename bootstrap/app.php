@@ -17,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Session\Middleware\StartSession::class,
             \Illuminate\View\Middleware\ShareErrorsFromSession::class,
             \Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class,
+            \App\Http\Middleware\DevAutoLogin::class,
         ]);
         
         // Exclude CSRF verification for login and public API endpoints
@@ -24,6 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'api/login',
             'api/health',
             'api/test',
+            'api/tax-cases/*/workflow/*',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

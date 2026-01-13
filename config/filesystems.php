@@ -60,6 +60,15 @@ return [
             'report' => false,
         ],
 
+        'nas' => [
+            'driver' => 'local',
+            'root' => env('NAS_PATH', storage_path('app/nas')),
+            'url' => env('NAS_URL', env('APP_URL').'/storage/nas'),
+            'visibility' => env('NAS_VISIBILITY', 'private'),
+            'throw' => true,
+            'report' => true,
+        ],
+
     ],
 
     /*
