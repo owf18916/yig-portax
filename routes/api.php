@@ -86,6 +86,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         // Generic workflow endpoint for all stages - save draft or submit
         Route::post('/workflow/{stage}', function (Request $request, TaxCase $taxCase, $stage) {
             $isDraft = $request->has('draft') && $request->get('draft') === 'true';
+            $user = auth()->user();
             
             // Update tax case with form data (only updatable fields)
             $updateData = [];
@@ -93,11 +94,12 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
             if ($request->has('currency_id')) $updateData['currency_id'] = $request->input('currency_id');
             if ($request->has('disputed_amount')) $updateData['disputed_amount'] = $request->input('disputed_amount');
             
-            if (!empty($updateData)) {
-                $taxCase->update($updateData);
-            }
-            
             if ($isDraft) {
+                // For draft, just update the data
+                if (!empty($updateData)) {
+                    $taxCase->update($updateData);
+                }
+                
                 return response()->json([
                     'success' => true,
                     'message' => "Stage $stage draft saved successfully",
@@ -105,7 +107,15 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                 ]);
             }
             
-            // Submit stage
+            // Submit stage - update case status and tracking fields
+            $updateData['case_status_id'] = 2; // SUBMITTED status
+            $updateData['submitted_by'] = $user->id;
+            $updateData['submitted_at'] = now();
+            $updateData['last_updated_by'] = $user->id;
+            $updateData['current_stage'] = $stage;
+            
+            $taxCase->update($updateData);
+            
             return response()->json([
                 'success' => true,
                 'message' => "Stage $stage submitted successfully",
@@ -233,6 +243,7 @@ Route::middleware('auth')->group(function () {
     Route::prefix('documents')->group(function () {
         Route::get('/', [DocumentController::class, 'index'])->name('documents.index');
         Route::post('/', [DocumentController::class, 'store'])->name('documents.store');
+        Route::get('/{document}/view', [DocumentController::class, 'view'])->name('documents.view');
         Route::get('/{document}/download', [DocumentController::class, 'download'])->name('documents.download');
         Route::delete('/{document}', [DocumentController::class, 'destroy'])->name('documents.destroy');
     });

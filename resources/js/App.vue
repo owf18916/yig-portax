@@ -42,7 +42,7 @@
     </nav>
 
     <!-- Main Content -->
-    <main :class="$route.path === '/login' ? '' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12'">
+    <main :class="getMainClasses()">
       <router-view />
     </main>
 
@@ -57,10 +57,37 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 
 const router = useRouter()
+const route = useRoute()
 const currentUser = ref(null)
+
+// Check if current route should be full-screen (no max-width constraint)
+const isFullScreenRoute = () => {
+  // Routes that need full-screen layout: workflow pages, tax case forms, etc
+  return route.path === '/login' || 
+         route.path.includes('/workflow/') || 
+         route.path.includes('/spt-filing') ||
+         route.path.includes('/objection-decision')
+}
+
+// Get main content classes based on route
+const getMainClasses = () => {
+  if (route.path === '/login') {
+    return ''
+  }
+  
+  // For workflow routes: minimal padding
+  if (route.path.includes('/workflow/') || 
+      route.path.includes('/spt-filing') ||
+      route.path.includes('/objection-decision')) {
+    return 'px-2 py-2 h-full'
+  }
+  
+  // For other routes: normal padding and max-width
+  return 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12'
+}
 
 onMounted(() => {
   // Get user from localStorage

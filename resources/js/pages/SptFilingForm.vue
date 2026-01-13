@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="h-full">
     <!-- Loading Overlay -->
     <div v-if="isLoading" class="fixed inset-0 backdrop-blur-sm bg-white/30 flex items-center justify-center z-50">
       <div class="bg-white rounded-xl p-8 text-center shadow-2xl border border-white/50">

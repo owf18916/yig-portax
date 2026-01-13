@@ -99,6 +99,41 @@ class DocumentController extends Controller
     }
 
     /**
+     * View a document inline in browser (for iframe)
+     * 
+     * GET /api/documents/{id}/view
+     */
+    public function view(Document $document)
+    {
+        try {
+            // Check if document exists and file is available
+            $disk = config('filesystems.default');
+            
+            if (!Storage::disk($disk)->exists($document->file_path)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Document file not found',
+                ], 404);
+            }
+
+            // Return file with inline disposition (for viewing in iframe)
+            return response()->file(
+                Storage::disk($disk)->path($document->file_path),
+                [
+                    'Content-Type' => $document->file_mime_type,
+                    'Content-Disposition' => 'inline; filename="' . $document->original_filename . '"',
+                ]
+            );
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to view document: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Download/serve a document
      * 
      * GET /api/documents/{id}/download
@@ -117,13 +152,13 @@ class DocumentController extends Controller
             }
 
             // Return file download response
-            return Storage::disk($disk)->download(
-                $document->file_path,
-                $document->original_filename,
-                [
-                    'Content-Type' => $document->file_mime_type,
-                ]
-            );
+        return response()->download(
+            Storage::disk($disk)->path($document->file_path),
+            $document->original_filename,
+            [
+                'Content-Type' => $document->file_mime_type,
+            ]
+        );
 
         } catch (\Exception $e) {
             return response()->json([
