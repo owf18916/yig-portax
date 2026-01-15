@@ -92,4 +92,20 @@ class User extends Authenticatable
     {
         return $this->hasMany(Document::class, 'uploaded_by');
     }
+
+    /**
+     * Check if user has a specific role
+     */
+    public function hasRole($roles): bool
+    {
+        if (is_string($roles)) {
+            return $this->role && $this->role->name === $roles;
+        }
+
+        if (is_array($roles)) {
+            return $this->role && in_array($this->role->name, $roles);
+        }
+
+        return false;
+    }
 }

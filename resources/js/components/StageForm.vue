@@ -366,7 +366,7 @@ const props = defineProps({
     required: true
   },
   caseId: {
-    type: String,
+    type: Number,
     required: true
   },
   caseNumber: {
@@ -547,6 +547,7 @@ const uploadFile = async (file) => {
       const xhr = new XMLHttpRequest()
       const fileId = `${file.name}-${Date.now()}` // Temporary ID for progress tracking
 
+      // IMPORTANT: Set up ALL event listeners BEFORE calling open()
       // Track upload progress
       xhr.upload.addEventListener('progress', (e) => {
         if (e.lengthComputable) {
@@ -558,28 +559,36 @@ const uploadFile = async (file) => {
       })
 
       xhr.addEventListener('load', () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          const result = JSON.parse(xhr.responseText)
+        try {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            const result = JSON.parse(xhr.responseText)
 
-          // Add to uploaded files list with the document ID
-          uploadedFiles.value.push({
-            id: result.data.id,
-            name: result.data.original_filename,
-            size: (result.data.file_size / 1024 / 1024).toFixed(2), // MB
-            uploadedAt: result.data.uploaded_at,
-            status: result.data.status, // Include status (DRAFT)
-            isUploaded: true // Mark as successfully uploaded
-          })
+            // Add to uploaded files list with the document ID
+            uploadedFiles.value.push({
+              id: result.data.id,
+              name: result.data.original_filename,
+              size: (result.data.file_size / 1024 / 1024).toFixed(2), // MB
+              uploadedAt: result.data.uploaded_at,
+              status: result.data.status, // Include status (DRAFT)
+              isUploaded: true // Mark as successfully uploaded
+            })
 
-          toastRef.value?.addToast('Success', `${result.data.original_filename} uploaded`, 'success', 3000)
-          
-          // Clean up
-          delete uploadingFiles.value[fileId]
-          uploadProgress.value = 0
-          resolve(result)
-        } else {
-          const errorData = JSON.parse(xhr.responseText)
-          throw new Error(errorData.message || 'Upload failed')
+            toastRef.value?.addToast('Success', `${result.data.original_filename} uploaded`, 'success', 3000)
+            
+            // Clean up
+            delete uploadingFiles.value[fileId]
+            uploadProgress.value = 0
+            resolve(result)
+          } else {
+            try {
+              const errorData = JSON.parse(xhr.responseText)
+              reject(new Error(errorData.message || 'Upload failed'))
+            } catch (parseError) {
+              reject(new Error('Upload failed with status ' + xhr.status))
+            }
+          }
+        } catch (error) {
+          reject(error)
         }
       })
 
@@ -587,7 +596,7 @@ const uploadFile = async (file) => {
         toastRef.value?.addToast('Upload Error', 'Network error during upload', 'error', 5000)
         delete uploadingFiles.value[fileId]
         uploadProgress.value = 0
-        reject(new Error('Upload failed'))
+        reject(new Error('Network error during upload'))
       })
 
       xhr.addEventListener('abort', () => {
@@ -597,12 +606,16 @@ const uploadFile = async (file) => {
         reject(new Error('Upload cancelled'))
       })
 
-      // Set headers and send
+      // NOW open the request
+      xhr.open('POST', '/api/documents')
+      xhr.withCredentials = true // Include cookies for session auth
+      
+      // Set headers AFTER open() but BEFORE send()
       if (csrfToken) {
         xhr.setRequestHeader('X-CSRF-TOKEN', csrfToken)
       }
-      xhr.open('POST', '/api/documents')
-      xhr.withCredentials = true // Include cookies for session auth
+      
+      // Finally send the request
       xhr.send(formData)
     } catch (error) {
       toastRef.value?.addToast('Upload Error', error.message, 'error', 5000)

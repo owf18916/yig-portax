@@ -145,6 +145,11 @@ class TaxCase extends Model
         return $this->hasOne(AppealExplanationRequest::class);
     }
 
+    public function appealDecision(): HasOne
+    {
+        return $this->hasOne(AppealDecision::class);
+    }
+
     // Revision relationship
     public function revisions(): HasMany
     {

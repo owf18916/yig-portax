@@ -48,7 +48,7 @@ import Alert from '../components/Alert.vue'
 import RevisionHistoryPanel from '../components/RevisionHistoryPanel.vue'
 
 const route = useRoute()
-const caseId = route.params.id
+const caseId = parseInt(route.params.id, 10)
 const caseNumber = ref('TAX-2026-001')
 const preFilledMessage = ref('Loading...')
 const isLoading = ref(true)
@@ -197,10 +197,19 @@ onMounted(async () => {
 const loadRevisions = async () => {
   try {
     const response = await fetch(`/api/tax-cases/${caseId}/revisions`)
+    
+    if (!response.ok) {
+      console.warn(`Failed to load revisions: ${response.status} ${response.statusText}`)
+      // Silently fail - revisions are optional
+      revisions.value = []
+      return
+    }
+    
     const data = await response.json()
-    revisions.value = data.data || []
+    revisions.value = data.data || data || []
   } catch (err) {
     console.error('Failed to load revisions:', err)
+    revisions.value = []
   }
 }
 

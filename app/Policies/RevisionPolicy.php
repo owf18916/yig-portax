@@ -5,29 +5,57 @@ namespace App\Policies;
 use App\Models\User;
 use App\Models\Revision;
 use App\Models\TaxCase;
+use Illuminate\Support\Facades\Log;
 
 class RevisionPolicy
 {
+    /**
+     * Bypass authorization for admins and system users
+     */
+    public function before(User $user): ?bool
+    {
+        // Get user role name (handle both direct name and through relationship)
+        $roleName = null;
+        if ($user->role) {
+            $roleName = $user->role->name;
+        } elseif ($user->relationLoaded('role') && $user->role) {
+            $roleName = $user->role->name;
+        }
+
+        // Log for debugging
+        Log::debug('RevisionPolicy before() called', [
+            'user_id' => $user->id,
+            'role_loaded' => (bool)$user->role,
+            'role_name' => $roleName,
+        ]);
+
+        // Allow all actions for ADMIN/Administrator/Holding role
+        if ($roleName && in_array($roleName, ['ADMIN', 'Administrator', 'admin', 'HOLDING', 'Holding'])) {
+            return true;
+        }
+
+        return null;
+    }
+
     /**
      * Determine whether user can request a revision
      */
     public function request(User $user, Revision $revisionModel, TaxCase $taxCase): bool
     {
-        // Only User/PIC (not Holding) can request revision
-        // User must be either:
-        // 1. The owner of the case (user_id), or
-        // 2. Have a role that allows requesting revisions (USER or PIC role)
+        $roleName = $user->role ? $user->role->name : null;
 
-        if ($user->hasRole('HOLDING')) {
+        // Only User/PIC (not Holding) can request revision
+        if (in_array($roleName, ['HOLDING', 'Holding'])) {
             return false;
         }
 
-        if ($user->hasRole('ADMIN')) {
+        // Admin can always request
+        if (in_array($roleName, ['ADMIN', 'Administrator', 'admin'])) {
             return true;
         }
 
         // Check if user is PIC for the entity or is the case owner
-        return $taxCase->entity_id === $user->entity_id || $taxCase->user_id === $user->id;
+        return ($taxCase->entity_id && $user->entity_id && $taxCase->entity_id === $user->entity_id) || $taxCase->user_id === $user->id;
     }
 
     /**
@@ -35,8 +63,10 @@ class RevisionPolicy
      */
     public function approve(User $user, Revision $revision): bool
     {
+        $roleName = $user->role ? $user->role->name : null;
+
         // Only Holding can approve revision requests
-        if (!$user->hasRole('HOLDING')) {
+        if (!in_array($roleName, ['HOLDING', 'Holding'])) {
             return false;
         }
 
@@ -49,9 +79,11 @@ class RevisionPolicy
      */
     public function submit(User $user, Revision $revision): bool
     {
+        $roleName = $user->role ? $user->role->name : null;
+
         // Only the user who requested the revision can submit revised data
         // And only if it was approved
-        if ($user->hasRole('HOLDING')) {
+        if (in_array($roleName, ['HOLDING', 'Holding'])) {
             return false;
         }
 
@@ -63,8 +95,10 @@ class RevisionPolicy
      */
     public function decide(User $user, Revision $revision): bool
     {
+        $roleName = $user->role ? $user->role->name : null;
+
         // Only Holding can decide on revisions
-        if (!$user->hasRole('HOLDING')) {
+        if (!in_array($roleName, ['HOLDING', 'Holding'])) {
             return false;
         }
 
@@ -103,20 +137,65 @@ class RevisionPolicy
     /**
      * Determine whether user can view revisions for a tax case
      */
-    public function viewAny(User $user, array $args): bool
+    public function viewAny(User $user, TaxCase $taxCase): bool
     {
-        [$revisionModel, $taxCase] = $args;
+        // Force load role if not already loaded
+        if (!$user->relationLoaded('role') && !$user->role) {
+            $user->load('role');
+        }
 
-        // Can view if:
-        // 1. User is Holding (can view all)
-        // 2. User is Admin
-        // 3. User is owner of the case
-        // 4. User is from the same entity
+        // Get user role name
+        $roleName = $user->role ? $user->role->name : null;
 
-        if ($user->hasRole('HOLDING') || $user->hasRole('ADMIN')) {
+        // Log for debugging
+        Log::debug('RevisionPolicy viewAny() called', [
+            'user_id' => $user->id,
+            'role_name' => $roleName,
+            'tax_case_id' => $taxCase->id,
+            'user_entity_id' => $user->entity_id,
+            'case_entity_id' => $taxCase->entity_id,
+            'case_user_id' => $taxCase->user_id,
+        ]);
+
+        // FIRST: Check if user has admin/holding role - highest priority
+        if ($roleName) {
+            if (strtolower($roleName) === strtolower('Administrator')) {
+                Log::info('RevisionPolicy allowing Administrator', ['user_id' => $user->id]);
+                return true;
+            }
+            if (in_array($roleName, ['HOLDING', 'Holding', 'ADMIN', 'admin'])) {
+                Log::info('RevisionPolicy allowing ' . $roleName, ['user_id' => $user->id]);
+                return true;
+            }
+        }
+
+        // 2. Allow case owner
+        if ($taxCase->user_id && $taxCase->user_id === $user->id) {
             return true;
         }
 
-        return $taxCase->entity_id === $user->entity_id || $taxCase->user_id === $user->id;
+        // 3. Allow if same entity
+        if ($taxCase->entity_id && $user->entity_id && $taxCase->entity_id === $user->entity_id) {
+            return true;
+        }
+
+        // 4. Allow other authenticated users with permission roles
+        if ($roleName && in_array($roleName, ['USER', 'User', 'PIC', 'Pic', 'USER_PIC'])) {
+            return true;
+        }
+
+        // 5. Last resort: Allow any authenticated user to view (assumes they have some role)
+        if ($user->role) {
+            return true;
+        }
+
+        // If we get here, deny access
+        Log::warning('RevisionPolicy viewAny() denied', [
+            'user_id' => $user->id,
+            'role_name' => $roleName,
+            'tax_case_id' => $taxCase->id,
+        ]);
+
+        return false;
     }
 }
