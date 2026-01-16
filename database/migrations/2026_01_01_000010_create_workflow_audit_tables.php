@@ -12,23 +12,26 @@ return new class extends Migration
             $table->id();
             $table->unsignedBigInteger('tax_case_id');
             
-            $table->integer('stage_from')->nullable();
-            $table->integer('stage_to');
+            $table->integer('stage_id')->comment('Current stage ID');
+            $table->integer('stage_from')->nullable()->comment('Previous stage');
+            $table->integer('stage_to')->nullable()->comment('Next stage (if different from stage_id)');
             $table->enum('action', ['submitted', 'approved', 'routed', 'skipped', 'rejected'])->default('submitted');
+            $table->enum('status', ['draft', 'submitted', 'approved', 'rejected', 'completed'])->default('submitted')->comment('Stage status');
             $table->string('decision_point')->nullable();
             $table->string('decision_value')->nullable();
             
-            $table->unsignedBigInteger('user_id');
+            $table->unsignedBigInteger('user_id')->comment('User who performed action');
             $table->text('notes')->nullable();
             
-            $table->timestamp('created_at');
+            $table->timestamps();  // Auto creates created_at and updated_at
             
             $table->foreign('tax_case_id')->references('id')->on('tax_cases')->onDelete('cascade');
             $table->foreign('user_id')->references('id')->on('users')->onDelete('restrict');
             
-            $table->index(['tax_case_id', 'created_at']);
-            $table->index('stage_to');
+            $table->index(['tax_case_id', 'stage_id', 'created_at']);
+            $table->index('stage_id');
             $table->index('stage_from');
+            $table->index(['tax_case_id', 'status']);
         });
 
         Schema::create('status_histories', function (Blueprint $table) {

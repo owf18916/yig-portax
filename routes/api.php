@@ -97,9 +97,6 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
             
             // Decide on submitted revision (Holding only)
             Route::patch('/{revision}/decide', [RevisionController::class, 'decideRevision'])->name('revisions.decide');
-            
-            // Get revision detail with before-after comparison
-            Route::get('/{revision}', [RevisionController::class, 'showRevision'])->name('revisions.show');
         });
         
         // Generic workflow endpoint for all stages - save draft or submit
@@ -130,6 +127,16 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                     $taxCase->update($updateData);
                 }
                 
+                // Create workflow history for draft (status='draft')
+                $taxCase->workflowHistories()->create([
+                    'stage_id' => $stage,
+                    'stage_from' => $taxCase->current_stage,
+                    'action' => 'submitted',
+                    'status' => 'draft',
+                    'user_id' => $user->id,
+                    'notes' => 'Stage saved as draft',
+                ]);
+                
                 return response()->json([
                     'success' => true,
                     'message' => "Stage $stage draft saved successfully",
@@ -137,19 +144,26 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                 ]);
             }
             
-            // Submit stage - update case status and tracking fields
+            // Submit stage - update case status and create workflow history
             $updateData['case_status_id'] = 2; // SUBMITTED status
-            $updateData['submitted_by'] = $user->id;
-            $updateData['submitted_at'] = now();
-            $updateData['last_updated_by'] = $user->id;
             $updateData['current_stage'] = $stage;
             
             $taxCase->update($updateData);
             
+            // Create workflow history for submission
+            $taxCase->workflowHistories()->create([
+                'stage_id' => $stage,
+                'stage_from' => $taxCase->current_stage > $stage ? $taxCase->current_stage : null,
+                'action' => 'submitted',
+                'status' => 'submitted',
+                'user_id' => $user->id,
+                'notes' => "Stage $stage submitted",
+            ]);
+            
             return response()->json([
                 'success' => true,
                 'message' => "Stage $stage submitted successfully",
-                'data' => $taxCase
+                'data' => $taxCase->fresh(['workflowHistories'])
             ]);
         })->name('tax-cases.workflow');
         

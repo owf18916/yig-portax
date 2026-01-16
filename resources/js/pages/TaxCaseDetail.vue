@@ -100,6 +100,7 @@ const caseData = ref({
   status: 'draft'
 })
 const documents = ref([])
+const workflowHistory = ref([])
 
 const workflowStages = ref([
   { id: 1, name: 'SPT Filing', description: 'Initial tax return submission', completed: false, accessible: true },
@@ -111,6 +112,28 @@ const workflowStages = ref([
   { id: 7, name: 'Supreme Court', description: 'Cassation to Supreme Court', completed: false, accessible: false },
   { id: 8, name: 'Refund', description: 'Process refund if approved', completed: false, accessible: false }
 ])
+
+// Function untuk update accessibility berdasarkan workflow history
+const updateStageAccessibility = () => {
+  workflowStages.value.forEach((stage, index) => {
+    // Cek apakah stage saat ini atau stage sebelumnya sudah completed
+    const currentStageCompleted = workflowHistory.value.some(
+      h => h.stage_id === stage.id && (h.status === 'submitted' || h.status === 'completed')
+    )
+    
+    const previousStageCompleted = index === 0 || workflowHistory.value.some(
+      h => h.stage_id === workflowStages.value[index - 1].id && (h.status === 'submitted' || h.status === 'completed')
+    )
+    
+    // Stage bisa diakses jika:
+    // 1. Stage pertama (SPT Filing)
+    // 2. Stage sebelumnya sudah submitted/completed
+    stage.accessible = index === 0 || previousStageCompleted
+    
+    // Stage completed jika sudah ada di workflow history dengan status submitted/completed
+    stage.completed = currentStageCompleted
+  })
+}
 
 onMounted(async () => {
   try {
@@ -137,8 +160,31 @@ onMounted(async () => {
       caseData.value = responseData
     }
     
+    // Load workflow history untuk determine accessibility
+    if (caseData.value.workflow_history && Array.isArray(caseData.value.workflow_history)) {
+      workflowHistory.value = caseData.value.workflow_history
+    } else if (caseData.value.id) {
+      // Jika tidak ada di case data, try fetch dari endpoint terpisah
+      try {
+        const historyResponse = await fetch(`/api/tax-cases/${route.params.id}/workflow-history`, {
+          credentials: 'include',
+          headers: { 'Accept': 'application/json' }
+        })
+        if (historyResponse.ok) {
+          const historyData = await historyResponse.json()
+          workflowHistory.value = historyData.data || historyData
+        }
+      } catch (e) {
+        console.warn('Could not load workflow history:', e)
+      }
+    }
+    
+    // Update stage accessibility berdasarkan workflow history
+    updateStageAccessibility()
+    
     caseNumber.value = caseData.value.case_number || 'TAX-2026-001'
     console.log('Case data loaded:', caseData.value)
+    console.log('Workflow history:', workflowHistory.value)
   } catch (error) {
     apiError.value = error.message
     console.error('Failed to load case:', error)
@@ -148,7 +194,8 @@ onMounted(async () => {
 })
 
 const canAccessStage = (stageId) => {
-  return true
+  const stage = workflowStages.value.find(s => s.id === stageId)
+  return stage && stage.accessible
 }
 
 const formatStatus = (status) => {

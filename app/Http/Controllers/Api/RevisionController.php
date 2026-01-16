@@ -77,8 +77,13 @@ class RevisionController extends Controller
             ], 422);
         }
 
-        // Check if data is submitted
-        if (!$taxCase->submitted_at) {
+        // Check if data is submitted via workflow_history (source of truth)
+        $isStageSubmitted = $taxCase->workflowHistories()
+            ->where('stage_id', $stageCode ?? 1)
+            ->whereIn('status', ['submitted', 'approved'])
+            ->exists();
+            
+        if (!$isStageSubmitted) {
             return response()->json([
                 'error' => 'Cannot request revision for unsubmitted data',
             ], 422);

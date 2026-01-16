@@ -57,7 +57,7 @@
               <strong>Proposed Changes:</strong>
               <ul class="text-sm mt-1">
                 <li v-for="(value, field) in revision.proposed_values" :key="field">
-                  {{ fieldLabel(field) }}: {{ value }}
+                  {{ fieldLabel(field) }}: {{ formatProposedValue(field, value) }}
                 </li>
               </ul>
             </div>
@@ -126,6 +126,8 @@
       :case-id="caseId"
       :entity-type="entityType"
       :all-documents="currentDocuments"
+      :tax-case="taxCase"
+      :periods-list="periodsList"
       @close="showApprovalModal = false"
       @approved="onRevisionApproved"
       @rejected="onRevisionRejected"
@@ -150,6 +152,7 @@ const props = defineProps({
   revisions: { type: Array, default: () => [] },
   currentUser: { type: Object, default: null },
   currentDocuments: { type: Array, default: () => [] },
+  periodsList: { type: Array, default: () => [] }, // List of periods for formatting
   availableFields: { 
     type: Array, 
     default: () => [
@@ -172,8 +175,12 @@ const revisionToApprove = ref(null)
 
 // Check if user can request new revision
 const canRequestRevision = computed(() => {
-  // Data must be submitted
-  if (!props.taxCase.submitted_at) return false
+  // Data must be submitted - check workflow_history for stage 1 (SPT Filing)
+  const isStageSubmitted = props.taxCase?.workflow_histories?.some(
+    h => h.stage_id === 1 && (h.status === 'submitted' || h.status === 'approved')
+  )
+  
+  if (!isStageSubmitted) return false
   
   // No pending revisions
   const pending = props.revisions.find(r => r.revision_status === 'requested')
@@ -182,7 +189,11 @@ const canRequestRevision = computed(() => {
 
 // Message for why button is disabled
 const revisionStatusMessage = computed(() => {
-  if (!props.taxCase.submitted_at) {
+  const isStageSubmitted = props.taxCase?.workflow_histories?.some(
+    h => h.stage_id === 1 && (h.status === 'submitted' || h.status === 'approved')
+  )
+  
+  if (!isStageSubmitted) {
     return '(Submit data first to request revisions)'
   }
   
@@ -277,6 +288,19 @@ const getDocFileName = (docId, revision) => {
   // Fallback to currentDocuments prop
   const doc = props.currentDocuments.find(d => d.id === docId)
   return doc ? (doc.original_filename || doc.file_name || doc.name) : `Doc #${docId}`
+}
+
+const formatProposedValue = (field, value) => {
+  // For period_id, show the period_code instead of the ID
+  if (field === 'period_id' && props.periodsList && props.periodsList.length > 0) {
+    const period = props.periodsList.find(p => p.id === value)
+    if (period) {
+      return period.period_code
+    }
+  }
+  
+  // For other fields, return value as is
+  return value
 }
 
 const getDocumentChanges = (revision) => {

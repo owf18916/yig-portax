@@ -30,11 +30,12 @@
     <div class="px-4 py-6">
       <RevisionHistoryPanel 
         :case-id="caseId"
-        :stage-id="stageId"
-        :tax-case="{ submitted_at: prefillData.submitted_at }"
+        :stage-id="1"
+        :tax-case="caseData"
         :revisions="revisions"
         :current-user="currentUser"
         :current-documents="currentDocuments"
+        :periods-list="periodsList"
         :available-fields="availableFields"
         @revision-requested="loadRevisions"
         @refresh="loadRevisions"
@@ -59,6 +60,7 @@ const originalCaseNumber = ref('') // Store original case number pattern
 const preFilledMessage = ref('Loading...')
 const isLoading = ref(true)
 const caseStatus = ref(null)
+const caseData = ref({}) // Store full case data untuk pass ke RevisionHistoryPanel
 const revisions = ref([])
 const currentUser = ref(null)
 const currentDocuments = ref([])
@@ -108,13 +110,24 @@ const availableFields = [
 ]
 
 // Cek apakah field sedang di-lock (tidak bisa diedit)
+// LOGIC: Lock jika stage 1 (SPT Filing) sudah di-submit via workflow_history
 const isFieldLocked = (fieldName) => {
-  // Jika belum submitted, semua field bisa diedit
-  if (!prefillData.value.submitted_at) {
+  // Jika belum ada workflow history untuk stage 1, semua field editable
+  if (!prefillData.value.workflowHistories || prefillData.value.workflowHistories.length === 0) {
     return false
   }
 
-  // Jika tidak ada approved revision, semuanya lock
+  // Cek apakah stage 1 (SPT Filing) sudah submitted
+  const stageSubmitted = prefillData.value.workflowHistories.some(
+    h => h.stage_id === 1 && (h.status === 'submitted' || h.status === 'approved')
+  )
+  
+  // Jika stage belum submitted, semua field editable
+  if (!stageSubmitted) {
+    return false
+  }
+
+  // Jika tidak ada approved revision, semua field lock
   const currentRevision = revisions.value.find(r => r.revision_status === 'APPROVED')
   if (!currentRevision) {
     return true
@@ -208,11 +221,14 @@ onMounted(async () => {
     periodsList.value = periods
 
     // Handle wrapped response (if API returns {success, data: {...}})
-    const caseData = caseResponse.data ? caseResponse.data : caseResponse
+    const caseFetchedData = caseResponse.data ? caseResponse.data : caseResponse
 
-    if (!caseData || !caseData.id) {
+    if (!caseFetchedData || !caseFetchedData.id) {
       throw new Error('Case data not found')
     }
+
+    // Store full case data untuk pass ke RevisionHistoryPanel
+    caseData.value = caseFetchedData
 
     // Set dropdown options
     fields.value[1].options = periods.map(p => ({
@@ -227,17 +243,17 @@ onMounted(async () => {
 
     // Set pre-fill data dengan nilai dari tax case (benar-benar linked!)
     prefillData.value = {
-      entity_name: caseData.entity_name || '',
-      period_id: caseData.period_id,  // Ini akan di-bind langsung di StageForm
-      currency_id: caseData.currency_id,  // Ini akan di-bind langsung di StageForm
-      disputed_amount: caseData.disputed_amount ? parseFloat(caseData.disputed_amount) : null,
-      submitted_at: caseData.submitted_at || null  // Track submission status for revisions
+      entity_name: caseFetchedData.entity_name || '',
+      period_id: caseFetchedData.period_id,  // Ini akan di-bind langsung di StageForm
+      currency_id: caseFetchedData.currency_id,  // Ini akan di-bind langsung di StageForm
+      disputed_amount: caseFetchedData.disputed_amount ? parseFloat(caseFetchedData.disputed_amount) : null,
+      workflowHistories: caseFetchedData.workflow_histories || []  // Get workflow history untuk lock logic
     }
 
-    caseNumber.value = caseData.case_number || 'N/A'
-    originalCaseNumber.value = caseData.case_number || 'N/A' // Store original for period changes
-    caseStatus.value = caseData.case_status_id
-    preFilledMessage.value = `✅ Pre-filled from ${caseData.case_type} case (${caseData.case_number})`
+    caseNumber.value = caseFetchedData.case_number || 'N/A'
+    originalCaseNumber.value = caseFetchedData.case_number || 'N/A' // Store original for period changes
+    caseStatus.value = caseFetchedData.case_status_id
+    preFilledMessage.value = `✅ Pre-filled from ${caseFetchedData.case_type} case (${caseFetchedData.case_number})`
 
     // Load revisions untuk form ini
     await loadRevisions()

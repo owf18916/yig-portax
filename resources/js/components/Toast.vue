@@ -5,12 +5,12 @@
         v-for="toast in toasts"
         :key="toast.id"
         :class="[
-          'pointer-events-auto p-4 rounded-lg shadow-lg flex items-center space-x-3 min-w-[300px] max-w-[500px] animate-fadeInDown',
+          'pointer-events-auto p-4 rounded-lg shadow-lg flex items-center space-x-3 min-w-75 max-w-[125 animate-fadeInDown',
           typeClasses(toast.type)
         ]"
       >
         <!-- Icon -->
-        <span class="text-xl flex-shrink-0">
+        <span class="text-xl shrink-0">
           {{ typeIcon(toast.type) }}
         </span>
 
@@ -23,7 +23,7 @@
         <!-- Close Button -->
         <button
           @click="removeToast(toast.id)"
-          class="flex-shrink-0 ml-2 text-lg font-bold opacity-70 hover:opacity-100 transition-opacity"
+          class="shrink-0 ml-2 text-lg font-bold opacity-70 hover:opacity-100 transition-opacity"
         >
           ×
         </button>

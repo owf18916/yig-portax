@@ -29,7 +29,7 @@
                 <div class="arrow">→</div>
                 <div class="after">
                   <span class="label">Proposed:</span>
-                  <span class="value">{{ newValue }}</span>
+                  <span class="value">{{ formatProposedValue(field, newValue) }}</span>
                 </div>
               </div>
             </div>
@@ -126,7 +126,9 @@ const props = defineProps({
   revision: { type: Object, default: null },
   caseId: { type: [String, Number], required: true },
   allDocuments: { type: Array, default: () => [] },
-  entityType: { type: String, default: 'tax-cases' } // Support any entity type
+  entityType: { type: String, default: 'tax-cases' }, // Support any entity type
+  taxCase: { type: Object, default: null }, // For accessing related data like periods
+  periodsList: { type: Array, default: () => [] } // List of periods for formatting
 })
 
 const emit = defineEmits(['close', 'approved', 'rejected'])
@@ -167,7 +169,30 @@ const fieldLabel = (field) => {
 const getOriginalValue = (field) => {
   if (!props.revision?.original_data) return 'N/A'
   const value = props.revision.original_data[field]
-  return value !== null && value !== undefined ? value : 'N/A'
+  const displayValue = value !== null && value !== undefined ? value : 'N/A'
+  
+  // For period_id, show the period_code instead of the ID
+  if (field === 'period_id' && displayValue !== 'N/A' && props.periodsList && props.periodsList.length > 0) {
+    const period = props.periodsList.find(p => p.id === displayValue)
+    if (period) {
+      return period.period_code
+    }
+  }
+  
+  return displayValue
+}
+
+const formatProposedValue = (field, value) => {
+  // For period_id, show the period_code instead of the ID
+  if (field === 'period_id' && props.periodsList && props.periodsList.length > 0) {
+    const period = props.periodsList.find(p => p.id === value)
+    if (period) {
+      return period.period_code
+    }
+  }
+  
+  // For other fields, return value as is
+  return value
 }
 
 const getDocFileName = (docId) => {

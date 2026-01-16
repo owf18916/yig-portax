@@ -39,19 +39,14 @@ return new class extends Migration
             $table->boolean('is_completed')->default(false);
             $table->date('completed_date')->nullable();
             
-            // Approval
+            // Description
             $table->text('description')->nullable();
-            $table->unsignedBigInteger('submitted_by')->nullable();
-            $table->timestamp('submitted_at')->nullable();
-            $table->unsignedBigInteger('approved_by')->nullable();
-            $table->timestamp('approved_at')->nullable();
             
             // Refund
             $table->decimal('refund_amount', 20, 2)->nullable();
             $table->date('refund_date')->nullable();
             
-            // Audit
-            $table->unsignedBigInteger('last_updated_by')->nullable();
+            // Audit - timestamps only, approval tracking via workflow_histories
             $table->timestamps();
             $table->softDeletes();
             
@@ -62,9 +57,6 @@ return new class extends Migration
             $table->foreign('period_id')->references('id')->on('periods')->onDelete('set null');
             $table->foreign('currency_id')->references('id')->on('currencies')->onDelete('restrict');
             $table->foreign('case_status_id')->references('id')->on('case_statuses')->onDelete('restrict');
-            $table->foreign('submitted_by')->references('id')->on('users')->onDelete('set null');
-            $table->foreign('approved_by')->references('id')->on('users')->onDelete('set null');
-            $table->foreign('last_updated_by')->references('id')->on('users')->onDelete('set null');
             
             // Indexes
             $table->index(['user_id', 'case_status_id']);
