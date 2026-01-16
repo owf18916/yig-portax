@@ -16,6 +16,9 @@ class Revision extends Model
         'revision_status',
         'original_data',
         'revised_data',
+        'proposed_values',
+        'proposed_document_changes',
+        'reason',
         'requested_by',
         'requested_at',
         'approved_by',
@@ -32,6 +35,8 @@ class Revision extends Model
     protected $casts = [
         'original_data' => 'json',
         'revised_data' => 'json',
+        'proposed_values' => 'json',
+        'proposed_document_changes' => 'json',
         'requested_at' => 'datetime',
         'approved_at' => 'datetime',
         'submitted_at' => 'datetime',
@@ -70,36 +75,21 @@ class Revision extends Model
     // Helper methods
     public function isPending(): bool
     {
-        return $this->revision_status === 'PENDING_APPROVAL';
+        return $this->revision_status === 'requested';
     }
 
     public function isApproved(): bool
     {
-        return $this->revision_status === 'APPROVED';
-    }
-
-    public function isSubmitted(): bool
-    {
-        return $this->revision_status === 'SUBMITTED';
-    }
-
-    public function isGranted(): bool
-    {
-        return $this->revision_status === 'GRANTED';
+        return $this->revision_status === 'approved';
     }
 
     public function isRejected(): bool
     {
-        return $this->revision_status === 'REJECTED';
-    }
-
-    public function isNotGranted(): bool
-    {
-        return $this->revision_status === 'NOT_GRANTED';
+        return $this->revision_status === 'rejected';
     }
 
     public function isCompleted(): bool
     {
-        return in_array($this->revision_status, ['GRANTED', 'REJECTED', 'NOT_GRANTED']);
+        return in_array($this->revision_status, ['approved', 'rejected']);
     }
 }

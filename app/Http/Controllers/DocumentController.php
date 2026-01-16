@@ -175,7 +175,7 @@ class DocumentController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Document::query();
+        $query = Document::withTrashed(); // Include soft-deleted documents for revision history
 
         // Filter by tax_case_id if provided
         if ($request->has('tax_case_id')) {
@@ -195,9 +195,6 @@ class DocumentController extends Controller
             // Default: only show ACTIVE documents
             $query->where('status', 'ACTIVE');
         }
-
-        // Exclude soft-deleted records
-        $query->whereNull('deleted_at');
 
         // Order by upload date (newest first)
         $documents = $query->orderByDesc('uploaded_at')->get();

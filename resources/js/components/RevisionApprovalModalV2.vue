@@ -1,0 +1,491 @@
+<template>
+  <div v-if="visible" class="modal-overlay" @click.self="emit('close')">
+    <div class="modal-content modal-lg">
+      <div class="modal-header">
+        <h3>Review Revision Request</h3>
+        <button class="close-btn" @click="emit('close')">×</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Requested by info -->
+        <div class="info-section">
+          <p><strong>Requested by:</strong> {{ revision?.requested_by?.name }}</p>
+          <p><strong>Date:</strong> {{ formatDate(revision?.created_at) }}</p>
+          <p v-if="revision?.reason"><strong>Reason:</strong> {{ revision.reason }}</p>
+        </div>
+
+        <!-- Before-After Comparison -->
+        <div class="comparison-section">
+          <h4>Proposed Changes</h4>
+          
+          <div v-if="revision?.proposed_values && Object.keys(revision.proposed_values).length > 0" class="changes-list">
+            <div v-for="(newValue, field) in revision.proposed_values" :key="field" class="change-item">
+              <div class="field-name">{{ fieldLabel(field) }}</div>
+              <div class="before-after">
+                <div class="before">
+                  <span class="label">Current:</span>
+                  <span class="value">{{ getOriginalValue(field) }}</span>
+                </div>
+                <div class="arrow">→</div>
+                <div class="after">
+                  <span class="label">Proposed:</span>
+                  <span class="value">{{ newValue }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Document changes -->
+          <div v-if="revision?.proposed_document_changes" class="doc-changes">
+            <h5>Document Changes</h5>
+            
+            <div v-if="revision.proposed_document_changes.files_to_delete?.length > 0" class="delete-section">
+              <p class="text-danger"><strong>Files to delete:</strong></p>
+              <ul class="text-sm">
+                <li v-for="docId in revision.proposed_document_changes.files_to_delete" :key="docId">
+                  {{ getDocFileName(docId) }}
+                </li>
+              </ul>
+            </div>
+
+            <div v-if="revision.proposed_document_changes.files_to_add?.length > 0" class="add-section">
+              <p class="text-success"><strong>New files to upload:</strong></p>
+              <span class="text-sm">{{ revision.proposed_document_changes.files_to_add.length }} file(s)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Decision Section -->
+        <div class="decision-section">
+          <h4>Your Decision</h4>
+          
+          <div class="decision-options">
+            <button 
+              @click="selectedDecision = 'approve'" 
+              :class="['btn-option', { active: selectedDecision === 'approve' }]"
+            >
+              ✅ Approve & Apply Changes
+            </button>
+            <button 
+              @click="selectedDecision = 'reject'" 
+              :class="['btn-option', { active: selectedDecision === 'reject' }]"
+            >
+              ✗ Reject Changes
+            </button>
+          </div>
+
+          <!-- Rejection reason (if rejecting) -->
+          <div v-if="selectedDecision === 'reject'" class="rejection-reason">
+            <label>Rejection Reason</label>
+            <textarea 
+              v-model="rejectionReason" 
+              placeholder="Explain why you're rejecting this revision request..."
+              class="form-control"
+              rows="4"
+            />
+          </div>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="modal-footer">
+          <button 
+            @click="submitDecision" 
+            :disabled="!selectedDecision || (selectedDecision === 'reject' && !rejectionReason) || isSubmitting"
+            :class="['btn', selectedDecision === 'approve' ? 'btn-success' : 'btn-danger']"
+          >
+            <span v-if="isSubmitting">Processing...</span>
+            <span v-else>{{ selectedDecision === 'approve' ? 'Approve & Apply' : 'Reject' }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed } from 'vue'
+
+const props = defineProps({
+  visible: { type: Boolean, default: false },
+  revision: { type: Object, default: null },
+  caseId: { type: [String, Number], required: true },
+  allDocuments: { type: Array, default: () => [] }
+})
+
+const emit = defineEmits(['close', 'approved', 'rejected'])
+
+const selectedDecision = ref(null)
+const rejectionReason = ref('')
+const isSubmitting = ref(false)
+
+const formatDate = (date) => {
+  if (!date) return ''
+  return new Date(date).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+const fieldLabel = (field) => {
+  const labels = {
+    'period_id': 'Tax Period',
+    'currency_id': 'Currency',
+    'disputed_amount': 'Disputed Amount',
+    'supporting_docs': 'Supporting Documents'
+  }
+  return labels[field] || field
+}
+
+const getOriginalValue = (field) => {
+  if (!props.revision?.original_data) return 'N/A'
+  const value = props.revision.original_data[field]
+  return value !== null && value !== undefined ? value : 'N/A'
+}
+
+const getDocFileName = (docId) => {
+  const doc = props.allDocuments.find(d => d.id === docId)
+  return doc?.name || `Document #${docId}`
+}
+
+const submitDecision = async () => {
+  if (!selectedDecision.value) {
+    alert('Please select approve or reject')
+    return
+  }
+
+  isSubmitting.value = true
+  
+  try {
+    const payload = {
+      decision: selectedDecision.value,
+      ...(selectedDecision.value === 'reject' && { rejection_reason: rejectionReason.value })
+    }
+
+    const response = await fetch(`/api/tax-cases/${props.caseId}/revisions/${props.revision.id}/decide`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
+      },
+      body: JSON.stringify(payload)
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || 'Failed to process decision')
+    }
+
+    const data = await response.json()
+    
+    if (selectedDecision.value === 'approve') {
+      emit('approved', data.revision)
+    } else {
+      emit('rejected', data.revision)
+    }
+
+    // Close modal
+    emit('close')
+  } catch (error) {
+    console.error('Error submitting decision:', error)
+    alert(`Error: ${error.message}`)
+  } finally {
+    isSubmitting.value = false
+  }
+}
+</script>
+
+<style scoped>
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 8px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.modal-lg {
+  width: 90%;
+  max-width: 900px;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #666;
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.modal-footer {
+  padding: 20px;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.info-section {
+  background: #f5f5f5;
+  padding: 15px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+}
+
+.info-section p {
+  margin: 8px 0;
+  font-size: 0.9rem;
+}
+
+.comparison-section {
+  margin: 20px 0;
+}
+
+.comparison-section h4 {
+  font-size: 1rem;
+  margin-bottom: 15px;
+  color: #333;
+}
+
+.changes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.change-item {
+  background: #fafafa;
+  padding: 12px;
+  border-radius: 4px;
+  border-left: 3px solid #007bff;
+}
+
+.field-name {
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #333;
+}
+
+.before-after {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.85rem;
+}
+
+.before,
+.after {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.label {
+  font-size: 0.75rem;
+  color: #999;
+  text-transform: uppercase;
+}
+
+.value {
+  font-weight: 500;
+  color: #333;
+}
+
+.arrow {
+  color: #999;
+  font-weight: bold;
+}
+
+.doc-changes {
+  margin-top: 15px;
+  padding: 12px;
+  background: #f9f9f9;
+  border-radius: 4px;
+}
+
+.doc-changes h5 {
+  margin: 0 0 10px 0;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.delete-section,
+.add-section {
+  margin-bottom: 8px;
+}
+
+.delete-section p {
+  margin: 5px 0;
+  font-size: 0.85rem;
+}
+
+.add-section p {
+  margin: 5px 0;
+  font-size: 0.85rem;
+}
+
+.text-danger {
+  color: #dc3545;
+}
+
+.text-success {
+  color: #28a745;
+}
+
+.text-sm {
+  font-size: 0.85rem;
+}
+
+ul {
+  margin: 5px 0;
+  padding-left: 20px;
+}
+
+li {
+  margin: 3px 0;
+}
+
+.decision-section {
+  margin: 25px 0;
+  padding: 20px;
+  background: #f5f9ff;
+  border-radius: 4px;
+  border: 1px solid #d0e0ff;
+}
+
+.decision-section h4 {
+  margin-top: 0;
+  color: #333;
+}
+
+.decision-options {
+  display: flex;
+  gap: 10px;
+  margin: 15px 0;
+}
+
+.btn-option {
+  flex: 1;
+  padding: 12px;
+  border: 2px solid #ddd;
+  background: white;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.btn-option:hover {
+  border-color: #007bff;
+  background: #f0f8ff;
+}
+
+.btn-option.active {
+  border-color: #007bff;
+  background: #007bff;
+  color: white;
+}
+
+.rejection-reason {
+  margin-top: 15px;
+}
+
+.rejection-reason label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.form-control {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  resize: vertical;
+}
+
+.form-control:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
+.btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  font-weight: 500;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.3s ease;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: #6c757d;
+  color: white;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #5a6268;
+}
+
+.btn-success {
+  background: #28a745;
+  color: white;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: #218838;
+}
+
+.btn-danger {
+  background: #dc3545;
+  color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #c82333;
+}
+</style>

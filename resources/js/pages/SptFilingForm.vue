@@ -22,21 +22,21 @@
       :caseStatus="caseStatus"
       :preFilledMessage="preFilledMessage"
       :prefillData="prefillData"
-      @submit="handleSubmit"
-      @saveDraft="handleSaveDraft"
     />
 
     <!-- REVISION HISTORY PANEL - Integrated -->
-    <RevisionHistoryPanel 
-      v-if="!isLoading && currentUser"
-      :case-id="caseId"
-      :tax-case="{ submitted_at: prefillData.submitted_at }"
-      :revisions="revisions"
-      :current-user="currentUser"
-      :available-fields="availableFields"
-      @revision-requested="loadRevisions"
-      @refresh="loadRevisions"
-    />
+    <div class="px-4 py-6">
+      <RevisionHistoryPanel 
+        :case-id="caseId"
+        :tax-case="{ submitted_at: prefillData.submitted_at }"
+        :revisions="revisions"
+        :current-user="currentUser"
+        :current-documents="currentDocuments"
+        :available-fields="availableFields"
+        @revision-requested="loadRevisions"
+        @refresh="loadRevisions"
+      />
+    </div>
   </div>
 </template>
 
@@ -55,6 +55,7 @@ const isLoading = ref(true)
 const caseStatus = ref(null)
 const revisions = ref([])
 const currentUser = ref(null)
+const currentDocuments = ref([])
 
 const fields = ref([
   {
@@ -91,12 +92,12 @@ const fields = ref([
   }
 ])
 
-// Available fields untuk revisi
+// Available fields untuk revisi - hanya field yang bisa dirubah setelah submission
 const availableFields = [
-  'entity_name',
   'period_id',
   'currency_id',
-  'disputed_amount'
+  'disputed_amount',
+  'supporting_docs'
 ]
 
 // Cek apakah field sedang di-lock (tidak bisa diedit)
@@ -122,7 +123,8 @@ const prefillData = ref({
   entity_name: '',
   period_id: null,
   currency_id: null,
-  disputed_amount: null
+  disputed_amount: null,
+  submitted_at: null
 })
 
 onMounted(async () => {
@@ -166,7 +168,8 @@ onMounted(async () => {
       entity_name: caseData.entity_name || '',
       period_id: caseData.period_id,  // Ini akan di-bind langsung di StageForm
       currency_id: caseData.currency_id,  // Ini akan di-bind langsung di StageForm
-      disputed_amount: caseData.disputed_amount ? parseFloat(caseData.disputed_amount) : null
+      disputed_amount: caseData.disputed_amount ? parseFloat(caseData.disputed_amount) : null,
+      submitted_at: caseData.submitted_at || null  // Track submission status for revisions
     }
 
     caseNumber.value = caseData.case_number || 'N/A'
@@ -176,11 +179,32 @@ onMounted(async () => {
     // Load revisions untuk form ini
     await loadRevisions()
 
+    // Load documents
+    await loadDocuments()
+
     // Load current user info
     try {
       const userRes = await fetch('/api/user')
       if (userRes.ok) {
-        currentUser.value = await userRes.json()
+        const userData = await userRes.json()
+        console.log('User data from /api/user:', userData)
+        // Load user with role
+        if (userData.data) {
+          currentUser.value = userData.data
+        } else if (userData.id) {
+          currentUser.value = userData
+        }
+        console.log('Current user after assignment:', currentUser.value)
+        console.log('User role:', currentUser.value?.role)
+        // If role not loaded, try to fetch from user endpoint with role
+        if (!currentUser.value?.role) {
+          console.log('Role not loaded, trying /api/users/' + currentUser.value?.id)
+          const detailRes = await fetch(`/api/users/${currentUser.value?.id}`)
+          if (detailRes.ok) {
+            currentUser.value = await detailRes.json()
+            console.log('User after detail fetch:', currentUser.value)
+          }
+        }
       }
     } catch (err) {
       console.error('Failed to load user:', err)
@@ -200,24 +224,73 @@ const loadRevisions = async () => {
     
     if (!response.ok) {
       console.warn(`Failed to load revisions: ${response.status} ${response.statusText}`)
-      // Silently fail - revisions are optional
       revisions.value = []
       return
     }
     
     const data = await response.json()
     revisions.value = data.data || data || []
+    
+    // Also refresh tax case data to update fields if revision was approved
+    await refreshTaxCase()
   } catch (err) {
     console.error('Failed to load revisions:', err)
     revisions.value = []
   }
 }
 
-const handleSubmit = (event) => {
-  // Handle form submission
+// Refresh tax case data after approval
+const refreshTaxCase = async () => {
+  try {
+    const caseRes = await fetch(`/api/tax-cases/${caseId}`)
+    
+    if (!caseRes.ok) {
+      console.warn(`Failed to refresh tax case: ${caseRes.status}`)
+      return
+    }
+    
+    const caseResponse = await caseRes.json()
+    const caseData = caseResponse.data ? caseResponse.data : caseResponse
+    
+    // Update prefilled data dengan nilai terbaru
+    prefillData.value = {
+      entity_name: caseData.entity_name || '',
+      period_id: caseData.period_id,
+      currency_id: caseData.currency_id,
+      disputed_amount: caseData.disputed_amount ? parseFloat(caseData.disputed_amount) : null,
+      submitted_at: caseData.submitted_at || null
+    }
+    
+    caseNumber.value = caseData.case_number || 'N/A'
+    caseStatus.value = caseData.case_status_id
+  } catch (err) {
+    console.error('Failed to refresh tax case:', err)
+  }
 }
 
-const handleSaveDraft = (event) => {
-  // Handle draft saving
+// Load documents untuk case ini
+const loadDocuments = async () => {
+  try {
+    // Load all documents (all statuses) for revision history display
+    const response = await fetch(`/api/documents?tax_case_id=${caseId}&status=DRAFT,ACTIVE,ARCHIVED,DELETED`)
+    
+    if (!response.ok) {
+      console.warn(`Failed to load documents: ${response.status}`)
+      currentDocuments.value = []
+      return
+    }
+    
+    const data = await response.json()
+    currentDocuments.value = (data.data || data || []).map(doc => ({
+      id: doc.id,
+      name: doc.original_filename,
+      file_name: doc.original_filename,
+      original_filename: doc.original_filename,
+      size: doc.file_size ? (doc.file_size / 1024 / 1024).toFixed(2) : 'unknown'
+    }))
+  } catch (err) {
+    console.error('Failed to load documents:', err)
+    currentDocuments.value = []
+  }
 }
 </script>

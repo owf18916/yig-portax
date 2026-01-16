@@ -122,14 +122,10 @@ const canSubmit = computed(() => {
 
 const fieldLabel = (field) => {
   const labels = {
-    'spt_number': 'SPT Number',
-    'filing_date': 'Filing Date',
-    'received_date': 'Received Date',
-    'reported_amount': 'Reported Amount',
-    'disputed_amount': 'Disputed Amount',
-    'vat_in_amount': 'VAT In Amount',
-    'vat_out_amount': 'VAT Out Amount',
-    'description': 'Description'
+    'period_id': 'Fiscal Period',
+    'currency_id': 'Currency',
+    'disputed_amount': 'Disputed Amount (Nilai Sengketa)',
+    'supporting_docs': 'Supporting Documents'
   }
   return labels[field] || field
 }

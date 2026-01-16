@@ -31,47 +31,62 @@
         </div>
 
         <div class="revision-details">
-          <p><strong>Requested by:</strong> {{ revision.requested_by_details?.name || 'User #' + revision.requested_by }}</p>
+          <p><strong>Requested by:</strong> {{ revision.requested_by?.name || 'User #' + revision.requested_by_id }}</p>
           <p v-if="revision.reason"><strong>Reason:</strong> {{ revision.reason }}</p>
 
-          <!-- PENDING_APPROVAL State -->
-          <div v-if="revision.revision_status === 'PENDING_APPROVAL'" class="pending-section">
+          <!-- PENDING State -->
+          <div v-if="revision.revision_status === 'requested'" class="pending-section">
             <span class="status-icon warning-icon">⏳ Waiting for Holding approval...</span>
+            
+            <!-- Show approval button only for Holding users -->
+            <div v-if="isHoldingUser" class="approval-actions mt-3">
+              <button 
+                @click="openApprovalModal(revision)"
+                class="btn btn-sm btn-primary"
+              >
+                Review & Decide
+              </button>
+            </div>
           </div>
 
           <!-- APPROVED State -->
-          <div v-if="revision.revision_status === 'APPROVED'" class="approved-section">
-            <span class="status-icon success-icon">✓ Approved</span>
+          <div v-if="revision.revision_status === 'approved'" class="approved-section">
+            <span class="status-icon success-icon">✅ APPROVED - Changes Applied</span>
             <p v-if="revision.approved_at"><strong>Approved at:</strong> {{ formatDate(revision.approved_at) }}</p>
-            <p v-if="revision.approval_reason"><strong>Approval Reason:</strong> {{ revision.approval_reason }}</p>
+            <div v-if="revision.proposed_values" class="mt-2">
+              <strong>Proposed Changes:</strong>
+              <ul class="text-sm mt-1">
+                <li v-for="(value, field) in revision.proposed_values" :key="field">
+                  {{ fieldLabel(field) }}: {{ value }}
+                </li>
+              </ul>
+            </div>
+            <!-- Document Changes -->
+            <div v-if="revision.proposed_document_changes" class="mt-2">
+              <strong>Document Changes:</strong>
+              <div v-if="revision.proposed_document_changes.files_to_delete?.length > 0" class="text-sm mt-1">
+                <span class="text-danger"><strong>Deleted:</strong></span>
+                <ul class="mt-1">
+                  <li v-for="docId in revision.proposed_document_changes.files_to_delete" :key="`del-${docId}`">
+                    {{ getDocFileName(docId) }}
+                  </li>
+                </ul>
+              </div>
+              <div v-if="revision.proposed_document_changes.files_to_add?.length > 0" class="text-sm mt-1">
+                <span class="text-success"><strong>Added:</strong></span>
+                <ul class="mt-1">
+                  <li v-for="docId in revision.proposed_document_changes.files_to_add" :key="`add-${docId}`">
+                    {{ getDocFileName(docId) }}
+                  </li>
+                </ul>
+              </div>
+            </div>
           </div>
 
           <!-- REJECTED State -->
-          <div v-if="revision.revision_status === 'REJECTED'" class="rejected-section">
-            <span class="status-icon error-icon">✗ Rejected</span>
+          <div v-if="revision.revision_status === 'rejected'" class="rejected-section">
+            <span class="status-icon error-icon">✗ REJECTED</span>
             <p v-if="revision.rejection_reason"><strong>Rejection Reason:</strong> {{ revision.rejection_reason }}</p>
-          </div>
-
-          <!-- SUBMITTED State -->
-          <div v-if="revision.revision_status === 'SUBMITTED'" class="submitted-section">
-            <span class="status-icon warning-icon">⏳ Submitted, awaiting Holding decision...</span>
-            <p v-if="revision.submitted_at"><strong>Submitted at:</strong> {{ formatDate(revision.submitted_at) }}</p>
-          </div>
-
-          <!-- GRANTED State -->
-          <div v-if="revision.revision_status === 'GRANTED'" class="granted-section">
-            <span class="status-icon success-icon">✅ GRANTED - Data updated successfully</span>
-            <p v-if="revision.decided_at"><strong>Decided at:</strong> {{ formatDate(revision.decided_at) }}</p>
-            <p v-if="revision.decision_reason"><strong>Decision:</strong> {{ revision.decision_reason }}</p>
-            <button @click="showComparison(revision)" class="btn btn-info btn-sm">
-              📊 View Changes
-            </button>
-          </div>
-
-          <!-- NOT_GRANTED State -->
-          <div v-if="revision.revision_status === 'NOT_GRANTED'" class="not-granted-section">
-            <span class="status-icon error-icon">✗ NOT GRANTED</span>
-            <p v-if="revision.decision_reason"><strong>Reason:</strong> {{ revision.decision_reason }}</p>
             <p class="text-muted text-sm">You can request a new revision with updated information</p>
           </div>
         </div>
@@ -84,10 +99,11 @@
     </div>
 
     <!-- Request Revision Modal -->
-    <RequestRevisionModal 
+    <RequestRevisionModalV2
       v-if="showRequestModal"
       :case-id="caseId"
       :available-fields="availableFields"
+      :current-documents="currentDocuments"
       @submit="onRevisionRequested"
       @close="showRequestModal = false"
     />
@@ -98,30 +114,39 @@
       :revision="selectedRevision"
       @close="selectedRevision = null"
     />
+
+    <!-- Revision Approval Modal (for Holding) -->
+    <RevisionApprovalModalV2
+      :visible="showApprovalModal"
+      :revision="revisionToApprove"
+      :case-id="caseId"
+      :all-documents="currentDocuments"
+      @close="showApprovalModal = false"
+      @approved="onRevisionApproved"
+      @rejected="onRevisionRejected"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import RequestRevisionModal from './RequestRevisionModal.vue'
+import { ref, computed, watch } from 'vue'
+import RequestRevisionModalV2 from './RequestRevisionModalV2.vue'
 import BeforeAfterComparison from './BeforeAfterComparison.vue'
+import RevisionApprovalModalV2 from './RevisionApprovalModalV2.vue'
 
 const props = defineProps({
   caseId: { type: Number, required: true },
   taxCase: { type: Object, required: true },
   revisions: { type: Array, default: () => [] },
-  currentUser: { type: Object, required: true },
+  currentUser: { type: Object, default: null },
+  currentDocuments: { type: Array, default: () => [] },
   availableFields: { 
     type: Array, 
     default: () => [
-      'spt_number',
-      'filing_date',
-      'received_date',
-      'reported_amount',
+      'period_id',
+      'currency_id',
       'disputed_amount',
-      'vat_in_amount',
-      'vat_out_amount',
-      'description'
+      'supporting_docs'
     ]
   }
 })
@@ -130,17 +155,33 @@ const emit = defineEmits(['revision-requested', 'refresh'])
 
 const showRequestModal = ref(false)
 const selectedRevision = ref(null)
+const showApprovalModal = ref(false)
+const revisionToApprove = ref(null)
+
+// Debug: Log revisions when they change
+watch(() => props.revisions, (newVal) => {
+  console.log('Revisions updated:', newVal)
+  if (newVal.length > 0) {
+    console.log('First revision:', newVal[0])
+    console.log('requested_by:', newVal[0].requested_by)
+  }
+}, { deep: true })
+
+// Debug: Log currentUser
+watch(() => props.currentUser, (newVal) => {
+  console.log('Current user updated:', newVal)
+  console.log('User role:', newVal?.role)
+  console.log('Is Holding:', isHoldingUser.value)
+}, { deep: true })
 
 // Check if user can request new revision
 const canRequestRevision = computed(() => {
   // Data must be submitted
   if (!props.taxCase.submitted_at) return false
   
-  // No in-progress revisions
-  const inProgress = props.revisions.find(r => 
-    ['PENDING_APPROVAL', 'APPROVED', 'SUBMITTED'].includes(r.revision_status)
-  )
-  return !inProgress
+  // No pending revisions
+  const pending = props.revisions.find(r => r.revision_status === 'requested')
+  return !pending
 })
 
 // Message for why button is disabled
@@ -149,14 +190,8 @@ const revisionStatusMessage = computed(() => {
     return '(Submit data first to request revisions)'
   }
   
-  const pending = props.revisions.find(r => r.revision_status === 'PENDING_APPROVAL')
-  if (pending) return `(Revision #${pending.id} awaiting approval)`
-  
-  const approved = props.revisions.find(r => r.revision_status === 'APPROVED')
-  if (approved) return `(Revision #${approved.id} awaiting submission)`
-  
-  const submitted = props.revisions.find(r => r.revision_status === 'SUBMITTED')
-  if (submitted) return `(Revision #${submitted.id} awaiting decision)`
+  const pending = props.revisions.find(r => r.revision_status === 'requested')
+  if (pending) return `(Revision #${pending.id} awaiting review)`
   
   return ''
 })
@@ -168,39 +203,58 @@ const sortedRevisions = computed(() => {
   )
 })
 
+// Get current documents (for revision modal)
+const currentDocuments = computed(() => {
+  return props.currentDocuments || []
+})
+
+// Check if current user is from Holding entity (can approve/reject revisions)
+const isHoldingUser = computed(() => {
+  if (!props.currentUser) return false
+  const entityType = props.currentUser?.entity?.entity_type
+  console.log('Entity type check:', entityType, 'isHolding:', entityType === 'HOLDING')
+  return entityType === 'HOLDING'
+})
+
 const statusClass = (status) => {
   const classMap = {
-    'PENDING_APPROVAL': 'warning',
-    'APPROVED': 'info',
-    'REJECTED': 'danger',
-    'SUBMITTED': 'warning',
-    'GRANTED': 'success',
-    'NOT_GRANTED': 'danger'
+    'requested': 'warning',
+    'approved': 'success',
+    'rejected': 'danger',
+    'implemented': 'info'
   }
   return classMap[status] || 'secondary'
 }
 
 const statusLabel = (status) => {
   const labelMap = {
-    'PENDING_APPROVAL': '⏳ Awaiting Approval',
-    'APPROVED': '✓ Approved',
-    'REJECTED': '✗ Rejected',
-    'SUBMITTED': '⏳ Awaiting Decision',
-    'GRANTED': '✅ GRANTED',
-    'NOT_GRANTED': '✗ NOT GRANTED'
+    'requested': '⏳ Awaiting Review',
+    'approved': '✅ APPROVED',
+    'rejected': '✗ REJECTED',
+    'implemented': '✓ Implemented'
   }
   return labelMap[status] || status
 }
 
 const formatDate = (date) => {
   if (!date) return '-'
-  return new Date(date).toLocaleDateString('id-ID', {
+  return new Date(date).toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit'
   })
+}
+
+const fieldLabel = (field) => {
+  const labels = {
+    'period_id': 'Tax Period',
+    'currency_id': 'Currency',
+    'disputed_amount': 'Disputed Amount',
+    'supporting_docs': 'Supporting Documents'
+  }
+  return labels[field] || field
 }
 
 const showComparison = (revision) => {
@@ -211,6 +265,28 @@ const onRevisionRequested = (revision) => {
   showRequestModal.value = false
   emit('revision-requested', revision)
   emit('refresh')
+}
+
+const openApprovalModal = (revision) => {
+  revisionToApprove.value = revision
+  showApprovalModal.value = true
+}
+
+const onRevisionApproved = (revision) => {
+  showApprovalModal.value = false
+  revisionToApprove.value = null
+  emit('refresh')
+}
+
+const onRevisionRejected = (revision) => {
+  showApprovalModal.value = false
+  revisionToApprove.value = null
+  emit('refresh')
+}
+
+const getDocFileName = (docId) => {
+  const doc = props.currentDocuments.find(d => d.id === docId)
+  return doc ? (doc.file_name || doc.name || doc.original_filename) : `Doc #${docId}`
 }
 </script>
 
@@ -378,6 +454,41 @@ const onRevisionRequested = (revision) => {
   text-align: center;
   padding: 20px;
   color: #9ca3af;
+}
+
+.approval-actions {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.btn {
+  padding: 8px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: #3b82f6;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #2563eb;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.btn-sm {
+  padding: 6px 10px;
+  font-size: 0.8rem;
+}
+
+.mt-3 {
+  margin-top: 12px;
 }
 
 .btn {

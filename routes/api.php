@@ -2,10 +2,13 @@
 
 use App\Models\TaxCase;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\Api\EntityController;
 use App\Http\Controllers\Api\TaxCaseController;
+use App\Http\Controllers\Api\RevisionController;
 use App\Http\Controllers\Api\SkpRecordController;
 use App\Http\Controllers\Api\Sp2RecordController;
 use App\Http\Controllers\Api\FiscalYearController;
@@ -19,11 +22,9 @@ use App\Http\Controllers\Api\AppealSubmissionController;
 use App\Http\Controllers\Api\ObjectionDecisionController;
 use App\Http\Controllers\Api\DashboardAnalyticsController;
 use App\Http\Controllers\Api\ObjectionSubmissionController;
-use App\Http\Controllers\Api\RevisionController;
 use App\Http\Controllers\Api\SupremeCourtDecisionController;
 use App\Http\Controllers\Api\SupremeCourtSubmissionController;
 use App\Http\Controllers\Api\AppealExplanationRequestController;
-use App\Http\Controllers\DocumentController;
 
 // ============================================================================
 // AUTHENTICATION ROUTES - Public
@@ -109,8 +110,19 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         
         // Generic workflow endpoint for all stages - save draft or submit
         Route::post('/workflow/{stage}', function (Request $request, TaxCase $taxCase, $stage) {
-            $isDraft = $request->has('draft') && $request->get('draft') === 'true';
+            // Determine action from request body - must explicitly check for 'draft'
+            $action = $request->input('action');
+            $isDraft = ($action === 'draft') || ($action === null && $request->boolean('is_draft', false));
             $user = auth()->user();
+            
+            // DEBUG: Log the request to help troubleshoot
+            Log::info('Workflow endpoint called', [
+                'stage' => $stage,
+                'action' => $action,
+                'isDraft' => $isDraft,
+                'case_id' => $taxCase->id,
+                'request_all' => $request->all()
+            ]);
             
             // Update tax case with form data (only updatable fields)
             $updateData = [];
@@ -119,7 +131,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
             if ($request->has('disputed_amount')) $updateData['disputed_amount'] = $request->input('disputed_amount');
             
             if ($isDraft) {
-                // For draft, just update the data
+                // For draft, ONLY update the specific fields, DO NOT change case status
                 if (!empty($updateData)) {
                     $taxCase->update($updateData);
                 }
@@ -244,7 +256,8 @@ Route::middleware('auth')->group(function () {
     });
 
     Route::get('/user', function (Request $request) {
-        return response()->json($request->user());
+        $user = $request->user()->load(['role', 'entity']);
+        return response()->json($user);
     });
 
     // ============================================================================

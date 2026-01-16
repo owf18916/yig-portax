@@ -165,9 +165,10 @@ const formatDate = (date) => {
 
 const statusClass = (status) => {
   const classMap = {
-    'PENDING_APPROVAL': 'warning',
-    'APPROVED': 'info',
-    'REJECTED': 'danger',
+    'requested': 'warning',
+    'approved': 'info',
+    'rejected': 'danger',
+    'implemented': 'success',
     'SUBMITTED': 'warning',
     'GRANTED': 'success',
     'NOT_GRANTED': 'danger'
@@ -177,9 +178,10 @@ const statusClass = (status) => {
 
 const statusLabel = (status) => {
   const labelMap = {
-    'PENDING_APPROVAL': '⏳ Awaiting Approval',
-    'APPROVED': '✓ Approved',
-    'REJECTED': '✗ Rejected',
+    'requested': '⏳ Awaiting Approval',
+    'approved': '✓ Approved',
+    'rejected': '✗ Rejected',
+    'implemented': '✅ Implemented',
     'SUBMITTED': '⏳ Awaiting Decision',
     'GRANTED': '✅ GRANTED',
     'NOT_GRANTED': '✗ NOT GRANTED'

@@ -29,8 +29,8 @@ class RevisionPolicy
             'role_name' => $roleName,
         ]);
 
-        // Allow all actions for ADMIN/Administrator/Holding role
-        if ($roleName && in_array($roleName, ['ADMIN', 'Administrator', 'admin', 'HOLDING', 'Holding'])) {
+        // Allow all actions for Administrator role
+        if ($roleName && in_array($roleName, ['ADMIN', 'Administrator', 'admin'])) {
             return true;
         }
 
@@ -63,14 +63,17 @@ class RevisionPolicy
      */
     public function approve(User $user, Revision $revision): bool
     {
-        $roleName = $user->role ? $user->role->name : null;
-
-        // Only Holding can approve revision requests
-        if (!in_array($roleName, ['HOLDING', 'Holding'])) {
+        // Check if user's entity is a Holding
+        if (!$user->entity_id) {
+            return false;
+        }
+        
+        $userEntity = $user->load('entity')->entity;
+        if (!$userEntity || $userEntity->entity_type !== 'HOLDING') {
             return false;
         }
 
-        // Only can approve if status is PENDING_APPROVAL
+        // Only can approve if status is pending (requested)
         return $revision->isPending();
     }
 
@@ -95,15 +98,18 @@ class RevisionPolicy
      */
     public function decide(User $user, Revision $revision): bool
     {
-        $roleName = $user->role ? $user->role->name : null;
-
-        // Only Holding can decide on revisions
-        if (!in_array($roleName, ['HOLDING', 'Holding'])) {
+        // Check if user's entity is a Holding
+        if (!$user->entity_id) {
+            return false;
+        }
+        
+        $userEntity = $user->load('entity')->entity;
+        if (!$userEntity || $userEntity->entity_type !== 'HOLDING') {
             return false;
         }
 
-        // Only can decide if status is SUBMITTED
-        return $revision->isSubmitted();
+        // Only can decide if status is pending (requested)
+        return $revision->isPending();
     }
 
     /**

@@ -245,7 +245,7 @@
                   <p class="text-xs font-medium text-gray-700">{{ uploadedFiles.length }} file(s):</p>
                   <div v-for="file in uploadedFiles" :key="file.id" class="flex items-center justify-between p-1.5 bg-gray-50 rounded border border-gray-200 hover:bg-blue-50 cursor-pointer transition text-xs" @click="viewDocument(file.id, file.name)">
                     <div class="flex items-center space-x-1.5 flex-1 min-w-0">
-                      <span class="text-base flex-shrink-0">📄</span>
+                      <span class="text-base shrink-0">📄</span>
                       <div class="flex-1 min-w-0">
                         <p class="font-medium text-gray-900 truncate text-xs">{{ file.name }}</p>
                         <p class="text-xs text-gray-500">{{ file.size }} MB • <span :class="[
@@ -253,7 +253,7 @@
                         ]">{{ file.status }}</span></p>
                       </div>
                     </div>
-                    <div class="flex items-center space-x-0.5 flex-shrink-0 ml-1">
+                    <div class="flex items-center space-x-0.5 shrink-0 ml-1">
                       <!-- Remove button (only when case status is 1 = CREATED and form not submitted) -->
                       <button
                         v-if="caseStatus === 1 && !submissionComplete"
@@ -280,13 +280,13 @@
 
             <!-- Submit Buttons -->
             <div class="flex gap-1 pt-2 border-t">
-              <Button type="submit" variant="primary" :disabled="submitting || isLoading || (caseStatus && caseStatus > 1)" class="text-xs px-2 py-1.5">
+              <Button type="submit" variant="primary" :disabled="submitting || isLoading || caseStatus > 1 || submissionComplete" class="text-xs px-2 py-1.5">
                 {{ submitting ? 'Submitting...' : 'Submit & Continue' }}
               </Button>
-              <Button @click="saveDraft" variant="secondary" :disabled="submitting || isLoading || (caseStatus && caseStatus > 1)" class="text-xs px-2 py-1.5">
+              <Button type="button" @click="saveDraft" variant="secondary" :disabled="submitting || isLoading || caseStatus > 1 || submissionComplete" class="text-xs px-2 py-1.5">
                 Save as Draft
               </Button>
-              <Button @click="$router.back()" variant="secondary" :disabled="isLoading" class="text-xs px-2 py-1.5">
+              <Button type="button" @click="$router.back()" variant="secondary" :disabled="isLoading" class="text-xs px-2 py-1.5">
                 Cancel
               </Button>
             </div>
@@ -713,19 +713,6 @@ const handleConfirm = async () => {
   pendingAction.value = null
 }
 
-const downloadFile = (fileId, fileName) => {
-  // Construct the download URL
-  const downloadUrl = `/api/documents/${fileId}/download`
-  
-  // Create a temporary link and click it
-  const link = document.createElement('a')
-  link.href = downloadUrl
-  link.download = fileName || `document-${fileId}`
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-}
-
 const viewDocument = (fileId, fileName) => {
   // Set the PDF viewer with the document
   selectedPdfId.value = fileId
@@ -817,6 +804,17 @@ const executeSubmitForm = async () => {
     // Get CSRF token from meta tag
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
 
+    const payload = {
+      ...formData,
+      stage_id: props.stageId,
+      case_id: props.caseId,
+      action: 'submit',
+      is_draft: false
+    }
+    
+    // DEBUG: Log the request payload
+    console.log('📤 Sending SUBMIT request with payload:', payload)
+
     // Submit form to backend
     const response = await fetch(`/api/tax-cases/${props.caseId}/workflow/${props.stageId}`, {
       method: 'POST',
@@ -825,12 +823,7 @@ const executeSubmitForm = async () => {
         ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken })
       },
       credentials: 'include',
-      body: JSON.stringify({
-        ...formData,
-        stage_id: props.stageId,
-        case_id: props.caseId,
-        status: 'submitted'
-      })
+      body: JSON.stringify(payload)
     })
 
     if (!response.ok) {
@@ -890,20 +883,26 @@ const executeSaveDraft = async () => {
     // Get CSRF token from meta tag
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
 
+    const payload = {
+      ...formData,
+      stage_id: props.stageId,
+      case_id: props.caseId,
+      action: 'draft',
+      is_draft: true
+    }
+    
+    // DEBUG: Log the request payload
+    // console.log('📤 Sending DRAFT request with payload:', payload)
+
     // Save draft to backend
-    const response = await fetch(`/api/tax-cases/${props.caseId}/workflow/${props.stageId}?draft=true`, {
+    const response = await fetch(`/api/tax-cases/${props.caseId}/workflow/${props.stageId}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken })
       },
       credentials: 'include',
-      body: JSON.stringify({
-        ...formData,
-        stage_id: props.stageId,
-        case_id: props.caseId,
-        status: 'draft'
-      })
+      body: JSON.stringify(payload)
     })
 
     if (!response.ok) {

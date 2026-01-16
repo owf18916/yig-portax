@@ -232,7 +232,7 @@ const getMainClasses = () => {
       @click="viewDocument(file.id, file.name)">
       
       <div class="flex items-center space-x-1.5 flex-1 min-w-0">
-        <span class="text-base flex-shrink-0">📄</span>
+        <span class="text-base shrink-0">📄</span>
         <div class="flex-1 min-w-0">
           <p class="font-medium text-gray-900 truncate text-xs">{{ file.name }}</p>
           <p class="text-xs text-gray-500">
@@ -244,7 +244,7 @@ const getMainClasses = () => {
         </div>
       </div>
       
-      <div class="flex items-center space-x-0.5 flex-shrink-0 ml-1">
+      <div class="flex items-center space-x-0.5 shrink-0 ml-1">
         <!-- Remove button (locked after submission) -->
         <button v-if="caseStatus === 1 && !submissionComplete"
           @click.stop="removeFile(file.id)"
@@ -285,13 +285,13 @@ const getMainClasses = () => {
     {{ submitting ? 'Submitting...' : 'Submit & Continue' }}
   </Button>
   
-  <Button @click="saveDraft" variant="secondary" 
+  <Button type="button" @click="saveDraft" variant="secondary" 
     :disabled="submitting || isLoading || (caseStatus && caseStatus > 1)" 
     class="text-xs px-2 py-1.5">
     Save as Draft
   </Button>
   
-  <Button @click="$router.back()" variant="secondary" 
+  <Button type="button" @click="$router.back()" variant="secondary" 
     :disabled="isLoading" 
     class="text-xs px-2 py-1.5">
     Cancel
@@ -302,12 +302,26 @@ const getMainClasses = () => {
 **Rules:**
 - **Gap:** `gap-1` (minimal spacing)
 - **Sizing:** `text-xs px-2 py-1.5` (compact)
+- **Button Types - CRITICAL:**
+  - Submit button: `type="submit"` (triggers form submission and calls submitForm handler)
+  - Draft button: `type="button"` (calls saveDraft handler ONLY, does NOT trigger form submission)
+  - Cancel button: `type="button"` (calls router.back ONLY, does NOT trigger form submission)
+- **Why This Matters:** Without explicit `type="button"`, buttons inside `<form>` default to `type="submit"` behavior, causing unintended form submission
 - **Disabled Conditions:**
   - `:disabled="submitting || isLoading || (caseStatus && caseStatus > 1)"`
   - Prevent double-submit
   - Prevent edit when case already submitted
 - **Button Order:** Submit → Draft → Cancel
 - **Loading State:** Show "Submitting..." text
+
+**Common Mistake (See Obstacle 19):**
+```vue
+<!-- ❌ WRONG - Save as Draft implicitly type="submit" -->
+<Button @click="saveDraft" ...>Save as Draft</Button>
+
+<!-- ✅ CORRECT - Explicit type="button" -->
+<Button type="button" @click="saveDraft" ...>Save as Draft</Button>
+```
 
 ---
 
@@ -1816,6 +1830,512 @@ showToast('Error', 'Upload failed', 'error')  // Auto 5s
 
 ---
 
+#### Obstacle 19: Non-Submit Buttons Triggering Form Submit Event
+**Problem:** "Save as Draft" and "Cancel" buttons were placed inside `<form @submit.prevent="submitForm">` without explicit `type="button"` attribute. This caused them to implicitly act as submit buttons, triggering the form's submit event handler even though their `@click` handlers were different.
+
+---
+
+#### Obstacle 20: Missing Model Relationships Referenced in API Responses
+**Problem:** Backend code tried to load relationship `appealDecision` on TaxCase model that was never defined. This caused `RelationNotFoundException` when API attempted to load related data.
+
+**Symptoms:**
+- API error: "Call to undefined relationship [appealDecision] on model [App\Models\TaxCase]"
+- 500 error response when loading tax case details
+- Cannot fetch revisions or related data
+
+**Root Cause:** 
+1. Frontend expected `appealDecision` relationship but it was never created in model
+2. Controller tried to load non-existent relationship
+3. Backend response incomplete
+
+**Solution Implemented:**
+```php
+// In app/Models/TaxCase.php - Add missing relationship
+public function appealDecision(): HasOne
+{
+    return $this->hasOne(AppealDecision::class);
+}
+```
+
+**Prevention Rule:**
+1. Before using any relationship in API response (with/load), ensure it's defined in model
+2. Match relationship name EXACTLY as written in with() clause
+3. Audit all controller load() calls against model relationships
+4. Add new relationships alongside existing ones, group by type (HasOne, HasMany, BelongsTo)
+
+**Lesson for Next Stages:** 
+- Always define relationships before referencing them
+- Check Model relationships list before writing API code
+- Test relationship loading with actual data to catch undefined relationships early
+- Use Laravel debugbar or logs to verify relationships are loaded
+
+---
+
+#### Obstacle 21: Authorization Policy Overly Complex
+**Problem:** Implemented complex RevisionPolicy with multiple role checks, case ownership checks, entity matching, etc. Despite this complexity, it failed mysteriously with 403 Forbidden errors that were hard to debug.
+
+**Symptoms:**
+- 403 Forbidden responses with minimal error information
+- Authorization succeeds sometimes, fails other times
+- Difficult to debug which condition was failing
+- Complex logic hard to test thoroughly
+
+**Root Cause:**
+1. Built multi-layered authorization logic (before() method + viewAny() method)
+2. Laravel's `before()` only works with single-parameter methods, not methods with model parameters
+3. Role name case sensitivity issues ('Administrator' vs 'ADMIN')
+4. Too many conditional branches, hard to test all combinations
+
+**Solution Implemented:**
+Instead of complex policy with multiple conditions, use **simple authentication check**:
+```php
+// Simple approach: User just needs to be authenticated
+public function listRevisions(TaxCase $taxCase): JsonResponse
+{
+    // Ensure user is authenticated
+    if (!auth()->user()) {
+        return response()->json(['error' => 'Unauthorized'], 401);
+    }
+    
+    // Load role relationship
+    $user = auth()->user();
+    if (!$user->relationLoaded('role')) {
+        $user->load('role');
+    }
+    
+    // That's it - allow all authenticated users to view revisions
+    // Actual access control happens at tax case level (can they access the case?)
+    
+    $revisions = $taxCase->revisions()
+        ->with(['requestedBy', 'approvedBy', 'submittedBy', 'decidedBy'])
+        ->orderByDesc('created_at')
+        ->get();
+    
+    return response()->json(['data' => $revisions, 'success' => true]);
+}
+```
+
+**Why Simple is Better:**
+1. **Easier to debug:** One simple condition to check
+2. **Fewer edge cases:** No complex role/entity matching logic
+3. **Safer layered approach:** Tax case access is already controlled elsewhere (routes/middleware), so additional authorization here is redundant
+4. **Faster to audit:** Can quickly verify authentication is working
+
+**Don't Use Policy For:**
+- ❌ Revisions access (already protected by tax case access)
+- ❌ General list endpoints (authentication sufficient)
+- ❌ Resource-level checks that depend on multiple factors
+
+**DO Use Policy For:**
+- ✅ Sensitive operations (delete, approve, publish)
+- ✅ Role-specific actions (only admin can edit, only holding can approve)
+- ✅ Complex ownership/entity checks
+
+**Lesson for Next Stages:**
+1. Start with simple authentication, add complexity only if needed
+2. Don't stack policies (before() + method-level) - use one clear path
+3. Test policy with actual role data, not assumptions
+4. Log authorization attempts for debugging
+5. Consider if policy is needed at all - sometimes authentication is enough
+
+---
+
+#### Obstacle 22: XMLHttpRequest Event Listener Setup Order Issues
+**Problem:** PDF file upload progress bar wasn't tracking, and unhandled promise rejections were occurring. The issue was in the order of XMLHttpRequest setup.
+
+**Symptoms:**
+- Upload progress bar stuck at 0%
+- "Unhandled Promise Rejection: InvalidStateError: The object is in an invalid state" in console
+- File uploads sometimes failing silently
+- No error feedback to user
+
+**Root Cause:**
+```javascript
+// WRONG ORDER: Error in load event handler not caught
+xhr.upload.addEventListener('progress', (e) => { ... })
+
+xhr.addEventListener('load', () => {
+  // ❌ Throwing error directly, not properly rejecting promise
+  throw new Error('...')  
+})
+
+xhr.addEventListener('error', () => { ... })
+
+// ❌ Call open() AFTER adding listeners (sometimes listeners missed)
+xhr.open('POST', '/api/documents')
+xhr.send(formData)
+```
+
+Issues:
+1. `throw` in event handler doesn't properly reject promise
+2. Error handling in load event not wrapped in try-catch
+3. Proper lifecycle: listeners THEN open THEN send
+
+**Solution Implemented:**
+```javascript
+const uploadFile = async (file) => {
+  return new Promise((resolve, reject) => {
+    try {
+      const formData = new FormData()
+      // ... form data setup ...
+      
+      const xhr = new XMLHttpRequest()
+      const fileId = `${file.name}-${Date.now()}`
+      
+      // STEP 1: Set up ALL event listeners FIRST
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          const percentComplete = Math.round((e.loaded / e.total) * 100)
+          uploadProgress.value = percentComplete
+        }
+      })
+      
+      xhr.addEventListener('load', () => {
+        try {
+          // ✅ Wrap handler logic in try-catch
+          if (xhr.status >= 200 && xhr.status < 300) {
+            const result = JSON.parse(xhr.responseText)
+            uploadedFiles.value.push({ ... })
+            resolve(result)
+          } else {
+            // ✅ Use reject(), not throw
+            try {
+              const errorData = JSON.parse(xhr.responseText)
+              reject(new Error(errorData.message || 'Upload failed'))
+            } catch (parseError) {
+              reject(new Error('Upload failed with status ' + xhr.status))
+            }
+          }
+        } catch (error) {
+          // ✅ Catch any errors in load handler
+          reject(error)
+        }
+      })
+      
+      xhr.addEventListener('error', () => {
+        reject(new Error('Network error during upload'))
+      })
+      
+      xhr.addEventListener('abort', () => {
+        reject(new Error('Upload cancelled'))
+      })
+      
+      // STEP 2: THEN call open()
+      xhr.open('POST', '/api/documents')
+      xhr.withCredentials = true
+      
+      // STEP 3: Set headers (after open, before send)
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+      if (csrfToken) {
+        xhr.setRequestHeader('X-CSRF-TOKEN', csrfToken)
+      }
+      
+      // STEP 4: Finally send()
+      xhr.send(formData)
+      
+    } catch (error) {
+      reject(error)
+    }
+  })
+}
+```
+
+**XMLHttpRequest Lifecycle (Critical Order):**
+```
+1. Create xhr = new XMLHttpRequest()
+2. Attach event listeners (progress, load, error, abort)
+3. Call xhr.open(method, url)
+4. Set request headers
+5. Call xhr.send(data)
+```
+
+**If you deviate from this order:**
+- Listeners attached after open() might not trigger
+- Calling open() again throws "InvalidStateError"
+- Headers set after send() are ignored
+
+**Lesson for Next Stages:**
+1. **Always set up listeners BEFORE open()** - this is critical
+2. **Never throw in event handlers** - use reject() for promises
+3. **Wrap all handler logic in try-catch** - errors in handlers can be swallowed
+4. **Test upload progress** - actually verify progress bar moves, not just exists
+5. **Test error scenarios** - test network errors, server errors, client validation
+6. **Test large files** - verify progress bar with files > 1MB to see actual progress events
+
+---
+
+#### Obstacle 23: Role Name Case Sensitivity in Authorization
+**Problem:** Authorization checks assumed exact role name match ('ADMIN'), but database had role name as 'Administrator' with mixed case. This caused all authorization checks to fail silently.
+
+**Symptoms:**
+- 403 Forbidden error for user with Administrator role
+- Error only appeared in logs with role name: "Administrator"
+- Authorization worked for some operations, failed for others
+- Difficult to debug because role was loaded correctly, just name didn't match
+
+**Root Cause:**
+```php
+// WRONG: Assumes exact case match
+if ($user->hasRole('ADMIN')) {  // Checks for UPPERCASE
+    return true;
+}
+
+// But database has:
+// roles table: name = 'Administrator'  // Mixed case
+
+// Result: 'Administrator' !== 'ADMIN' → Authorization failed
+```
+
+**Solution Implemented:**
+```php
+// CORRECT: Handle multiple case variations
+$roleName = $user->role ? $user->role->name : null;
+
+// Check multiple variations
+if ($roleName && in_array($roleName, [
+    'ADMIN', 
+    'Administrator',  // Mixed case
+    'admin',          // Lowercase
+    'HOLDING',
+    'Holding'
+])) {
+    return true;
+}
+
+// OR: Case-insensitive comparison
+if ($roleName && strtolower($roleName) === strtolower('administrator')) {
+    return true;
+}
+```
+
+**User Model hasRole() Method:**
+```php
+public function hasRole($roles): bool
+{
+    if (!$this->role) return false;
+    
+    if (is_string($roles)) {
+        // Case-insensitive comparison for single role
+        return strtolower($this->role->name) === strtolower($roles);
+    }
+    
+    if (is_array($roles)) {
+        // Check against array of role names
+        $userRoleLower = strtolower($this->role->name);
+        return in_array(
+            $userRoleLower, 
+            array_map('strtolower', $roles)
+        );
+    }
+    
+    return false;
+}
+```
+
+**How to Prevent:**
+1. **Document all valid role names** - create constant in codebase:
+   ```php
+   const ROLE_ADMIN = 'Administrator';
+   const ROLE_HOLDING = 'Holding';
+   const ROLE_USER = 'User';
+   
+   // Then use constants everywhere
+   if ($user->hasRole(self::ROLE_ADMIN)) { ... }
+   ```
+
+2. **Always load role relationship** - ensure role is loaded before checking:
+   ```php
+   $user = auth()->user();
+   if (!$user->relationLoaded('role')) {
+       $user->load('role');
+   }
+   ```
+
+3. **Add debug logging** - log what you're actually comparing:
+   ```php
+   Log::debug('Authorization check', [
+       'user_id' => $user->id,
+       'role_name' => $user->role?->name,
+       'role_loaded' => (bool)$user->role,
+   ]);
+   ```
+
+4. **Test with actual data** - don't assume role names, verify in database:
+   ```sql
+   SELECT DISTINCT name FROM roles;
+   -- Verify exact case and spelling
+   ```
+
+**Lesson for Next Stages:**
+1. **Never hardcode role names** - use constants
+2. **Always load role relationship** before checking roles
+3. **Handle case variations** in authorization checks
+4. **Log authorization attempts** for debugging
+5. **Test with actual production role data** - don't assume
+6. **Database audit** - verify all role names in production match your code expectations
+
+---
+
+#### Obstacle 24: Vue Component Prop Type Mismatch
+**Problem:** Parent component passed `caseId` as String but child component expected Number. This caused Vue warnings and potential bugs.
+
+**Symptoms:**
+- Vue console warning: "Invalid prop: type check failed for prop 'caseId'. Expected Number with value 1, got String with value '1'."
+- Child component received string "1" instead of number 1
+- String/number comparisons would fail in conditionals
+
+**Root Cause:**
+```javascript
+// In parent (SptFilingForm.vue)
+const route = useRoute()
+const caseId = route.params.id  // ❌ Always string from URL params
+
+// In child (StageForm.vue)
+const props = defineProps({
+  caseId: { type: String, required: true }  // ❌ Different type!
+})
+
+// Result: String mismatch warning
+```
+
+**Solution Implemented:**
+```javascript
+// In parent (SptFilingForm.vue)
+const route = useRoute()
+const caseId = parseInt(route.params.id, 10)  // ✅ Convert to number
+
+// Pass to child
+<StageForm :case-id="caseId" ... />
+
+// In child (StageForm.vue)
+const props = defineProps({
+  caseId: { type: Number, required: true }  // ✅ Match parent type
+})
+
+// Now usages work correctly
+const url = `/api/tax-cases/${props.caseId}/documents`  // Proper number
+```
+
+**Why This Matters:**
+1. **Type safety:** Vue catches type errors at development time
+2. **Bug prevention:** String "5" !== Number 5 in comparisons
+3. **Code clarity:** Type hints document expected data
+4. **Component reusability:** Clear contract between parent/child
+
+**Best Practice Template:**
+```javascript
+// Always convert route params from string
+const caseId = parseInt(route.params.id, 10) || 0
+const stageId = parseInt(route.params.stageId, 10) || 1
+
+// Validate conversion worked
+if (isNaN(caseId)) {
+  console.error('Invalid caseId:', route.params.id)
+  router.push('/') // Navigate to safe page
+}
+
+// Pass to child with correct type
+<ChildComponent :caseId="caseId" :stageId="stageId" />
+```
+
+**Lesson for Next Stages:**
+1. **URL params are always strings** - always convert them
+2. **Match prop types between parent/child** - Vue will warn if mismatch
+3. **Use Number for IDs** - use String only for truly string values (codes, names)
+4. **Validate conversions** - check isNaN after parseInt
+5. **Test prop passing** - verify Vue devtools shows correct types
+
+**Symptoms:**
+- Click "Save as Draft" button → `submitForm()` triggered instead of `saveDraft()`
+- Backend receives `action: 'submit'` instead of `action: 'draft'`
+- Case status changed to SUBMITTED instead of staying in DRAFT
+- `submitted_at` and `submitted_by` fields populated when they should remain NULL
+- User confused: clicked draft button but form got submitted
+
+**Flow of Bug:**
+```
+User clicks "Save as Draft" button
+    ↓
+Vue calls @click="saveDraft"
+    ↓
+BUT: Button is inside <form @submit.prevent="submitForm">
+    ↓
+Form submit event also fires (because button has no type attribute)
+    ↓
+BOTH handlers execute:
+    - saveDraft() → sets pendingAction = 'draft'
+    - submitForm() → sets pendingAction = 'submit' (overwrites!)
+    ↓
+Final pendingAction = 'submit'
+    ↓
+Confirmation dialog shows SUBMIT dialog (not draft)
+    ↓
+User confirms
+    ↓
+Backend gets action: 'submit'
+    ↓
+❌ Case status incorrectly changed to SUBMITTED
+```
+
+**Root Cause:** 
+1. Buttons placed inside `<form>` without explicit `type` attribute
+2. In HTML, buttons default to `type="submit"` when no type specified
+3. All buttons inside form trigger form submission unless explicitly marked `type="button"`
+4. Race condition: Multiple handlers executed, submit overwrote draft
+
+**Solution Implemented:**
+```vue
+<!-- WRONG: No type attribute on buttons inside form -->
+<form @submit.prevent="submitForm" class="space-y-2">
+  <!-- form fields -->
+  
+  <div class="flex gap-1 pt-2 border-t">
+    <Button @click="submitForm" ...>Submit & Continue</Button>
+    <Button @click="saveDraft" ...>Save as Draft</Button>  <!-- ❌ Implicitly type="submit"! -->
+    <Button @click="$router.back()" ...>Cancel</Button>    <!-- ❌ Implicitly type="submit"! -->
+  </div>
+</form>
+
+<!-- CORRECT: Explicit type attributes -->
+<form @submit.prevent="submitForm" class="space-y-2">
+  <!-- form fields -->
+  
+  <div class="flex gap-1 pt-2 border-t">
+    <Button type="submit" @click="submitForm" ...>Submit & Continue</Button>
+    <Button type="button" @click="saveDraft" ...>Save as Draft</Button>  <!-- ✅ Explicit type="button" -->
+    <Button type="button" @click="$router.back()" ...>Cancel</Button>    <!-- ✅ Explicit type="button" -->
+  </div>
+</form>
+```
+
+**HTML Button Type Rules:**
+| Type | Behavior | Use Case |
+|------|----------|----------|
+| `type="submit"` | Triggers form submit event | Primary action button in form |
+| `type="button"` | Does NOT trigger form submit | Secondary actions (cancel, draft, etc) |
+| `type="reset"` | Resets form to initial state | Usually not used in modern apps |
+| (no type) | **Defaults to `type="submit"`** | ❌ Never rely on this - ALWAYS be explicit |
+
+**Critical Rule:**
+```
+Inside <form>: 
+- ONLY the primary action button should have type="submit" (or no type)
+- ALL other buttons MUST have type="button" to prevent form submission
+```
+
+**Lesson for Next Stages:**
+1. **Always use explicit `type` attributes on buttons inside forms**
+2. Only primary action (`submit`) gets `type="submit"`
+3. All secondary actions (cancel, draft, delete) get `type="button"`
+4. Never rely on default HTML behavior - be explicit
+5. Test each button's behavior independently:
+   - Submit button → triggers form submit AND button click
+   - Other buttons → trigger only button click, NOT form submit
+6. Verify in Vue devtools that correct handler was called
+7. Check backend logs to confirm correct action received
+
+---
+
 ## 16. Prevention Checklist
 
 **Before implementing next stage, ensure you've learned from these obstacles:**
@@ -1836,6 +2356,7 @@ showToast('Error', 'Upload failed', 'error')  // Auto 5s
 - [ ] Validation: Check documents uploaded before form submission
 
 ### Form Submission & Validation Checks
+- [ ] Button Types: **CRITICAL** - Use `type="submit"` ONLY on submit button, `type="button"` on all others (cancel, draft, etc)
 - [ ] Confirmation: Use unified dialog pattern with `pendingAction` dispatcher
 - [ ] Submission: Always reset state in `finally` block, not just `try`
 - [ ] Disabled: Bind `:disabled="submissionComplete"` to ALL form inputs
@@ -1873,10 +2394,275 @@ showToast('Error', 'Upload failed', 'error')  // Auto 5s
 
 ---
 
-## 17. Version History
+#### Obstacle 25: Form Buttons Disabled When They Should Be Enabled - Debug Checklist
+**Problem:** Form submission buttons ("Submit & Continue" and "Save as Draft") remain disabled even though conditions appear correct. User can't interact with form.
+
+**Symptoms:**
+- Both buttons stuck in disabled state with gray appearance
+- Unable to submit or save form
+- No obvious errors in console
+- Refreshing page doesn't help
+- Debug info shows normal values but buttons still disabled
+
+**Root Cause - Multiple Possibilities (Debug in Order):**
+
+1. **`isLoading` prop stuck at `true`**
+   - Parent component (`SptFilingForm.vue`) passed `isLoading="true"` but never reset it to false
+   - Check: `onMounted` hook should set `isLoading.value = false` after data loads
+   - Verify: All async operations complete with `finally { isLoading.value = false }`
+
+2. **`caseStatus` has wrong value**
+   - API returning `case_status_id = 2` when database shows `case_status_id = 1`
+   - Condition `caseStatus > 1` evaluates true, button disabled
+   - Check: Log API response to see actual value: `console.log('caseStatus:', caseData.case_status_id)`
+   - Verify database directly: Is the actual value in DB really 1, or is it 2?
+
+3. **Props not being passed correctly from parent**
+   - Parent component not passing required props
+   - Vue prop binding syntax error (`:caseStatus="..." ` vs `caseStatus="..."`)
+   - Check: Browser DevTools Vue extension → Component props showing correct values?
+
+4. **Reactive state not updating**
+   - `submitting` ref stuck at true
+   - `submissionComplete` incorrectly set to true
+   - Check: Look at Debug Info box - what values are displayed?
+
+**Debug Strategy - Step by Step:**
+
+```javascript
+// Step 1: Add prominent debug info to template (already done)
+// Shows: isLoading, caseStatus, submissionComplete, submitting
+
+// Step 2: Check each condition individually in console
+console.log('submitting:', submitting.value)          // Should be false
+console.log('isLoading:', isLoading.value)           // Should be false
+console.log('caseStatus:', caseStatus.value)         // Should be 1 (or null)
+console.log('submissionComplete:', submissionComplete.value)  // Should be false
+
+// Step 3: If caseStatus wrong, check what API returned
+console.log('From API response:', caseData.case_status_id)  // What is actual value?
+
+// Step 4: Check if parent passed props correctly
+// In parent component (SptFilingForm.vue):
+<StageForm
+  :isLoading="isLoading"
+  :caseStatus="caseStatus"
+  /* ... */
+/>
+
+// Verify onMounted sets isLoading to false:
+onMounted(async () => {
+  try {/* Lines 2397-2400 omitted */}
+  } finally {
+    isLoading.value = false  // ← Must be here!
+  }
+})
+```
+
+**Button Disabled Condition Analysis:**
+```vue
+:disabled="submitting || isLoading || caseStatus > 1 || submissionComplete"
+```
+
+**Each condition breakdown:**
+| Condition | Should Be | Debug Log |
+|-----------|-----------|-----------|
+| `submitting` | `false` | `console.log('submitting:', submitting.value)` |
+| `isLoading` | `false` | `console.log('isLoading:', isLoading.value)` |
+| `caseStatus > 1` | `false` | `console.log('caseStatus > 1:', caseStatus.value > 1, 'value:', caseStatus.value)` |
+| `submissionComplete` | `false` | `console.log('submissionComplete:', submissionComplete.value)` |
+
+**If one condition is true, button will be disabled!**
+
+**Solution Path:**
+
+1. **Add console logs to Debug Info:**
+```javascript
+// In StageForm.vue, add to a computed property:
+const debugButtonState = computed(() => {
+  return {
+    submitting: submitting.value,
+    isLoading: isLoading.value,
+    caseStatus: caseStatus.value,
+    caseStatusCheck: caseStatus.value > 1,
+    submissionComplete: submissionComplete.value,
+    willBeDisabled: submitting.value || isLoading.value || caseStatus.value > 1 || submissionComplete.value
+  }
+})
+
+// Log it:
+console.log('Button state:', debugButtonState.value)
+```
+
+2. **Check parent component (SptFilingForm.vue):**
+   - Is `isLoading` being set to false after data loads?
+   - Is `caseStatus` being set to actual API value?
+   - Are props being passed with `:` syntax (reactive binding)?
+
+3. **Verify API response:**
+   - Open Network tab in DevTools
+   - Check `/api/tax-cases/{id}` response
+   - Look for `case_status_id` field
+   - What is the actual value returned?
+
+4. **Check database directly:**
+   - Connect to database
+   - Query: `SELECT id, case_status_id FROM tax_cases WHERE id = {id}`
+   - Compare: Database value vs API response value
+   - Are they different? (This would indicate API query issue)
+
+**Most Common Cause (Based on Session):**
+- `caseStatus` receiving value from API that doesn't match expectations
+- Database shows 1, but API returns 2
+- Solution: Check which value is correct - trust the API, not the viewer
+
+**Prevention for Next Developer:**
+- Always add Debug Info panel during development
+- Check condition values BEFORE blaming component logic
+- Never trust visual database inspection - verify with actual query or API response
+- Log API responses to see what backend actually returned
+
+**Lesson for Next Stages:**
+1. **Build debug UI early** - helps catch state issues faster
+2. **Log API responses** in development
+3. **Validate prop passing** - use browser DevTools Vue extension
+4. **Test each condition independently** - don't assume all are correct
+5. **Check parent component** first - most issues come from prop passing
+
+---
+
+#### Obstacle 26: Database Value vs API Response Mismatch
+**Problem:** Database viewer shows `case_status_id = 1`, but API returns `case_status_id = 2`. Frontend receives wrong value, causing button to disable when it shouldn't.
+
+**Symptoms:**
+- Debug info shows `caseStatus: 2`
+- But database query shows `case_status_id = 1`
+- Form buttons stay disabled because `caseStatus > 1` is true
+- Refreshing page doesn't help - same value
+- Values inconsistent between database tool and API
+
+**Root Cause - Investigation Path:**
+
+This is a data integrity issue. The discrepancy could come from:
+
+1. **Database query returning wrong value:**
+   ```php
+   // In TaxCaseController.php, show() method
+   $taxCase = TaxCase::find($caseId);
+   // What does it actually return?
+   ```
+
+2. **API appending/modifying the value:**
+   ```php
+   // Check if there's any transformation happening
+   // in resource or controller after querying
+   ```
+
+3. **Multiple database connections:**
+   - Reading from one DB in viewer
+   - Writing to/reading from different DB in API
+   - Data out of sync
+
+4. **Caching issue:**
+   - Old cached value being returned by API
+   - Database updated but cache not cleared
+
+**Debug Steps:**
+
+```php
+// In controller - log what's being retrieved
+public function show($id)
+{
+    $taxCase = TaxCase::find($id);
+    \Log::info('TaxCase data:', [
+        'id' => $taxCase->id,
+        'case_status_id' => $taxCase->case_status_id,
+        'case_number' => $taxCase->case_number
+    ]);
+    
+    return response()->json($taxCase);
+}
+
+// Check logs to see actual value
+```
+
+**Verify with Database Query:**
+```sql
+-- Direct query (most trustworthy)
+SELECT id, case_status_id, case_number FROM tax_cases WHERE id = {YOUR_CASE_ID};
+
+-- Compare with API response in Network tab
+-- If database shows 1 but API returns 2, something is transforming the value
+```
+
+**Possible Root Causes:**
+
+1. **Database viewer showing wrong value:**
+   - Some DB tools cache results
+   - Solution: Refresh database viewer, or query with CLI
+   
+2. **API transforming the value:**
+   - Check `TaxCaseResource.php` if using API resources
+   - Check controller modifying data before returning
+   - Check middleware adding/changing values
+
+3. **Multiple submissions happened:**
+   - Case status changed between when user first loaded and when they checked DB
+   - Solution: Timestamp check - when was case last updated?
+
+4. **Wrong case ID being queried:**
+   - User loading case 1, but API loading case 2
+   - Solution: Verify case IDs match in URL and requests
+
+**Solution Pattern:**
+
+```php
+// Ensure you're returning the correct data:
+public function show(TaxCase $taxCase)
+{
+    // Verify this is the right case
+    \Log::info('Retrieved case:', [
+        'requested_id' => request()->route('taxCase')->id,
+        'actual_case_status_id' => $taxCase->case_status_id
+    ]);
+
+    // Return as-is, don't transform
+    return response()->json([
+        'success' => true,
+        'data' => [
+            'id' => $taxCase->id,
+            'case_status_id' => $taxCase->case_status_id,
+            /* Lines 2490-2495 omitted */
+        ]
+    ]);
+}
+```
+
+**Prevention Checklist:**
+
+- [ ] **Before declaring "bug fixed":** Verify BOTH database AND API return same value
+- [ ] **Log API responses** during development - don't trust visual inspection
+- [ ] **Test with fresh data** - create new record and test end-to-end
+- [ ] **Check database timestamps** - when was record last updated?
+- [ ] **Verify record IDs** - ensure you're querying the right record
+- [ ] **Check database connection** - are reads and writes using same connection?
+- [ ] **Clear any caches** - if using caching layer, clear it
+- [ ] **Query multiple ways** - check with CLI, DB tool, and API - they should match
+
+**Lesson for Next Stages:**
+1. **Trust the API first** - API is what application uses
+2. **Database viewers can be misleading** - they might show cached/old data
+3. **Always log API responses** - this is your single source of truth
+4. **Verify data integrity** - check database query directly if API seems wrong
+5. **Never assume values** - always check before making decisions based on them
+
+---
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.4 | Jan 16, 2026 | Added Obstacles 25-26 (Form buttons disabled debugging checklist, Database vs API mismatch). These obstacles document real debugging challenges encountered during SPT Filing Form development. Includes systematic debug strategies and prevention checklists. |
+| 1.3 | Jan 16, 2026 | Added Obstacles 20-24 (model relationships, authorization policy complexity, XMLHttpRequest listener order, role name case sensitivity, Vue prop types). These obstacles document real bugs found during SPT Filing Form implementation with actual production solutions. |
+| 1.2 | Jan 16, 2026 | Added Obstacle 19 (Non-Submit Buttons Triggering Form Submit Event) - critical bug found in Save as Draft functionality. Updated Prevention Checklist with explicit button type requirements. |
 | 1.1 | Jan 13, 2026 | Added Obstacles 16-18 (notification system issues) and expanded Prevention Checklist with detailed category organization |
 | 1.0 | Jan 13, 2026 | Initial refined template based on StageForm.vue with Obstacles 1-15 |
 
@@ -1887,8 +2673,8 @@ showToast('Error', 'Upload failed', 'error')  // Auto 5s
 **Created by:** AI Assistant  
 **For:** PORTAX Tax Case Management System  
 **Framework:** Vue.js 3 + Laravel 11  
-**Last Updated:** January 13, 2026  
-**Total Obstacles Documented:** 18  
-**Total Lessons Learned:** 18
+**Last Updated:** January 16, 2026  
+**Total Obstacles Documented:** 26  
+**Total Lessons Learned:** 26
 
 For questions or updates to this template, refer to the base `StageForm.vue` implementation or contact the development team.
