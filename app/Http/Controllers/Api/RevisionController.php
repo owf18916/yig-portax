@@ -4,49 +4,78 @@ namespace App\Http\Controllers\Api;
 
 use App\Models\TaxCase;
 use App\Models\Revision;
+use App\Models\Document;
+use App\Services\RevisionService;
 use Illuminate\Http\Request;
-use App\Events\RevisionGranted;
-use App\Events\RevisionApproved;
-use App\Events\RevisionRejected;
-use App\Events\RevisionRequested;
-use App\Events\RevisionSubmitted;
 use Illuminate\Http\JsonResponse;
-use App\Events\RevisionNotGranted;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Controller;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class RevisionController extends Controller
 {
     use AuthorizesRequests;
 
+    private RevisionService $revisionService;
+
+    public function __construct(RevisionService $revisionService)
+    {
+        $this->revisionService = $revisionService;
+    }
+
     /**
      * Request a revision for SPT Filling (TaxCase)
-     * NEW FLOW: User proposes values + document changes in one request
+     * NEW FLOW: User proposes values + document changes + files in one request
+     * Files are uploaded with FormData
      * 
      * POST /api/tax-cases/{caseId}/revisions/request
      */
     public function requestRevision(Request $request, TaxCase $taxCase): JsonResponse
     {
+        $user = auth()->user();
+        
+        // Ensure entity is loaded for authorization
+        $user->load('entity');
+        
         // Create a dummy Revision instance for policy check
         $dummyRevision = new Revision();
         $this->authorize('request', [$dummyRevision, $taxCase]);
 
-        $validated = $request->validate([
-            'fields' => 'required|array|min:1',
-            'fields.*' => 'string|in:period_id,currency_id,disputed_amount,supporting_docs',
-            'reason' => 'required|string|min:10|max:1000',
-            'proposed_values' => 'required|array',
-            'proposed_values.period_id' => 'nullable|integer',
-            'proposed_values.currency_id' => 'nullable|integer',
-            'proposed_values.disputed_amount' => 'nullable|numeric|min:0',
-            'proposed_document_changes' => 'required|array',
-            'proposed_document_changes.files_to_delete' => 'array',
-            'proposed_document_changes.files_to_delete.*' => 'integer',
-            'proposed_document_changes.files_to_add' => 'array',
-            'proposed_document_changes.files_to_add.*' => 'integer',
+        // Validate FormData files
+        $request->validate([
+            'files' => 'nullable|array',
+            'files.*' => 'file|mimes:pdf|max:10240', // Max 10MB per file
         ]);
+
+        // Parse payload from FormData
+        $payloadJson = $request->input('payload');
+        $payload = json_decode($payloadJson, true);
+
+        if (!$payload || !is_array($payload)) {
+            return response()->json([
+                'error' => 'Invalid payload format',
+            ], 422);
+        }
+
+        // Validate payload data manually
+        if (empty($payload['fields']) || !is_array($payload['fields'])) {
+            return response()->json([
+                'error' => 'Fields are required',
+            ], 422);
+        }
+
+        if (empty($payload['reason']) || strlen($payload['reason']) < 10) {
+            return response()->json([
+                'error' => 'Reason is required and must be at least 10 characters',
+            ], 422);
+        }
+
+        if (!isset($payload['proposed_document_changes'])) {
+            return response()->json([
+                'error' => 'Document changes structure is required',
+            ], 422);
+        }
 
         // Check if data is submitted
         if (!$taxCase->submitted_at) {
@@ -55,58 +84,133 @@ class RevisionController extends Controller
             ], 422);
         }
 
-        // Check if there's already a pending revision
-        $pendingRevision = $taxCase->revisions()
-            ->whereIn('revision_status', ['requested'])
-            ->first();
+        // Custom validation: ensure at least one change is proposed
+        $hasFieldChanges = collect($payload['proposed_values'] ?? [])
+            ->filter(fn($value) => $value !== null)
+            ->isNotEmpty();
 
-        if ($pendingRevision) {
+        $hasDocumentChanges = (
+            collect($payload['proposed_document_changes']['files_to_delete'] ?? [])->isNotEmpty() ||
+            collect($payload['proposed_document_changes']['files_to_add'] ?? [])->isNotEmpty() ||
+            $request->hasFile('files')
+        );
+
+        if (!$hasFieldChanges && !$hasDocumentChanges) {
             return response()->json([
-                'error' => 'There is already a revision pending review',
-                'pending_revision_id' => $pendingRevision->id,
+                'error' => 'Please provide at least one change: either modify field values or add/delete documents',
             ], 422);
         }
 
-        // Prepare original data (only include fields being revised)
-        $originalData = [];
-        foreach ($validated['fields'] as $field) {
-            if ($field === 'supporting_docs') {
-                // For docs, store current document IDs
-                $originalData[$field] = $taxCase->documents()->pluck('id')->toArray();
-            } else {
-                $originalData[$field] = $taxCase->$field ?? null;
+        try {
+            // Extract stage_code from payload with default
+            $stageCode = $payload['stage_code'] ?? '1';
+
+            // Upload new files if any and get document IDs
+            $documentIds = [];
+            if ($request->hasFile('files')) {
+                $uploadedFiles = $request->file('files');
+                if (!is_array($uploadedFiles)) {
+                    $uploadedFiles = [$uploadedFiles];
+                }
+
+                foreach ($uploadedFiles as $file) {
+                    $document = $this->uploadRevisionFile($file, $taxCase, $stageCode);
+                    $documentIds[] = $document->id;
+                }
+
+                // Add uploaded document IDs to files_to_add
+                $payload['proposed_document_changes']['files_to_add'] = array_merge(
+                    $payload['proposed_document_changes']['files_to_add'] ?? [],
+                    $documentIds
+                );
             }
-        }
 
-        // Create revision record with proposed values
-        $revision = DB::transaction(function () use ($taxCase, $validated, $originalData) {
-            // Filter out null values from proposed_values
-            $proposedValues = array_filter(
-                $validated['proposed_values'],
-                fn($value) => $value !== null
-            );
-
-            $revision = Revision::create([
-                'revisable_type' => 'TaxCase',
-                'revisable_id' => $taxCase->id,
-                'revision_status' => 'requested',
-                'original_data' => $originalData,
-                'proposed_values' => $proposedValues,
-                'proposed_document_changes' => $validated['proposed_document_changes'],
-                'requested_by' => auth()->id(),
-                'requested_at' => now(),
-                'reason' => $validated['reason'],
+            Log::info('RevisionController: Processing revision request', [
+                'tax_case_id' => $taxCase->id,
+                'stage_code' => $stageCode,
+                'uploaded_document_ids' => $documentIds,
+                'proposed_document_changes' => $payload['proposed_document_changes'],
             ]);
 
-            return $revision;
-        });
+            $revision = $this->revisionService->requestRevision(
+                $taxCase,
+                $user,
+                $payload['proposed_values'] ?? [],
+                $payload['proposed_document_changes'],
+                $payload['reason'],
+                $payload['fields']
+            );
 
-        event(new RevisionRequested($revision, $taxCase));
+            Log::info('RevisionController: Revision created successfully', [
+                'revision_id' => $revision->id,
+                'proposed_document_changes' => $revision->proposed_document_changes,
+            ]);
 
-        return response()->json([
-            'message' => 'Revision request submitted successfully',
-            'revision' => $revision->load(['requestedBy']),
-        ], 201);
+            // Load document details for response
+            $docChanges = $revision->proposed_document_changes ?? [];
+            $documentIds = array_merge(
+                $docChanges['files_to_delete'] ?? [],
+                $docChanges['files_to_add'] ?? []
+            );
+
+            $documents = [];
+            if (!empty($documentIds)) {
+                $documents = Document::whereIn('id', $documentIds)
+                    ->get(['id', 'original_filename'])
+                    ->keyBy('id')
+                    ->toArray();
+            }
+
+            $revisionData = $revision->load('requestedBy')->toArray();
+            $revisionData['documents'] = $documents;
+
+            return response()->json([
+                'message' => 'Revision requested successfully',
+                'revision' => $revisionData,
+            ], 201);
+        } catch (\Exception $e) {
+            Log::error('RevisionController: Error requesting revision', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'error' => 'Failed to request revision: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Upload a file for revision
+     */
+    private function uploadRevisionFile($file, TaxCase $taxCase, $stageCode = '1')
+    {
+        $disk = config('filesystems.default');
+        $filename = uniqid() . '_' . $file->getClientOriginalName();
+        $path = "tax_cases/{$taxCase->id}/revisions";
+
+        $filePath = Storage::disk($disk)->putFileAs($path, $file, $filename);
+
+        $fileHash = hash_file('sha256', $file->getRealPath());
+
+        $document = Document::create([
+            'documentable_type' => 'TaxCase',
+            'documentable_id' => $taxCase->id,
+            'tax_case_id' => $taxCase->id,
+            'document_type' => 'revision_document',
+            'stage_code' => (string)$stageCode,
+            'original_filename' => $file->getClientOriginalName(),
+            'file_path' => $filePath,
+            'file_mime_type' => $file->getMimeType(),
+            'file_size' => $file->getSize(),
+            'hash' => $fileHash,
+            'description' => 'Revision document',
+            'uploaded_by' => auth()->id(),
+            'uploaded_at' => now(),
+            'status' => 'DRAFT',
+        ]);
+
+        return $document;
     }
 
     /**
@@ -118,171 +222,110 @@ class RevisionController extends Controller
      */
     public function decideRevision(Request $request, TaxCase $taxCase, Revision $revision): JsonResponse
     {
+        $user = auth()->user();
+        
+        // Ensure entity is loaded for authorization
+        $user->load('entity');
+        
         $this->authorize('decide', $revision);
-
-        if (!$revision->isPending()) {
-            return response()->json([
-                'error' => 'Can only decide revisions in requested status',
-            ], 422);
-        }
 
         $validated = $request->validate([
             'decision' => 'required|in:approve,reject',
             'rejection_reason' => 'required_if:decision,reject|string|max:1000',
-            'new_files' => 'array|nullable', // Files uploaded after approval
         ]);
 
-        $revision = DB::transaction(function () use ($revision, $validated, $taxCase) {
+        try {
+            $revision = $this->revisionService->decideRevision(
+                $revision,
+                $taxCase,
+                $user,
+                $validated['decision'],
+                $validated['rejection_reason'] ?? null
+            );
 
-            if ($validated['decision'] === 'approve') {
-                // APPROVED: Apply proposed values to tax_case
-                $updates = [];
-                
-                // Apply proposed values (non-document fields)
-                foreach ($revision->proposed_values ?? [] as $field => $value) {
-                    if ($field !== 'supporting_docs' && $value !== null) {
-                        $updates[$field] = $value;
-                    }
-                }
-
-                // Apply document changes
-                if (!empty($revision->proposed_document_changes)) {
-                    $docChanges = $revision->proposed_document_changes;
-                    
-                    // 1. Delete marked files FIRST
-                    if (!empty($docChanges['files_to_delete'])) {
-                        \App\Models\Document::whereIn('id', $docChanges['files_to_delete'])
-                            ->delete();
-                    }
-                    
-                    // 2. New files will be uploaded separately by frontend
-                    // (they're uploaded AFTER this approval response)
-                }
-
-                $revision->update([
-                    'revision_status' => 'approved',
-                    'approved_by' => auth()->id(),
-                    'approved_at' => now(),
-                ]);
-
-                // Apply updates to tax case
-                if (!empty($updates)) {
-                    $taxCase->update($updates);
-                }
-
-                event(new RevisionApproved($revision));
-            } else {
-                // REJECTED: Don't apply changes, just mark as rejected
-                // Note: Files were never uploaded, so nothing to clean up
-                $revision->update([
-                    'revision_status' => 'rejected',
-                    'approved_by' => auth()->id(),
-                    'approved_at' => now(),
-                    'rejection_reason' => $validated['rejection_reason'] ?? null,
-                ]);
-
-                event(new RevisionRejected($revision));
-            }
-
-            return $revision;
-        });
-
-        return response()->json([
-            'message' => "Revision {$validated['decision']}ed successfully",
-            'revision' => $revision->load(['approvedBy']),
-        ]);
+            return response()->json([
+                'message' => $validated['decision'] === 'approve' ? 'Revision approved and applied' : 'Revision rejected',
+                'revision' => $revision->load(['requestedBy']),
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => $e->getMessage(),
+            ], 422);
+        }
     }
 
     /**
-     * Get all revisions for a tax case
-     * 
-     * GET /api/tax-cases/{caseId}/revisions
+     * Get revision detail with before-after comparison
      */
-    public function listRevisions(TaxCase $taxCase): JsonResponse
-    {
-        // Ensure user has role relationship loaded
-        $user = auth()->user();
-        if (!$user) {
-            return response()->json(['error' => 'Unauthorized'], 401);
-        }
-
-        if ($user && !$user->relationLoaded('role')) {
-            $user->load('role');
-        }
-
-        // Simple check: user must be authenticated
-        // Allow all authenticated users to view revisions
-        // This is safe because revisions are tied to tax cases which already have access control
-        
-        // Log::info('listRevisions accessed', [
-        //     'user_id' => $user->id,
-        //     'user_role' => $user->role?->name,
-        //     'tax_case_id' => $taxCase->id,
-        // ]);
-
-        $revisions = $taxCase->revisions()
-            ->with([
-                'requestedBy:id,name,email',
-                'approvedBy:id,name,email',
-                'submittedBy:id,name,email',
-                'decidedBy:id,name,email',
-            ])
-            ->orderByDesc('created_at')
-            ->get();
-
-        return response()->json([
-            'data' => $revisions,
-            'success' => true
-        ]);
-    }
-
-    /**
-     * Get single revision detail with before-after comparison
-     * 
-     * GET /api/revisions/{id}
-     */
-    public function showRevision(Revision $revision): JsonResponse
+    public function showRevision(TaxCase $taxCase, Revision $revision): JsonResponse
     {
         $this->authorize('view', $revision);
 
         $revision->load([
-            'revisable',
             'requestedBy:id,name,email',
             'approvedBy:id,name,email',
-            'submittedBy:id,name,email',
-            'decidedBy:id,name,email',
         ]);
 
+        // Load referenced documents for displaying their names
+        $docChanges = $revision->proposed_document_changes ?? [];
+        $documentIds = array_merge(
+            $docChanges['files_to_delete'] ?? [],
+            $docChanges['files_to_add'] ?? []
+        );
+
+        $documents = [];
+        if (!empty($documentIds)) {
+            $documents = Document::whereIn('id', $documentIds)
+                ->get(['id', 'original_filename'])
+                ->keyBy('id')
+                ->toArray();
+        }
+
+        // Add documents data to revision response
+        $revisionData = $revision->toArray();
+        $revisionData['documents'] = $documents;
+
         return response()->json([
-            'revision' => $revision,
-            'comparison' => [
-                'original' => $revision->original_data,
-                'revised' => $revision->revised_data,
-                'changes' => $this->getChanges($revision->original_data, $revision->revised_data),
-            ],
+            'data' => $revisionData,
         ]);
     }
 
     /**
-     * Calculate differences between original and revised data
+     * List all revisions for a TaxCase
+     * 
+     * GET /api/tax-cases/{caseId}/revisions
      */
-    private function getChanges(?array $original, ?array $revised): array
+    public function indexRevisions(TaxCase $taxCase): JsonResponse
     {
-        if (!$revised) {
-            return [];
-        }
+        $revisions = $taxCase->revisions()
+            ->with([
+                'requestedBy:id,name,email',
+                'approvedBy:id,name,email',
+            ])
+            ->latest()
+            ->get();
 
-        $changes = [];
-        foreach ($original as $field => $originalValue) {
-            $revisedValue = $revised[$field] ?? null;
-            if ($originalValue !== $revisedValue) {
-                $changes[$field] = [
-                    'original' => $originalValue,
-                    'revised' => $revisedValue,
-                ];
+        // Add documents data to each revision
+        $revisions->each(function ($revision) {
+            $docChanges = $revision->proposed_document_changes ?? [];
+            $documentIds = array_merge(
+                $docChanges['files_to_delete'] ?? [],
+                $docChanges['files_to_add'] ?? []
+            );
+
+            $documents = [];
+            if (!empty($documentIds)) {
+                $documents = Document::whereIn('id', $documentIds)
+                    ->get(['id', 'original_filename'])
+                    ->keyBy('id')
+                    ->toArray();
             }
-        }
 
-        return $changes;
+            $revision->documents = $documents;
+        });
+
+        return response()->json([
+            'data' => $revisions,
+        ]);
     }
 }

@@ -79,7 +79,7 @@
                 :placeholder="field.placeholder"
                 :required="field.required"
                 :error="formErrors[field.key]"
-                :disabled="field.readonly || submissionComplete"
+                :disabled="field.readonly || submissionComplete || fieldsDisabled"
               />
 
               <!-- Number Input -->
@@ -91,7 +91,7 @@
                 :placeholder="field.placeholder"
                 :required="field.required"
                 :error="formErrors[field.key]"
-                :disabled="field.readonly || submissionComplete"
+                :disabled="field.readonly || submissionComplete || fieldsDisabled"
               />
 
               <!-- Date Input -->
@@ -102,7 +102,7 @@
                 v-model="formData[field.key]"
                 :required="field.required"
                 :error="formErrors[field.key]"
-                :disabled="submissionComplete"
+                :disabled="submissionComplete || fieldsDisabled"
               />
 
               <!-- Month Input -->
@@ -113,7 +113,7 @@
                 v-model="formData[field.key]"
                 :required="field.required"
                 :error="formErrors[field.key]"
-                :disabled="submissionComplete"
+                :disabled="submissionComplete || fieldsDisabled"
               />
 
               <!-- Textarea -->
@@ -126,7 +126,7 @@
                   :id="field.key"
                   v-model="formData[field.key]"
                   :placeholder="field.placeholder"
-                  :disabled="submissionComplete"
+                  :disabled="submissionComplete || fieldsDisabled"
                   rows="4"
                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                 />
@@ -144,7 +144,7 @@
                 <select
                   :id="field.key"
                   v-model="formData[field.key]"
-                  :disabled="submissionComplete"
+                  :disabled="submissionComplete || fieldsDisabled"
                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                 >
                   <option value="">-- Select {{ field.label }} --</option>
@@ -171,7 +171,7 @@
                       type="radio"
                       :value="option.value"
                       v-model="formData[field.key]"
-                      :disabled="submissionComplete"
+                      :disabled="submissionComplete || fieldsDisabled"
                       class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
                     />
                     <label :for="`${field.key}_${option.value}`" class="ml-2 text-sm text-gray-700">
@@ -191,7 +191,7 @@
                     :id="field.key"
                     type="checkbox"
                     v-model="formData[field.key]"
-                    :disabled="submissionComplete"
+                    :disabled="submissionComplete || fieldsDisabled"
                     class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                   <label :for="field.key" class="ml-2 text-sm text-gray-700">
@@ -216,7 +216,7 @@
                   type="file"
                   multiple
                   @change="handleFileUpload"
-                  :disabled="uploadProgress > 0 || submissionComplete"
+                  :disabled="uploadProgress > 0 || submissionComplete || fieldsDisabled"
                   class="block w-full text-sm text-gray-500
                     file:mr-4 file:py-2 file:px-4
                     file:rounded-lg file:border-0
@@ -440,6 +440,11 @@ const pendingAction = ref(null) // 'submit' or 'draft'
 // Compute next stage ID if not provided via props
 const computedNextStageId = computed(() => {
   return props.nextStageId || (props.stageId < 12 ? props.stageId + 1 : null)
+})
+
+// Compute whether fields should be disabled based on case status
+const fieldsDisabled = computed(() => {
+  return props.caseStatus > 1
 })
 
 // Initialize form data from fields

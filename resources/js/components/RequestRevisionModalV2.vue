@@ -207,9 +207,11 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useToast } from '@/composables/useToast'
 
 const props = defineProps({
   caseId: { type: Number, required: true },
+  stageId: { type: [String, Number], default: '1' },
   currentPeriod: { type: Number },
   currentCurrency: { type: Number },
   currentAmount: { type: Number },
@@ -221,6 +223,7 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['submit', 'close'])
+const { showSuccess, showError } = useToast()
 
 // Form state
 const selectedFields = ref([])
@@ -302,16 +305,29 @@ const submit = async () => {
     return
   }
 
-  // Validate files if supporting_docs selected
+  // Validate that at least one change is provided
+  // Check if field values have actual changes (not null)
+  const hasFieldValueChanges = selectedFields.value.some(field => {
+    if (field === 'supporting_docs') return false // Skip doc field for this check
+    return proposedValues.value[field] !== null && proposedValues.value[field] !== ''
+  })
+
+  // Check if document changes exist (add or delete)
+  const hasDocumentChanges = (
+    proposedDocChanges.value.files_to_delete.length > 0 ||
+    newFilesSelected.value.length > 0
+  )
+
+  // Validate supporting_docs specifically if selected
   if (selectedFields.value.includes('supporting_docs')) {
-    // Check if at least one action is specified (delete or add new)
-    const hasDeleteAction = proposedDocChanges.value.files_to_delete.length > 0
-    const hasAddAction = newFilesSelected.value.length > 0
-    
-    if (!hasDeleteAction && !hasAddAction) {
+    if (!hasDocumentChanges) {
       error.value = 'Please select files to delete or add new files for document revision'
       return
     }
+  } else if (!hasFieldValueChanges) {
+    // If not doing docs, must have at least one field change
+    error.value = 'Please provide at least one proposed change (modify field values or add/delete documents)'
+    return
   }
 
   loading.value = true
@@ -338,22 +354,35 @@ const submit = async () => {
       reason: reason.value,
       proposed_values: filteredProposedValues,
       proposed_document_changes: proposedDocChanges.value,
-      // Pass file info but NOT the actual files
-      new_files_count: newFilesSelected.value.length,
-      new_files_names: newFilesSelected.value.map(f => f.name)
+      stage_code: props.stageId
     }
 
+    console.log('Frontend: Sending revision request payload:', payload)
+    console.log('Frontend: newFilesSelected count:', newFilesSelected.value.length)
+    console.log('Frontend: newFilesSelected names:', newFilesSelected.value.map(f => f.name))
+
+    // Create FormData with payload + files
+    const formData = new FormData()
+    formData.append('payload', JSON.stringify(payload))
+    
+    // Add all selected files
+    newFilesSelected.value.forEach((file, idx) => {
+      formData.append(`files[${idx}]`, file)
+    })
+
+    console.log('Frontend: FormData created with', newFilesSelected.value.length, 'files')
+
+    // Submit revision request with files attached
     const response = await fetch(
       `/api/tax-cases/${props.caseId}/revisions/request`,
       {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-CSRF-TOKEN': token
+          'X-CSRF-TOKEN': token,
+          'Accept': 'application/json'
         },
         credentials: 'include',
-        body: JSON.stringify(payload)
+        body: formData
       }
     )
 
@@ -363,27 +392,13 @@ const submit = async () => {
       throw new Error(data.error || data.message || 'Failed to submit request')
     }
 
-    // SUCCESS: Now store files temporarily in memory/localStorage for the revision
-    // Backend will handle actual file upload when Holding approves
-    if (newFilesSelected.value.length > 0) {
-      const revisionId = data.revision.id
-      // Store files reference (can use IndexedDB or temp storage)
-      sessionStorage.setItem(
-        `revision_pending_files_${revisionId}`,
-        JSON.stringify({
-          files: newFilesSelected.value.map(f => ({
-            name: f.name,
-            size: f.size,
-            type: f.type
-          }))
-        })
-      )
-    }
-
     emit('submit', data.revision)
+    showSuccess('Revision Requested', 'Your revision request has been submitted successfully. Waiting for Holding approval.')
     closeModal()
   } catch (err) {
-    error.value = err.message || 'An error occurred while submitting the request'
+    const errorMsg = err.message || 'An error occurred while submitting the request'
+    error.value = errorMsg
+    showError('Submission Failed', errorMsg)
     console.error('Revision request error:', err)
   } finally {
     loading.value = false

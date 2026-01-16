@@ -36,22 +36,30 @@
           </div>
 
           <!-- Document changes -->
-          <div v-if="revision?.proposed_document_changes" class="doc-changes">
+          <div v-if="hasDocumentChanges" class="doc-changes">
             <h5>Document Changes</h5>
             
-            <div v-if="revision.proposed_document_changes.files_to_delete?.length > 0" class="delete-section">
+            <div v-if="getDocumentChanges().files_to_delete?.length > 0" class="delete-section">
               <p class="text-danger"><strong>Files to delete:</strong></p>
               <ul class="text-sm">
-                <li v-for="docId in revision.proposed_document_changes.files_to_delete" :key="docId">
+                <li v-for="docId in getDocumentChanges().files_to_delete" :key="docId">
                   {{ getDocFileName(docId) }}
                 </li>
               </ul>
             </div>
 
-            <div v-if="revision.proposed_document_changes.files_to_add?.length > 0" class="add-section">
-              <p class="text-success"><strong>New files to upload:</strong></p>
-              <span class="text-sm">{{ revision.proposed_document_changes.files_to_add.length }} file(s)</span>
+            <div v-if="getDocumentChanges().files_to_add?.length > 0" class="add-section">
+              <p class="text-success"><strong>Files to add/link:</strong></p>
+              <ul class="text-sm">
+                <li v-for="docId in getDocumentChanges().files_to_add" :key="`add-${docId}`">
+                  ✓ {{ getDocFileName(docId) }}
+                </li>
+              </ul>
             </div>
+          </div>
+          
+          <div v-else-if="props.revision?.proposed_document_changes !== undefined" class="doc-changes text-muted text-sm">
+            <p>No document changes</p>
           </div>
         </div>
 
@@ -86,6 +94,11 @@
           </div>
         </div>
 
+        <!-- Error message -->
+        <div v-if="localError" class="alert alert-danger" role="alert">
+          {{ localError }}
+        </div>
+
         <!-- Action buttons -->
         <div class="modal-footer">
           <button 
@@ -103,20 +116,38 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { useRevisionAPI } from '@/composables/useRevisionAPI'
+import { useRevisionFields } from '@/composables/useRevisionFields'
+import { useToast } from '@/composables/useToast'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
   revision: { type: Object, default: null },
   caseId: { type: [String, Number], required: true },
-  allDocuments: { type: Array, default: () => [] }
+  allDocuments: { type: Array, default: () => [] },
+  entityType: { type: String, default: 'tax-cases' } // Support any entity type
 })
 
 const emit = defineEmits(['close', 'approved', 'rejected'])
 
+const { decideRevision, loading: apiLoading, error: apiError } = useRevisionAPI()
+const { getFieldLabel } = useRevisionFields()
+const { showSuccess, showError } = useToast()
+
 const selectedDecision = ref(null)
 const rejectionReason = ref('')
-const isSubmitting = ref(false)
+const localError = ref(null)
+
+const isSubmitting = computed(() => apiLoading.value)
+
+// Debug: Log revision data when it changes
+watch(() => props.revision, (newVal) => {
+  if (newVal) {
+    console.log('Revision data received:', newVal)
+    console.log('Document changes:', newVal.proposed_document_changes)
+  }
+}, { deep: true })
 
 const formatDate = (date) => {
   if (!date) return ''
@@ -130,13 +161,7 @@ const formatDate = (date) => {
 }
 
 const fieldLabel = (field) => {
-  const labels = {
-    'period_id': 'Tax Period',
-    'currency_id': 'Currency',
-    'disputed_amount': 'Disputed Amount',
-    'supporting_docs': 'Supporting Documents'
-  }
-  return labels[field] || field
+  return getFieldLabel(props.entityType, field)
 }
 
 const getOriginalValue = (field) => {
@@ -146,53 +171,65 @@ const getOriginalValue = (field) => {
 }
 
 const getDocFileName = (docId) => {
+  // First try to get from revision.documents (contains file details from backend)
+  if (props.revision?.documents && props.revision.documents[docId]) {
+    return props.revision.documents[docId].original_filename
+  }
+  // Fallback to allDocuments prop
   const doc = props.allDocuments.find(d => d.id === docId)
-  return doc?.name || `Document #${docId}`
+  return doc?.original_filename || doc?.name || `Document #${docId}`
 }
+
+const getDocumentChanges = () => {
+  if (!props.revision?.proposed_document_changes) {
+    return { files_to_delete: [], files_to_add: [], new_files_names: [] }
+  }
+  const changes = props.revision.proposed_document_changes
+  // Handle if it's a JSON string
+  const parsed = typeof changes === 'string' ? JSON.parse(changes) : changes
+  console.log('Parsed document changes:', parsed)
+  return parsed || { files_to_delete: [], files_to_add: [], new_files_names: [] }
+}
+
+const hasDocumentChanges = computed(() => {
+  const changes = getDocumentChanges()
+  return (
+    (changes.files_to_delete?.length > 0) ||
+    (changes.files_to_add?.length > 0)
+  )
+})
 
 const submitDecision = async () => {
   if (!selectedDecision.value) {
-    alert('Please select approve or reject')
+    localError.value = 'Please select approve or reject'
     return
   }
 
-  isSubmitting.value = true
+  localError.value = null
   
   try {
-    const payload = {
-      decision: selectedDecision.value,
-      ...(selectedDecision.value === 'reject' && { rejection_reason: rejectionReason.value })
-    }
-
-    const response = await fetch(`/api/tax-cases/${props.caseId}/revisions/${props.revision.id}/decide`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
-      },
-      body: JSON.stringify(payload)
-    })
-
-    if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.error || 'Failed to process decision')
-    }
-
-    const data = await response.json()
+    const revision = await decideRevision(
+      props.entityType,
+      props.caseId,
+      props.revision.id,
+      selectedDecision.value,
+      selectedDecision.value === 'reject' ? rejectionReason.value : null
+    )
     
     if (selectedDecision.value === 'approve') {
-      emit('approved', data.revision)
+      showSuccess('Revision Approved', 'The changes have been approved and applied.')
+      emit('approved', revision)
     } else {
-      emit('rejected', data.revision)
+      showSuccess('Revision Rejected', 'The revision request has been rejected.')
+      emit('rejected', revision)
     }
 
-    // Close modal
     emit('close')
   } catch (error) {
     console.error('Error submitting decision:', error)
-    alert(`Error: ${error.message}`)
-  } finally {
-    isSubmitting.value = false
+    const errorMsg = error.message || 'Failed to process decision'
+    localError.value = errorMsg
+    showError('Decision Failed', errorMsg)
   }
 }
 </script>

@@ -90,16 +90,10 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         // ========================================================================
         Route::prefix('revisions')->group(function () {
             // List all revisions for this tax case
-            Route::get('/', [RevisionController::class, 'listRevisions'])->name('revisions.list');
+            Route::get('/', [RevisionController::class, 'indexRevisions'])->name('revisions.index');
             
             // Request a new revision
             Route::post('/request', [RevisionController::class, 'requestRevision'])->name('revisions.request');
-            
-            // Approve or reject revision request (Holding only)
-            Route::patch('/{revision}/approve', [RevisionController::class, 'approveRevision'])->name('revisions.approve');
-            
-            // Submit revised data (User/PIC only, after approval)
-            Route::patch('/{revision}/submit', [RevisionController::class, 'submitRevision'])->name('revisions.submit');
             
             // Decide on submitted revision (Holding only)
             Route::patch('/{revision}/decide', [RevisionController::class, 'decideRevision'])->name('revisions.decide');

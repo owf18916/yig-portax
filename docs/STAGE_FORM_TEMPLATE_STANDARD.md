@@ -837,9 +837,22 @@ Returns PDF file inline (not download)
 
 - [ ] Validate all field types work correctly
 - [ ] Test disabled state after submission
+- [ ] **Test fieldsDisabled state when caseStatus > 1** (Obstacle 28)
+  - [ ] Load case with caseStatus = 1 → Fields editable
+  - [ ] Load case with caseStatus = 2 → Fields disabled (gray, unclickable)
+  - [ ] Verify ALL field types disabled (text, select, textarea, checkbox, radio, date, file)
+  - [ ] Verify disabled styling applied (gray background, gray text, not-allowed cursor)
 - [ ] Implement proper error display
 - [ ] Test keyboard navigation (Tab, Enter)
 - [ ] Test form validation
+- [ ] **If form has period field linked to case number** (Obstacle 27):
+  - [ ] Implement case number generation from period fields (year + month)
+  - [ ] Test period change updates case number immediately (watcher working)
+  - [ ] Verify case number follows format: [PREFIX][YY][MMM][SUFFIX]
+  - [ ] Test with all 12 months - abbreviations correct (Jan, Feb, Mar, etc)
+  - [ ] Test case number refresh after form submit (Obstacle 29)
+  - [ ] Verify backend response includes updated case_number
+  - [ ] Verify case number persists after page refresh
 
 ### 12.4 Document Handling
 
@@ -867,6 +880,16 @@ Returns PDF file inline (not download)
 - [ ] Success message displays
 - [ ] "Continue to Next Stage" button appears
 - [ ] Draft save works independently
+- [ ] **Form refresh after submit** (Obstacle 29):
+  - [ ] @submit event listener triggers refreshTaxCase() or equivalent
+  - [ ] @saveDraft event listener triggers refreshTaxCase() or equivalent
+  - [ ] After submit, fetch /api/tax-cases/{id} to get latest data
+  - [ ] Update all reactive values from API response:
+    - [ ] prefillData (period_id, currency_id, etc)
+    - [ ] caseNumber (important if backend updates it)
+    - [ ] caseStatus (important for field disabling)
+  - [ ] Verify case data matches backend after refresh
+  - [ ] If period changed, verify case number updated from API response
 
 ### 12.7 Confirmation Dialogs
 
@@ -988,6 +1011,70 @@ const fields = computed(() => {
 2. Check ConfirmationDialog component imported
 3. Ensure `:is-open="showConfirmDialog"` prop bound correctly
 4. Check no console errors blocking dialog
+
+### Issue: Form fields remain editable when case is locked (caseStatus > 1)
+
+**Solution (Obstacle 28):**
+1. Verify `fieldsDisabled` computed property exists:
+   ```javascript
+   const fieldsDisabled = computed(() => {
+     return props.caseStatus > 1
+   })
+   ```
+2. Check ALL form inputs have disabled binding:
+   ```vue
+   :disabled="submissionComplete || fieldsDisabled"  <!-- for each field -->
+   ```
+3. Verify disabled styling applied to all inputs:
+   ```vue
+   class="disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+   ```
+4. Test with actual case that has caseStatus > 1 (not just form submission)
+5. Check browser DevTools - verify :disabled binding shows true
+
+### Issue: Case number doesn't update when period changes (Obstacle 27)
+
+**Solution:**
+1. Verify watcher on period_id exists:
+   ```javascript
+   watch(() => prefillData.value.period_id, (newPeriodId) => {
+     const newCaseNum = generateCaseNumberFromPeriod(newPeriodId)
+     caseNumber.value = newCaseNum
+   })
+   ```
+2. Check period data loaded includes `year` and `month` fields
+3. Verify `originalCaseNumber` stored in onMounted
+4. Check month mapping is correct (1='Jan', 2='Feb', 3='Mar', etc)
+5. Verify case number pattern is [PREFIX][YY][MMM][SUFFIX]
+6. Test by selecting different period - case number should update immediately
+
+### Issue: Case number reverts after form submit (Obstacle 29)
+
+**Solution:**
+1. Verify submit listeners on StageForm component:
+   ```vue
+   <StageForm
+     @submit="refreshTaxCase"
+     @saveDraft="refreshTaxCase"
+     ...
+   />
+   ```
+2. Check refreshTaxCase() function exists and fetches from API:
+   ```javascript
+   const refreshTaxCase = async () => {
+     const res = await fetch(`/api/tax-cases/${caseId}`)
+     const data = await res.json()
+     // Update all reactive values from API response
+   }
+   ```
+3. Verify API response includes `case_number` field
+4. Check Network tab - see what API actually returns
+5. If backend updates case_number automatically:
+   - Verify it's returned in API response
+   - Update frontend: `caseNumber.value = data.case_number`
+6. If frontend generates case_number:
+   - refreshTaxCase must also update prefillData.period_id
+   - This triggers watcher to regenerate case number
 
 ---
 
@@ -2658,8 +2745,545 @@ public function show(TaxCase $taxCase)
 
 ---
 
+#### Obstacle 27: Case Number Not Syncing When Period Changes
+**Problem:** User changes fiscal period in a form that has case number field linked to period. User selects different period (e.g., Mar-25 instead of Mar-26), but case number doesn't update to reflect the new year. Case number remains stuck with old year value until page refresh.
+
+**Symptoms:**
+- User changes period from Mar-26 to Mar-25
+- Case number should become PASI25MarC
+- But still shows PASI26MarC (old year)
+- Other data saves correctly
+- Only case number stuck on old value
+- Page refresh fixes it temporarily
+
+**Root Cause:**
+
+Multi-layered issue:
+
+1. **No watcher on period_id change**
+   ```javascript
+   // Parent component only loads data ONCE in onMounted
+   // When user changes period_id in form, no code triggers case number regeneration
+   // Case number computed once, never updated again
+   ```
+
+2. **Case number generated from API response, not recalculated locally**
+   ```javascript
+   // Initial load: API returns case_number = "PASI26MarC"
+   // User changes period: case_number still shows "PASI26MarC"
+   // No re-fetch from API after period change
+   ```
+
+3. **Logic for period → case number transformation not implemented**
+   ```javascript
+   // If you have period object with year and month fields
+   // No helper function to generate new case number based on new period
+   ```
+
+**Solution Implemented:**
+
+```javascript
+// 1. Store original case number to preserve pattern
+const originalCaseNumber = ref('')
+const periodsList = ref([])  // Store all periods for lookup
+
+// 2. Add month mapping for numeric to abbreviation
+const generateCaseNumberFromPeriod = (periodId) => {
+  if (!periodId || !originalCaseNumber.value) return originalCaseNumber.value
+
+  // Find selected period from periods list
+  const selectedPeriod = periodsList.value.find(p => p.id === periodId)
+  if (!selectedPeriod || !selectedPeriod.year || !selectedPeriod.month) {
+    return originalCaseNumber.value
+  }
+
+  // Convert month number (1-12) to abbreviation
+  const monthAbbr = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const newMonth = monthAbbr[selectedPeriod.month]
+  const newYear = selectedPeriod.year.toString().slice(-2)  // Last 2 digits
+
+  // Extract original pattern: PREFIX + YEAR(2) + MONTH(3) + SUFFIX
+  const regex = /^([A-Z]+)(\d{2})([A-Z][a-z]{2})(.*)$/
+  const match = originalCaseNumber.value.match(regex)
+  
+  if (!match) return originalCaseNumber.value
+
+  const [, prefix, , , suffix] = match
+  return `${prefix}${newYear}${newMonth}${suffix}`  // New: PASI25MarC
+}
+
+// 3. Add watcher to update case number when period changes
+watch(
+  () => prefillData.value.period_id,
+  (newPeriodId) => {
+    if (newPeriodId && originalCaseNumber.value) {
+      const newCaseNum = generateCaseNumberFromPeriod(newPeriodId)
+      caseNumber.value = newCaseNum
+      console.log('Case number updated from period change:', newCaseNum)
+    }
+  }
+)
+
+// 4. In onMounted, store periods list for later reference
+onMounted(async () => {
+  // ... fetch data ...
+  periodsList.value = periods  // Store all periods
+  originalCaseNumber.value = caseData.case_number || 'N/A'  // Store original
+})
+```
+
+**Key Implementation Details:**
+
+1. **Period Model Expected Fields:**
+   ```php
+   // In Period model, must have these fields:
+   - id: integer (unique identifier)
+   - year: integer (e.g., 2026, 2025)
+   - month: integer (1-12, January = 1)
+   - period_code: string (e.g., "2026-03" or "03-25")
+   ```
+
+2. **Case Number Pattern:**
+   ```
+   Format: [PREFIX][YEAR(2 digits)][MONTH(3 letters)][SUFFIX]
+   Example: PASI26MarC
+   - PREFIX = PASI (or whatever prefix, extracted from original)
+   - YEAR = 26 (last 2 digits of year, e.g., 2026 → 26)
+   - MONTH = Mar (abbreviation, never numeric like 03 or 3)
+   - SUFFIX = C (or other, extracted from original)
+   ```
+
+3. **Month Number to Abbreviation Mapping:**
+   ```javascript
+   // ALWAYS use index-based mapping to avoid off-by-one errors
+   const monthAbbr = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+   // Index 0 = '' (unused)
+   // Index 1 = 'Jan' (month 1)
+   // ... etc
+   monthAbbr[selectedPeriod.month]  // month=3 → 'Mar'
+   ```
+
+4. **Watcher vs Computed:**
+   - Use **watch** when you need to trigger side effects (update UI, API calls)
+   - Use **computed** for calculated values that update automatically
+   - Here we use watch because we're updating `caseNumber` ref (side effect)
+
+**Common Mistakes to Avoid:**
+
+```javascript
+// ❌ WRONG: Parsing period_code instead of using year/month fields
+const periodCode = selectedPeriod.period_code  // "03-25" or "2026-03"
+const [monthPart, yearPart] = periodCode.split('-')  // Fragile, format dependent
+
+// ✅ CORRECT: Use structured fields directly
+const { year, month } = selectedPeriod
+const newYear = year.toString().slice(-2)  // 2026 → "26"
+const newMonth = monthAbbr[month]  // 3 → "Mar"
+
+// ❌ WRONG: Numeric month instead of abbreviation
+return `${prefix}${newYear}${month}${suffix}`  // PASI26-3-C (wrong format)
+
+// ✅ CORRECT: Always convert to 3-letter abbreviation
+return `${prefix}${newYear}${monthAbbr[month]}${suffix}`  // PASI26MarC (correct)
+
+// ❌ WRONG: No validation that period has required fields
+const newYear = selectedPeriod.year  // What if year is null or undefined?
+
+// ✅ CORRECT: Validate before using
+if (!selectedPeriod || !selectedPeriod.year || !selectedPeriod.month) {
+  return originalCaseNumber.value  // Fallback to original
+}
+```
+
+**Testing Checklist:**
+
+- [ ] Load form with case number PASI26MarC
+- [ ] Change period dropdown from Mar-26 to Mar-25
+- [ ] Verify case number immediately changes to PASI25MarC (no page refresh needed)
+- [ ] Change period to Jan-26
+- [ ] Verify case number becomes PASI26JanC
+- [ ] Change back to original period
+- [ ] Verify case number returns to original value
+- [ ] Test with all 12 months - verify abbreviations correct
+- [ ] Submit form after changing period
+- [ ] Verify server-side case number matches what user sees
+- [ ] Verify old case number in database updated to new one
+
+**Lesson for Next Stages:**
+
+1. **Case number is derived from period** - when period changes, case number MUST change
+2. **Use watch, not computed** - needs side effect (updating caseNumber ref)
+3. **Extract pattern from original** - don't hardcode PREFIX/SUFFIX, parse from existing value
+4. **Always map month number to abbreviation** - never send numeric month to case number
+5. **Validate period data** - ensure year and month fields exist before using
+6. **Test all 12 months** - verify month mapping works for all values
+7. **Test period changes** - test only submitting form after change, not page reload
+
+---
+
+#### Obstacle 28: Form Fields Not Disabled When Case Status > 1
+**Problem:** When a tax case's status is updated to SUBMITTED or beyond (caseStatus > 1), form fields should be completely disabled to prevent accidental editing. However, fields remain editable even though the case is locked.
+
+**Symptoms:**
+- Case status shows value > 1 (case submitted or beyond)
+- Form fields still appear editable (white background, cursor allowed)
+- User can type in fields without seeing visual feedback that form is locked
+- Fields don't have grayed out appearance
+- Disabled styling not applied
+- Only reads as disabled after form submit, not based on case status
+
+**Root Cause:**
+
+```javascript
+// WRONG: Only disable based on submissionComplete
+:disabled="submissionComplete"
+
+// But submissionComplete only set to true AFTER form submission
+// If case_status_id changes from database update (not form submission),
+// submissionComplete remains false even though form should be locked
+```
+
+**Flow of Bug:**
+
+```
+1. User loads case with case_status_id = 2 (SUBMITTED)
+2. Component initializes: submissionComplete = false (hasn't submitted in THIS form yet)
+3. Fields bind to :disabled="submissionComplete"
+4. submissionComplete = false → fields enabled (WRONG!)
+5. Case is locked, but user can still edit fields
+```
+
+**Solution Implemented:**
+
+```javascript
+// Add computed property that checks BOTH conditions:
+const fieldsDisabled = computed(() => {
+  return props.caseStatus > 1  // Disable if case status > 1
+})
+
+// Update ALL field bindings to use fieldsDisabled:
+<FormField
+  :disabled="field.readonly || submissionComplete || fieldsDisabled"
+/>
+
+<textarea
+  :disabled="submissionComplete || fieldsDisabled"
+/>
+
+<select
+  :disabled="submissionComplete || fieldsDisabled"
+/>
+
+<input type="file"
+  :disabled="uploadProgress > 0 || submissionComplete || fieldsDisabled"
+/>
+
+<!-- AND apply disabled styling -->
+class="disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+```
+
+**Where fieldsDisabled Matters:**
+
+| Field Type | Disabled Binding |
+|-----------|-----------------|
+| Text Input | `:disabled="field.readonly \|\| submissionComplete \|\| fieldsDisabled"` |
+| Number Input | `:disabled="field.readonly \|\| submissionComplete \|\| fieldsDisabled"` |
+| Select Dropdown | `:disabled="submissionComplete \|\| fieldsDisabled"` |
+| Textarea | `:disabled="submissionComplete \|\| fieldsDisabled"` |
+| Date Input | `:disabled="submissionComplete \|\| fieldsDisabled"` |
+| Month Input | `:disabled="submissionComplete \|\| fieldsDisabled"` |
+| Radio Button | `:disabled="submissionComplete \|\| fieldsDisabled"` |
+| Checkbox | `:disabled="submissionComplete \|\| fieldsDisabled"` |
+| File Upload | `:disabled="uploadProgress > 0 \|\| submissionComplete \|\| fieldsDisabled"` |
+
+**Critical Implementation Points:**
+
+1. **fieldsDisabled is independent of submissionComplete:**
+   ```javascript
+   // submissionComplete = "Did user click submit button in THIS component?"
+   // fieldsDisabled = "Is the case locked? (caseStatus > 1)"
+   // These are NOT the same thing!
+
+   // Case locked by backend → fieldsDisabled should be true, submissionComplete might be false
+   // User submitted form → submissionComplete should be true, fieldsDisabled might be false
+   // BOTH can be true (case locked AND user also submitted) → still disabled
+   ```
+
+2. **Use OR logic (||) not AND logic (&&):**
+   ```javascript
+   // WRONG: Both must be true to disable
+   :disabled="submissionComplete && fieldsDisabled"
+   // Result: User can edit locked case fields until they submit
+
+   // CORRECT: Either one being true disables field
+   :disabled="submissionComplete || fieldsDisabled"
+   // Result: Fields disabled if either user submitted OR case is locked
+   ```
+
+3. **All fields must be updated consistently:**
+   ```vue
+   <!-- If you forget ONE field, that field will appear editable -->
+   <FormField :disabled="submissionComplete" />  <!-- ❌ Missing fieldsDisabled -->
+   <textarea :disabled="submissionComplete || fieldsDisabled" />  <!-- ✅ Correct -->
+   <!-- First field is editable while locked! -->
+   ```
+
+**Testing Checklist:**
+
+- [ ] Load case with caseStatus = 1 (CREATED)
+  - All fields should be editable
+  - Background white, text normal color
+  - Cursor shows text input cursor
+
+- [ ] Load case with caseStatus = 2 (SUBMITTED)
+  - All fields should be disabled
+  - Background gray (#f3f4f6)
+  - Text color gray (#6b7280)
+  - Cursor shows "not-allowed"
+  - Visual feedback clear that case is locked
+
+- [ ] Test ALL field types:
+  - Text inputs
+  - Number inputs
+  - Selects/dropdowns
+  - Textareas
+  - Date pickers
+  - Checkboxes
+  - Radio buttons
+  - File upload
+
+- [ ] Submit form while case has caseStatus = 1
+  - After submit, fields should still be disabled
+  - submissionComplete = true, fieldsDisabled might be false
+  - But submissionComplete || fieldsDisabled = true → disabled
+
+- [ ] Dynamic case status change:
+  - Load case with caseStatus = 1 (editable)
+  - Backend updates case status to 2
+  - Refresh page
+  - Fields should now be disabled (fieldsDisabled recognizes caseStatus = 2)
+
+**CSS Disabled Styling - Must Include:**
+
+```vue
+class="disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+```
+
+**Without this styling:**
+- Field IS disabled (can't type) but doesn't LOOK disabled
+- Users confused: can't interact but looks interactive
+- Poor UX, appears broken
+
+**Lesson for Next Stages:**
+
+1. **fieldsDisabled is separate from submissionComplete** - they serve different purposes
+2. **Always use OR logic with disabled states** - `||` not `&&`
+3. **Update ALL fields** - one missed field breaks the pattern
+4. **Include disabled styling** - visual feedback is essential
+5. **Test each field type** - different input types might behave differently
+6. **Test both conditions independently:**
+   - Test case status locking fields
+   - Test form submission locking fields
+   - Test both happening together
+7. **Consider context for each stage** - some stages might have different rules (e.g., Stage 4 might only disable certain fields)
+
+---
+
+#### Obstacle 29: Case Number Not Persisting After Form Submit Due to Missing Refresh Trigger
+**Problem:** User changes period and saves form. Period changes correctly in form data, but case number in header doesn't update until page refresh. The case number update logic works, but it's not triggered at the right time.
+
+**Symptoms:**
+- User changes period from Mar-26 to Mar-25
+- User clicks "Submit & Continue" or "Save as Draft"
+- Form data saves correctly (backend confirms new period)
+- Case number in header still shows PASI26MarC (old value)
+- Page refresh shows PASI25MarC (correct value)
+- Watcher on period_id works fine (case number updates during editing)
+- But doesn't refresh after backend save completes
+
+**Root Cause:**
+
+```javascript
+// The problem: Period updates trigger watcher
+watch(() => prefillData.value.period_id, (newPeriodId) => {
+  // This updates LOCAL case number value
+  caseNumber.value = generateCaseNumberFromPeriod(newPeriodId)
+})
+
+// But after form submit:
+// 1. Form submits to backend
+// 2. Backend saves updated period
+// 3. prefillData hasn't been refreshed from backend yet
+// 4. Watcher still holds old period_id value
+// 5. After backend save, prefillData might not be updated
+// 6. So watcher never fires with NEW value
+
+// Flow:
+// Form load: period_id = 3 (Mar-26)
+// User selects: period_id = 2 (Mar-25) ← Watcher fires, case number updates
+// User submits: prefillData sent to backend
+// Backend saves successfully
+// NO REFRESH of prefillData from API
+// Watcher doesn't re-fire (period_id still = 2 in memory)
+// But frontend never confirmed backend saved the new value
+```
+
+**Solution Implemented:**
+
+```javascript
+// Listen for form submission events and refresh after successful save
+<StageForm
+  @submit="refreshTaxCase"
+  @saveDraft="refreshTaxCase"
+  /* ... other props ... */
+/>
+
+// The refreshTaxCase function:
+const refreshTaxCase = async () => {
+  try {
+    const caseRes = await fetch(`/api/tax-cases/${caseId}`)
+    
+    if (!caseRes.ok) {
+      console.warn(`Failed to refresh tax case: ${caseRes.status}`)
+      return
+    }
+    
+    const caseResponse = await caseRes.json()
+    const caseData = caseResponse.data ? caseResponse.data : caseResponse
+    
+    // Update prefillData with values from backend
+    prefillData.value = {
+      entity_name: caseData.entity_name || '',
+      period_id: caseData.period_id,  // ← This change triggers watcher
+      currency_id: caseData.currency_id,
+      disputed_amount: caseData.disputed_amount ? parseFloat(caseData.disputed_amount) : null,
+      submitted_at: caseData.submitted_at || null
+    }
+    
+    // Update case number from backend response
+    caseNumber.value = caseData.case_number || 'N/A'
+    caseStatus.value = caseData.case_status_id
+    
+  } catch (err) {
+    console.error('Failed to refresh tax case:', err)
+  }
+}
+```
+
+**Why This Works:**
+
+```
+1. User changes period → Watcher fires → Case number updates (LOCAL)
+2. User submits form → Submit event fires → refreshTaxCase() called
+3. refreshTaxCase() fetches updated case data from backend
+4. Backend returns: case_number = "PASI25MarC" (already updated by backend)
+5. caseNumber.value = "PASI25MarC" ← Header updates immediately
+6. ALSO: prefillData.value.period_id updated → Watcher fires again as confirmation
+7. Both paths ensure case number is correct
+```
+
+**Alternative Approach (If Backend Updates Case Number):**
+
+If your backend automatically recalculates and updates case_number when period changes:
+
+```php
+// In TaxCaseController.php update() method
+public function update(UpdateTaxCaseRequest $request, TaxCase $taxCase)
+{
+    // Save period change
+    $taxCase->update(['period_id' => $request->period_id]);
+    
+    // Recalculate case number based on new period
+    $newCaseNumber = $this->generateCaseNumber(
+        $taxCase->entity_code,
+        $taxCase->period  // reloaded with new period
+    );
+    $taxCase->update(['case_number' => $newCaseNumber]);
+    
+    return response()->json(['success' => true, 'data' => $taxCase]);
+}
+```
+
+Then frontend can trust backend response:
+
+```javascript
+const refreshTaxCase = async () => {
+  const caseRes = await fetch(`/api/tax-cases/${caseId}`)
+  const caseData = await caseRes.json()
+  
+  // Backend already updated case_number, just use it
+  caseNumber.value = caseData.data.case_number
+}
+```
+
+**Implementation Decision Tree:**
+
+```
+Question: Where should case number be generated/updated?
+
+├─ If backend auto-calculates case number:
+│  └─ Just refresh from API after form submit
+│     └─ No watcher needed on frontend
+│
+└─ If frontend generates case number:
+   └─ Use watcher to update during editing
+   └─ AND call refreshTaxCase() after submit
+   └─ Gives immediate feedback + backend confirmation
+```
+
+**Recommended Approach (What We Implemented):**
+
+- **Frontend:** Watcher updates case number during period selection (instant feedback)
+- **Backend:** Stores original case number, doesn't recalculate
+- **On Submit:** Frontend calls refreshTaxCase() to confirm backend accepted the change
+
+**Benefits:**
+- Instant visual feedback to user (watcher fires immediately)
+- Confirmation from backend (refreshTaxCase verifies save)
+- If backend differs, refreshTaxCase corrects it
+- Clear separation of concerns
+
+**Testing Checklist:**
+
+- [ ] Load case number PASI26MarC
+- [ ] Change period dropdown to Mar-25
+- [ ] Verify case number immediately shows PASI25MarC (watcher working)
+- [ ] Click "Submit & Continue"
+- [ ] Verify form submits successfully
+- [ ] Verify case number in header still shows PASI25MarC (refreshTaxCase updated it)
+- [ ] Check browser Network tab - API response contains new case_number
+- [ ] Refresh page manually
+- [ ] Verify case number still PASI25MarC (confirms backend saved it)
+- [ ] Test with "Save as Draft" button
+- [ ] Verify same behavior - case number persists
+
+**Troubleshooting:**
+
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| Case number updates during editing but reverts after submit | refreshTaxCase() not called or not working | Check @submit binding, check API endpoint returns correct data |
+| Case number shows undefined after submit | Backend not returning case_number field | Check API response includes case_number |
+| Case number flickers (updates twice) | Both watcher and refreshTaxCase updating | Normal - watcher updates UI, refreshTaxCase confirms from backend |
+| No response 500 from refreshTaxCase | API endpoint not accessible | Check /api/tax-cases/{id} endpoint exists and is accessible without auth issues |
+
+**Lesson for Next Stages:**
+
+1. **Use watchers for immediate local feedback** - updates UI instantly
+2. **Use submit listeners for backend confirmation** - refreshes data after save
+3. **Combine both patterns** - best UX with instant feedback + backend confirmation
+4. **Always refresh after async operations** - never assume frontend state matches backend
+5. **Test actual form submission** - not just component state changes
+6. **Verify API response** - check Network tab that API returns all needed fields
+7. **Consider layered updates** - watcher for UX, API refresh for accuracy
+
+---
+
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.6 | Jan 16, 2026 | **MAJOR UPDATE**: Added comprehensive obstacle documentation from SPT Filing Form implementation. Added Obstacles 27-29 with complete implementation patterns, testing checklists, and troubleshooting guides. Updated section 12 (Implementation Checklist) and 14 (Troubleshooting Guide) with field-disabling checks, period-sync testing, and case number refresh verification. **Total Obstacles: 29**. |
+| 1.5 | Jan 16, 2026 | Added Obstacles 27-29 (Case number period sync, Form field disabling by case status, Case number refresh after submit). These are real obstacles encountered during SPT Filing Form development with actual implementation patterns and testing checklists. |
 | 1.4 | Jan 16, 2026 | Added Obstacles 25-26 (Form buttons disabled debugging checklist, Database vs API mismatch). These obstacles document real debugging challenges encountered during SPT Filing Form development. Includes systematic debug strategies and prevention checklists. |
 | 1.3 | Jan 16, 2026 | Added Obstacles 20-24 (model relationships, authorization policy complexity, XMLHttpRequest listener order, role name case sensitivity, Vue prop types). These obstacles document real bugs found during SPT Filing Form implementation with actual production solutions. |
 | 1.2 | Jan 16, 2026 | Added Obstacle 19 (Non-Submit Buttons Triggering Form Submit Event) - critical bug found in Save as Draft functionality. Updated Prevention Checklist with explicit button type requirements. |
@@ -2674,7 +3298,7 @@ public function show(TaxCase $taxCase)
 **For:** PORTAX Tax Case Management System  
 **Framework:** Vue.js 3 + Laravel 11  
 **Last Updated:** January 16, 2026  
-**Total Obstacles Documented:** 26  
-**Total Lessons Learned:** 26
+**Total Obstacles Documented:** 29  
+**Total Lessons Learned:** 29
 
 For questions or updates to this template, refer to the base `StageForm.vue` implementation or contact the development team.

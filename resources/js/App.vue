@@ -52,16 +52,22 @@
         <p>PORTAX Tax Case Management System | Vue.js 3 + Laravel REST API</p>
       </div>
     </footer>
+
+    <!-- Global Toast Component -->
+    <Toast ref="toastRef" />
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import Toast from './components/Toast.vue'
+import { setToastComponent } from './composables/useToast'
 
 const router = useRouter()
 const route = useRoute()
 const currentUser = ref(null)
+const toastRef = ref(null)
 
 // Check if current route should be full-screen (no max-width constraint)
 const isFullScreenRoute = () => {
@@ -90,6 +96,9 @@ const getMainClasses = () => {
 }
 
 onMounted(() => {
+  // Initialize toast component reference
+  setToastComponent(toastRef)
+
   // Get user from localStorage
   const userStr = localStorage.getItem('user')
   if (userStr) {

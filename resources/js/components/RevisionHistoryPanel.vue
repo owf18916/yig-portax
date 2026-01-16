@@ -64,21 +64,24 @@
             <!-- Document Changes -->
             <div v-if="revision.proposed_document_changes" class="mt-2">
               <strong>Document Changes:</strong>
-              <div v-if="revision.proposed_document_changes.files_to_delete?.length > 0" class="text-sm mt-1">
+              <div v-if="getDocumentChanges(revision).files_to_delete?.length > 0" class="text-sm mt-1">
                 <span class="text-danger"><strong>Deleted:</strong></span>
                 <ul class="mt-1">
-                  <li v-for="docId in revision.proposed_document_changes.files_to_delete" :key="`del-${docId}`">
-                    {{ getDocFileName(docId) }}
+                  <li v-for="docId in getDocumentChanges(revision).files_to_delete" :key="`del-${docId}`">
+                    {{ getDocFileName(docId, revision) }}
                   </li>
                 </ul>
               </div>
-              <div v-if="revision.proposed_document_changes.files_to_add?.length > 0" class="text-sm mt-1">
-                <span class="text-success"><strong>Added:</strong></span>
+              <div v-if="getDocumentChanges(revision).files_to_add?.length > 0" class="text-sm mt-1">
+                <span class="text-success"><strong>Files Added:</strong></span>
                 <ul class="mt-1">
-                  <li v-for="docId in revision.proposed_document_changes.files_to_add" :key="`add-${docId}`">
-                    {{ getDocFileName(docId) }}
+                  <li v-for="docId in getDocumentChanges(revision).files_to_add" :key="`add-${docId}`">
+                    ✓ {{ getDocFileName(docId, revision) }}
                   </li>
                 </ul>
+              </div>
+              <div v-if="!getDocumentChanges(revision).files_to_delete?.length && !getDocumentChanges(revision).files_to_add?.length && !getDocumentChanges(revision).new_files_names?.length" class="text-sm text-muted">
+                No document changes
               </div>
             </div>
           </div>
@@ -102,6 +105,7 @@
     <RequestRevisionModalV2
       v-if="showRequestModal"
       :case-id="caseId"
+      :stage-id="stageId"
       :available-fields="availableFields"
       :current-documents="currentDocuments"
       @submit="onRevisionRequested"
@@ -120,6 +124,7 @@
       :visible="showApprovalModal"
       :revision="revisionToApprove"
       :case-id="caseId"
+      :entity-type="entityType"
       :all-documents="currentDocuments"
       @close="showApprovalModal = false"
       @approved="onRevisionApproved"
@@ -130,12 +135,17 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
+import { useRevisionFields } from '@/composables/useRevisionFields'
+import { useToast } from '@/composables/useToast'
 import RequestRevisionModalV2 from './RequestRevisionModalV2.vue'
 import BeforeAfterComparison from './BeforeAfterComparison.vue'
 import RevisionApprovalModalV2 from './RevisionApprovalModalV2.vue'
 
+const { getFieldLabel } = useRevisionFields()
+
 const props = defineProps({
   caseId: { type: Number, required: true },
+  stageId: { type: [String, Number], default: '1' },
   taxCase: { type: Object, required: true },
   revisions: { type: Array, default: () => [] },
   currentUser: { type: Object, default: null },
@@ -148,31 +158,17 @@ const props = defineProps({
       'disputed_amount',
       'supporting_docs'
     ]
-  }
+  },
+  entityType: { type: String, default: 'tax-cases' } // Support any entity type
 })
 
 const emit = defineEmits(['revision-requested', 'refresh'])
+const { showSuccess, showError } = useToast()
 
 const showRequestModal = ref(false)
 const selectedRevision = ref(null)
 const showApprovalModal = ref(false)
 const revisionToApprove = ref(null)
-
-// Debug: Log revisions when they change
-watch(() => props.revisions, (newVal) => {
-  console.log('Revisions updated:', newVal)
-  if (newVal.length > 0) {
-    console.log('First revision:', newVal[0])
-    console.log('requested_by:', newVal[0].requested_by)
-  }
-}, { deep: true })
-
-// Debug: Log currentUser
-watch(() => props.currentUser, (newVal) => {
-  console.log('Current user updated:', newVal)
-  console.log('User role:', newVal?.role)
-  console.log('Is Holding:', isHoldingUser.value)
-}, { deep: true })
 
 // Check if user can request new revision
 const canRequestRevision = computed(() => {
@@ -203,17 +199,10 @@ const sortedRevisions = computed(() => {
   )
 })
 
-// Get current documents (for revision modal)
-const currentDocuments = computed(() => {
-  return props.currentDocuments || []
-})
-
 // Check if current user is from Holding entity (can approve/reject revisions)
 const isHoldingUser = computed(() => {
   if (!props.currentUser) return false
-  const entityType = props.currentUser?.entity?.entity_type
-  console.log('Entity type check:', entityType, 'isHolding:', entityType === 'HOLDING')
-  return entityType === 'HOLDING'
+  return props.currentUser?.entity?.entity_type === 'HOLDING'
 })
 
 const statusClass = (status) => {
@@ -248,13 +237,7 @@ const formatDate = (date) => {
 }
 
 const fieldLabel = (field) => {
-  const labels = {
-    'period_id': 'Tax Period',
-    'currency_id': 'Currency',
-    'disputed_amount': 'Disputed Amount',
-    'supporting_docs': 'Supporting Documents'
-  }
-  return labels[field] || field
+  return getFieldLabel(props.entityType, field)
 }
 
 const showComparison = (revision) => {
@@ -276,17 +259,34 @@ const onRevisionApproved = (revision) => {
   showApprovalModal.value = false
   revisionToApprove.value = null
   emit('refresh')
+  showSuccess('Revision Approved', 'Changes have been successfully applied.')
 }
 
 const onRevisionRejected = (revision) => {
   showApprovalModal.value = false
   revisionToApprove.value = null
   emit('refresh')
+  showSuccess('Revision Rejected', 'The revision request has been rejected.')
 }
 
-const getDocFileName = (docId) => {
+const getDocFileName = (docId, revision) => {
+  // First try to get from revision.documents (contains file details from backend)
+  if (revision?.documents && revision.documents[docId]) {
+    return revision.documents[docId].original_filename
+  }
+  // Fallback to currentDocuments prop
   const doc = props.currentDocuments.find(d => d.id === docId)
-  return doc ? (doc.file_name || doc.name || doc.original_filename) : `Doc #${docId}`
+  return doc ? (doc.original_filename || doc.file_name || doc.name) : `Doc #${docId}`
+}
+
+const getDocumentChanges = (revision) => {
+  if (!revision?.proposed_document_changes) {
+    return { files_to_delete: [], files_to_add: [], new_files_names: [] }
+  }
+  const changes = revision.proposed_document_changes
+  // Handle if it's a JSON string
+  const parsed = typeof changes === 'string' ? JSON.parse(changes) : changes
+  return parsed || { files_to_delete: [], files_to_add: [], new_files_names: [] }
 }
 </script>
 

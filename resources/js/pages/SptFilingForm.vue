@@ -22,12 +22,15 @@
       :caseStatus="caseStatus"
       :preFilledMessage="preFilledMessage"
       :prefillData="prefillData"
+      @submit="refreshTaxCase"
+      @saveDraft="refreshTaxCase"
     />
 
     <!-- REVISION HISTORY PANEL - Integrated -->
     <div class="px-4 py-6">
       <RevisionHistoryPanel 
         :case-id="caseId"
+        :stage-id="stageId"
         :tax-case="{ submitted_at: prefillData.submitted_at }"
         :revisions="revisions"
         :current-user="currentUser"
@@ -41,21 +44,25 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useRevisionAPI } from '@/composables/useRevisionAPI'
 import StageForm from '../components/StageForm.vue'
 import Alert from '../components/Alert.vue'
 import RevisionHistoryPanel from '../components/RevisionHistoryPanel.vue'
 
 const route = useRoute()
 const caseId = parseInt(route.params.id, 10)
+const { listRevisions } = useRevisionAPI()
 const caseNumber = ref('TAX-2026-001')
+const originalCaseNumber = ref('') // Store original case number pattern
 const preFilledMessage = ref('Loading...')
 const isLoading = ref(true)
 const caseStatus = ref(null)
 const revisions = ref([])
 const currentUser = ref(null)
 const currentDocuments = ref([])
+const periodsList = ref([]) // Store periods for reference
 
 const fields = ref([
   {
@@ -127,6 +134,58 @@ const prefillData = ref({
   submitted_at: null
 })
 
+// Helper function to generate case number based on period
+const generateCaseNumberFromPeriod = (periodId) => {
+  if (!periodId || !originalCaseNumber.value) return originalCaseNumber.value
+
+  // Find the selected period from the periods list
+  const selectedPeriod = periodsList.value.find(p => p.id === periodId)
+  if (!selectedPeriod || !selectedPeriod.year || !selectedPeriod.month) {
+    return originalCaseNumber.value
+  }
+
+  // Month number to abbreviation mapping
+  const monthAbbr = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const newMonth = monthAbbr[selectedPeriod.month] || monthAbbr[3] // Default to Mar if invalid
+
+  // Get last 2 digits of year
+  const newYear = selectedPeriod.year.toString().slice(-2)
+
+  // Find the pattern in original case number
+  // Pattern: PREFIX + YEAR(2digits) + MONTH(3letters) + SUFFIX
+  // Example: PASI26MarC -> PREFIX=PASI, YEAR=26, MONTH=Mar, SUFFIX=C
+  
+  const caseNumStr = originalCaseNumber.value
+  
+  // Match: alphabets at start, then 2 digits, then 3 letters, then rest
+  const regex = /^([A-Z]+)(\d{2})([A-Z][a-z]{2})(.*)$/
+  const match = caseNumStr.match(regex)
+  
+  if (!match) {
+    // Fallback if pattern doesn't match
+    return originalCaseNumber.value
+  }
+
+  const [, prefix, , monthAbbreviation, suffix] = match
+  
+  // Build new case number: PREFIX + NEW_YEAR + NEW_MONTH + SUFFIX
+  const newCaseNumber = `${prefix}${newYear}${newMonth}${suffix}`
+  
+  return newCaseNumber
+}
+
+// Watcher for period_id changes
+watch(
+  () => prefillData.value.period_id,
+  (newPeriodId) => {
+    if (newPeriodId && originalCaseNumber.value) {
+      const newCaseNum = generateCaseNumberFromPeriod(newPeriodId)
+      caseNumber.value = newCaseNum
+      console.log('Case number updated from period change:', newCaseNum)
+    }
+  }
+)
+
 onMounted(async () => {
   try {
     // Fetch everything in parallel
@@ -145,6 +204,9 @@ onMounted(async () => {
     const periods = await periodRes.json()
     const caseResponse = await caseRes.json()
     
+    // Store periods for later reference when period changes
+    periodsList.value = periods
+
     // Handle wrapped response (if API returns {success, data: {...}})
     const caseData = caseResponse.data ? caseResponse.data : caseResponse
 
@@ -173,6 +235,7 @@ onMounted(async () => {
     }
 
     caseNumber.value = caseData.case_number || 'N/A'
+    originalCaseNumber.value = caseData.case_number || 'N/A' // Store original for period changes
     caseStatus.value = caseData.case_status_id
     preFilledMessage.value = `✅ Pre-filled from ${caseData.case_type} case (${caseData.case_number})`
 
@@ -220,16 +283,8 @@ onMounted(async () => {
 // Load revisions untuk case ini
 const loadRevisions = async () => {
   try {
-    const response = await fetch(`/api/tax-cases/${caseId}/revisions`)
-    
-    if (!response.ok) {
-      console.warn(`Failed to load revisions: ${response.status} ${response.statusText}`)
-      revisions.value = []
-      return
-    }
-    
-    const data = await response.json()
-    revisions.value = data.data || data || []
+    const revisionsData = await listRevisions('tax-cases', caseId)
+    revisions.value = revisionsData
     
     // Also refresh tax case data to update fields if revision was approved
     await refreshTaxCase()

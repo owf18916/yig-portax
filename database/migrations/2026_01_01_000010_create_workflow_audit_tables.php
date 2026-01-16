@@ -59,13 +59,15 @@ return new class extends Migration
             $table->enum('revision_status', ['requested', 'approved', 'rejected', 'implemented'])->default('requested');
             $table->json('original_data')->nullable();
             $table->json('revised_data')->nullable();
+            $table->json('proposed_values')->nullable()->comment('User proposed values for revision');
+            $table->json('proposed_document_changes')->nullable()->comment('Files to delete (ids) and new files (ids)');
             
             $table->unsignedBigInteger('requested_by');
             $table->timestamp('requested_at');
+            $table->text('reason')->nullable()->comment('Reason for requesting revision');
             
             $table->unsignedBigInteger('approved_by')->nullable();
             $table->timestamp('approved_at')->nullable();
-            
             $table->text('rejection_reason')->nullable();
             
             $table->timestamps();
