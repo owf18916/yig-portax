@@ -177,15 +177,17 @@ The case number is **automatically generated** by the system when creating a new
 #### Case Status:
 **Case Status: SKP RECEIVED**
 
-#### Decision Point 1: Jenis SKP?
+#### Decision Point 1: User Choice - Proceed to Refund or Objection?
 
-**Option A: SKP LB (Lebih Bayar)**
-- Result: Accepted
-- Proceed to: **Refund Procedure**
+**Regardless of SKP Type** (LB, NIHIL, or KB), user can choose:
 
-**Option B: NIHIL or SKP KB**
-- Result: Rejected
-- Proceed to: **Submit Surat Keberatan** (Objection)
+**Option A: Proceed to Refund Procedure**
+- User decides to request refund directly
+- Next Stage: **Stage 13 (Bank Transfer Request)**
+
+**Option B: Proceed to Objection**
+- User decides to file objection/challenge to SKP
+- Next Stage: **Stage 5 (Surat Keberatan - Objection Submission)**
 
 #### System Actions:
 - Input & Upload Supporting Docs (SKP)
@@ -256,14 +258,14 @@ The case number is **automatically generated** by the system when creating a new
 
 **Option B: Dikabulkan Sebagian (Partially Granted)**
 - Result: Accepted
-- Proceed to: **Refund Procedure**
+- Proceed to: **Refund Procedure** or **Submit Banding** (Appeal)
 
 **Option C: Ditolak (Rejected)**
 - Result: Rejected
 - Proceed to: **Submit Banding** (Appeal)
 
 **Option D: Dikabulkan Sebagian / Ditolak**
-- Additional path: Can proceed to **Submit Banding** (Appeal)
+- Proceed to : **Refund Procedure** or **Submit Banding** (Appeal)
 
 #### System Actions:
 - Input & Upload Supporting Docs (Surat Keputusan Keberatan)
@@ -498,9 +500,10 @@ The system tracks the following case statuses throughout the workflow:
 
 ## 🎯 Decision Logic Summary
 
-### Decision Point 1: SKP Type
-- **SKP LB (Lebih Bayar)** → Refund Procedure
-- **NIHIL / SKP KB** → Objection Process
+### Decision Point 1: Post-SKP User Choice
+- **All SKP Types** (LB, NIHIL, KB) allow user to choose:
+  - **Option A:** Proceed to Refund Procedure (Stage 13)
+  - **Option B:** Proceed to Objection Process (Stage 5)
 
 ### Decision Point 2: Objection Decision
 - **Dikabulkan (Granted)** → Refund Procedure

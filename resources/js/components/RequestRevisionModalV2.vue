@@ -64,6 +64,21 @@
               </select>
             </div>
 
+            <!-- SKP Type -->
+            <div v-if="selectedFields.includes('skp_type')" class="mb-3">
+              <label class="form-label text-sm">{{ fieldLabel('skp_type') }}</label>
+              <select 
+                v-model="proposedValues.skp_type"
+                class="form-control"
+                required
+              >
+                <option value="">-- Select SKP Type --</option>
+                <option value="LB">SKP LB (Lebih Bayar - Overpayment)</option>
+                <option value="NIHIL">NIHIL (Zero)</option>
+                <option value="KB">SKP KB (Kurang Bayar - Underpayment)</option>
+              </select>
+            </div>
+
             <!-- Disputed Amount -->
             <div v-if="selectedFields.includes('disputed_amount')" class="mb-3">
               <label class="form-label text-sm">Disputed Amount (Nilai Sengketa)</label>
@@ -359,7 +374,19 @@ const fieldLabel = (field) => {
     'royalty_finding': 'Royalty Finding Amount',
     'service_finding': 'Service Finding Amount',
     'other_finding': 'Other Finding Amount',
-    'other_finding_notes': 'Notes for Other Findings'
+    'other_finding_notes': 'Notes for Other Findings',
+    'skp_number': 'Nomor SKP (SKP Number)',
+    'skp_type': 'Jenis SKP (SKP Type)',
+    'skp_amount': 'Nilai SKP (SKP Amount)',
+    'royalty_correction': 'Royalty Correction Amount',
+    'service_correction': 'Service Correction Amount',
+    'other_correction': 'Other Correction Amount',
+    'notes': 'Notes',
+    'objection_number': 'Nomor Surat Keberatan (Objection Letter Number)',
+    'submission_date': 'Tanggal Dilaporkan (Submission Date)',
+    'objection_amount': 'Nilai Keberatan (Objection Amount)',
+    'objection_grounds': 'Alasan Keberatan (Grounds for Objection)',
+    'supporting_evidence': 'Bukti Pendukung (Supporting Evidence)'
   }
   return labels[field] || field
 }
@@ -390,7 +417,19 @@ const getFieldType = (field) => {
     'royalty_finding': 'number',
     'service_finding': 'number',
     'other_finding': 'number',
-    'other_finding_notes': 'textarea'
+    'other_finding_notes': 'textarea',
+    'skp_number': 'text',
+    'skp_type': 'select',
+    'skp_amount': 'number',
+    'royalty_correction': 'number',
+    'service_correction': 'number',
+    'other_correction': 'number',
+    'notes': 'textarea',
+    'objection_number': 'text',
+    'submission_date': 'date',
+    'objection_amount': 'number',
+    'objection_grounds': 'textarea',
+    'supporting_evidence': 'textarea'
   }
   return types[field] || 'text'
 }

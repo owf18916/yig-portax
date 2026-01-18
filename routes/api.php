@@ -4,6 +4,7 @@ use App\Models\TaxCase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\Api\EntityController;
@@ -85,6 +86,85 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         Route::get('/documents', [TaxCaseController::class, 'documents'])->name('tax-cases.documents');
         Route::post('/complete', [TaxCaseController::class, 'complete'])->name('tax-cases.complete');
         
+        // Workflow decision routing endpoint - locks workflow path via stage_to
+        Route::post('/workflow-decision', function (Request $request, TaxCase $taxCase) {
+            $user = auth()->user();
+            if (!$user) return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+            
+            $validated = $request->validate([
+                'current_stage_id' => 'required|integer',
+                'next_stage_id' => 'required|integer',
+                'decision_type' => 'required|in:objection,refund,appeal,supreme_court',
+                'decision_reason' => 'nullable|string',
+            ]);
+            
+            try {
+                DB::beginTransaction();
+                
+                // Validation: Must be from the correct current stage
+                $currentStageHistory = $taxCase->workflowHistories()
+                    ->where('stage_id', $validated['current_stage_id'])
+                    ->where('status', '!=', 'draft')
+                    ->latest('created_at')
+                    ->first();
+                
+                if (!$currentStageHistory) {
+                    throw new \Exception('Current stage must be submitted before decision routing');
+                }
+                
+                // Update workflow_histories with stage_to to lock the workflow path
+                // WHERE tax_case_id = specific case AND stage_id = current_stage
+                $taxCase->workflowHistories()
+                    ->where('stage_id', $validated['current_stage_id'])
+                    ->where('tax_case_id', $taxCase->id)  // IMPORTANT: Specific to this case
+                    ->latest('created_at')
+                    ->first()
+                    ->update([
+                        'stage_to' => $validated['next_stage_id'],
+                        'decision_point' => 'stage_routing',
+                        'decision_value' => $validated['decision_type'],
+                    ]);
+                
+                // Update tax_cases.current_stage to next stage
+                $taxCase->update([
+                    'current_stage' => $validated['next_stage_id'],
+                ]);
+                
+                // Create new workflow history entry for the next stage (in draft status)
+                $taxCase->workflowHistories()->create([
+                    'stage_id' => $validated['next_stage_id'],
+                    'stage_from' => $validated['current_stage_id'],
+                    'stage_to' => null,  // Will be set when user makes a decision at this stage
+                    'action' => 'routed',
+                    'status' => 'draft',
+                    'decision_point' => 'workflow_routing',
+                    'decision_value' => $validated['decision_type'],
+                    'user_id' => $user->id,
+                    'notes' => $validated['decision_reason'] ?? "Routed from Stage {$validated['current_stage_id']} to Stage {$validated['next_stage_id']}",
+                ]);
+                
+                DB::commit();
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => "Workflow locked: Stage {$validated['current_stage_id']} → {$validated['decision_type']} path (Stage {$validated['next_stage_id']})",
+                    'data' => $taxCase->fresh(['workflowHistories'])
+                ]);
+                
+            } catch (\Exception $e) {
+                DB::rollBack();
+                Log::error('Workflow decision error', [
+                    'error' => $e->getMessage(),
+                    'case_id' => $taxCase->id,
+                    'trace' => $e->getTraceAsString()
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage()
+                ], 400);
+            }
+        })->name('tax-cases.workflow-decision');
+        
         // ========================================================================
         // REVISION ROUTES - SPT Filling (Stage 1) Revision Management
         // ========================================================================
@@ -153,7 +233,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                 } elseif ($stage == 4) {
                     $skpData = $request->only([
                         'skp_number', 'issue_date', 'receipt_date', 'skp_type',
-                        'skp_amount', 'audit_corrections', 'additional_corrections', 'next_stage', 'notes'
+                        'skp_amount', 'royalty_correction', 'service_correction', 'other_correction', 'notes'
                     ]);
                     $skpData['tax_case_id'] = $taxCase->id;
                     \App\Models\SkpRecord::updateOrCreate(
@@ -161,6 +241,16 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                         $skpData
                     );
                     Log::info('SkpRecord saved', ['skpData' => $skpData]);
+                } elseif ($stage == 5) {
+                    $objectionData = $request->only([
+                        'objection_number', 'submission_date', 'objection_amount'
+                    ]);
+                    $objectionData['tax_case_id'] = $taxCase->id;
+                    \App\Models\ObjectionSubmission::updateOrCreate(
+                        ['tax_case_id' => $taxCase->id],
+                        $objectionData
+                    );
+                    Log::info('ObjectionSubmission saved', ['objectionData' => $objectionData]);
                 }
                 
                 if ($isDraft) {

@@ -269,6 +269,7 @@
                       <!-- Remove button (only when current stage is not submitted and form not submitted) -->
                       <button
                         v-if="!fieldsDisabled && !submissionComplete"
+                        type="button"
                         @click.stop="removeFile(file.id)"
                         class="px-1.5 py-0.5 text-xs bg-red-50 text-red-700 rounded hover:bg-red-100 transition whitespace-nowrap"
                         title="Remove document"
@@ -651,10 +652,17 @@ const removeFile = async (fileId) => {
     // Find the file
     const file = uploadedFiles.value.find(f => f.id === fileId)
     
-    // Only allow deletion if case status is 1 (CREATED/DRAFT)
-    // If case_status_id > 1, case has been submitted and all documents are locked
-    if (props.caseStatus !== 1) {
-      toastRef.value?.addToast('Cannot Delete', 'Case has been submitted - documents are locked', 'error', 3000)
+    // Single source of truth: Check workflow_histories to determine if case is closed
+    // Documents can be deleted during all workflow stages (1-13)
+    // Only prevent deletion if case_status > 16 (CLOSED status), which means no active workflow_history entry
+    const hasActiveWorkflow = props.prefillData?.workflowHistories?.some(
+      h => h.case_status_id && h.case_status_id <= 16
+    ) ?? false
+    
+    // Allow deletion if case still has active workflow, OR if caseStatus indicates not closed
+    const isCaseClosed = props.caseStatus && props.caseStatus > 16
+    if (isCaseClosed && !hasActiveWorkflow) {
+      toastRef.value?.addToast('Cannot Delete', 'Case is closed - documents cannot be modified', 'error', 3000)
       return
     }
     

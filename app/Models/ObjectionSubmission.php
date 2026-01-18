@@ -14,10 +14,11 @@ class ObjectionSubmission extends Model
 
     protected $fillable = [
         'tax_case_id',
-        'objection_letter_number',
+        'objection_number',
         'submission_date',
         'objection_amount',
-        'grounds',
+        'objection_grounds',
+        'supporting_evidence',
         'submitted_by',
         'submitted_at',
         'approved_by',

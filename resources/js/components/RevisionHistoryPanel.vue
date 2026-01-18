@@ -15,7 +15,7 @@
     </div>
 
     <!-- Revisions List -->
-    <div v-if="revisions.length > 0" class="revisions-list">
+    <div v-if="stageFilteredRevisions.length > 0" class="revisions-list">
       <div 
         v-for="revision in sortedRevisions" 
         :key="revision.id"
@@ -98,7 +98,7 @@
 
     <!-- No Revisions -->
     <div v-else class="no-revisions">
-      <p class="text-muted">No revisions yet</p>
+      <p class="text-muted">No revisions for this stage yet</p>
     </div>
 
     <!-- Request Revision Modal -->
@@ -181,37 +181,48 @@ const revisionToApprove = ref(null)
 
 // Check if user can request new revision
 const canRequestRevision = computed(() => {
-  // Data must be submitted - check workflow_history for stage 1 (SPT Filing)
+  // Data must be submitted - check workflow_history for CURRENT STAGE
+  const stageIdNum = parseInt(props.stageId, 10)
   const isStageSubmitted = props.taxCase?.workflow_histories?.some(
-    h => h.stage_id === 1 && (h.status === 'submitted' || h.status === 'approved')
+    h => h.stage_id === stageIdNum && (h.status === 'submitted' || h.status === 'approved')
   )
   
   if (!isStageSubmitted) return false
   
-  // No pending revisions
-  const pending = props.revisions.find(r => r.revision_status === 'requested')
+  // No pending revisions for THIS STAGE
+  const pending = stageFilteredRevisions.value.find(r => r.revision_status === 'requested')
   return !pending
 })
 
 // Message for why button is disabled
 const revisionStatusMessage = computed(() => {
+  const stageIdNum = parseInt(props.stageId, 10)
   const isStageSubmitted = props.taxCase?.workflow_histories?.some(
-    h => h.stage_id === 1 && (h.status === 'submitted' || h.status === 'approved')
+    h => h.stage_id === stageIdNum && (h.status === 'submitted' || h.status === 'approved')
   )
   
   if (!isStageSubmitted) {
     return '(Submit data first to request revisions)'
   }
   
-  const pending = props.revisions.find(r => r.revision_status === 'requested')
+  const pending = stageFilteredRevisions.value.find(r => r.revision_status === 'requested')
   if (pending) return `(Revision #${pending.id} awaiting review)`
   
   return ''
 })
 
+// Filter revisions by CURRENT STAGE ONLY
+const stageFilteredRevisions = computed(() => {
+  const stageIdNum = parseInt(props.stageId, 10)
+  return props.revisions.filter(r => {
+    // Filter by stage_code from revision record (matches stage_id)
+    return r.stage_code === stageIdNum
+  })
+})
+
 // Sort revisions by date (newest first)
 const sortedRevisions = computed(() => {
-  return [...props.revisions].sort((a, b) => 
+  return [...stageFilteredRevisions.value].sort((a, b) => 
     new Date(b.created_at) - new Date(a.created_at)
   )
 })

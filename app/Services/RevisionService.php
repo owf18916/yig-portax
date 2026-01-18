@@ -74,6 +74,26 @@ class RevisionService
                         Log::info("RevisionService: Using sphpRecord as data source");
                     }
                 }
+                // For stage 4 (SKP), fetch data from skpRecord
+                elseif ((int)$stageCode === 4) {
+                    if (!$revisable->relationLoaded('skpRecord')) {
+                        $revisable->load('skpRecord');
+                    }
+                    if ($revisable->skpRecord) {
+                        $dataSource = $revisable->skpRecord;
+                        Log::info("RevisionService: Using skpRecord as data source");
+                    }
+                }
+                // For stage 5 (Objection Submission), fetch data from objectionSubmission
+                elseif ((int)$stageCode === 5) {
+                    if (!$revisable->relationLoaded('objectionSubmission')) {
+                        $revisable->load('objectionSubmission');
+                    }
+                    if ($revisable->objectionSubmission) {
+                        $dataSource = $revisable->objectionSubmission;
+                        Log::info("RevisionService: Using objectionSubmission as data source");
+                    }
+                }
             }
 
             // Prepare original data (only include fields being revised)
@@ -222,6 +242,24 @@ class RevisionService
                 if ($revisable->sphpRecord) {
                     $updateTarget = $revisable->sphpRecord;
                     Log::info('RevisionService: Using sphpRecord as update target');
+                }
+            }
+            elseif ($stageCode == 4) {
+                if (!$revisable->relationLoaded('skpRecord')) {
+                    $revisable->load('skpRecord');
+                }
+                if ($revisable->skpRecord) {
+                    $updateTarget = $revisable->skpRecord;
+                    Log::info('RevisionService: Using skpRecord as update target');
+                }
+            }
+            elseif ($stageCode == 5) {
+                if (!$revisable->relationLoaded('objectionSubmission')) {
+                    $revisable->load('objectionSubmission');
+                }
+                if ($revisable->objectionSubmission) {
+                    $updateTarget = $revisable->objectionSubmission;
+                    Log::info('RevisionService: Using objectionSubmission as update target');
                 }
             }
         }
