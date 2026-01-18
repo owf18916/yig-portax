@@ -202,14 +202,19 @@ class TaxCaseController extends ApiController
     /**
      * Get all documents for a tax case
      */
-    public function documents(TaxCase $taxCase): JsonResponse
+    public function documents(TaxCase $taxCase, Request $request): JsonResponse
     {
         $documents = $taxCase->documents()
-            ->with(['uploadedBy', 'verifiedBy'])
-            ->orderBy('created_at', 'desc')
-            ->get();
-
-        return $this->success($documents);
+            ->with(['uploadedBy'])
+            ->orderBy('created_at', 'desc');
+        
+        // Filter by stage_code if provided
+        $stageCode = $request->query('stage_code');
+        if ($stageCode) {
+            $documents->where('stage_code', $stageCode);
+        }
+        
+        return $this->success($documents->get());
     }
 
     /**

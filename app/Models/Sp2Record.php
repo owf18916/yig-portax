@@ -18,22 +18,14 @@ class Sp2Record extends Model
         'issue_date',
         'receipt_date',
         'auditor_name',
-        'auditor_title',
-        'auditor_department',
-        'findings',
-        'submitted_by',
-        'submitted_at',
-        'approved_by',
-        'approved_at',
-        'status',
+        'auditor_phone',
+        'auditor_email',
         'notes',
     ];
 
     protected $casts = [
         'issue_date' => 'date',
         'receipt_date' => 'date',
-        'submitted_at' => 'datetime',
-        'approved_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',
@@ -43,15 +35,5 @@ class Sp2Record extends Model
     public function taxCase(): BelongsTo
     {
         return $this->belongsTo(TaxCase::class);
-    }
-
-    public function submittedBy(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'submitted_by');
-    }
-
-    public function approvedBy(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'approved_by');
     }
 }

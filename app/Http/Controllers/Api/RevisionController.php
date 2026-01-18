@@ -143,7 +143,8 @@ class RevisionController extends Controller
                 $payload['proposed_values'] ?? [],
                 $payload['proposed_document_changes'],
                 $payload['reason'],
-                $payload['fields']
+                $payload['fields'],
+                $stageCode
             );
 
             Log::info('RevisionController: Revision created successfully', [

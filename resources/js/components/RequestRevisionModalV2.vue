@@ -77,6 +77,70 @@
               />
             </div>
 
+            <!-- Dynamic Text/Email/Date Fields -->
+            <div v-for="field in selectedFields" :key="field" class="mb-3">
+              <!-- Text Input -->
+              <div v-if="getFieldType(field) === 'text' && field !== 'supporting_docs'" class="mb-3">
+                <label class="form-label text-sm">{{ fieldLabel(field) }}</label>
+                <input 
+                  v-model="proposedValues[field]"
+                  type="text"
+                  :placeholder="`Enter new value for ${fieldLabel(field)}`"
+                  class="form-control"
+                  required
+                />
+              </div>
+
+              <!-- Email Input -->
+              <div v-if="getFieldType(field) === 'email'" class="mb-3">
+                <label class="form-label text-sm">{{ fieldLabel(field) }}</label>
+                <input 
+                  v-model="proposedValues[field]"
+                  type="email"
+                  :placeholder="`Enter new email for ${fieldLabel(field)}`"
+                  class="form-control"
+                  required
+                />
+              </div>
+
+              <!-- Date Input -->
+              <div v-if="getFieldType(field) === 'date'" class="mb-3">
+                <label class="form-label text-sm">{{ fieldLabel(field) }}</label>
+                <input 
+                  v-model="proposedValues[field]"
+                  type="date"
+                  class="form-control"
+                  required
+                />
+              </div>
+
+              <!-- Number Input -->
+              <div v-if="getFieldType(field) === 'number' && field !== 'disputed_amount'" class="mb-3">
+                <label class="form-label text-sm">{{ fieldLabel(field) }}</label>
+                <input 
+                  v-model.number="proposedValues[field]"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  :placeholder="`Enter new amount for ${fieldLabel(field)}`"
+                  class="form-control"
+                  required
+                />
+              </div>
+
+              <!-- Textarea Input -->
+              <div v-if="getFieldType(field) === 'textarea'" class="mb-3">
+                <label class="form-label text-sm">{{ fieldLabel(field) }}</label>
+                <textarea 
+                  v-model="proposedValues[field]"
+                  :placeholder="`Enter new text for ${fieldLabel(field)}`"
+                  rows="3"
+                  class="form-control textarea"
+                  required
+                ></textarea>
+              </div>
+            </div>
+
             <!-- Supporting Documents -->
             <div v-if="selectedFields.includes('supporting_docs')" class="mb-3">
               <label class="form-label text-sm">Supporting Documents Management</label>
@@ -206,7 +270,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useToast } from '@/composables/useToast'
 
 const props = defineProps({
@@ -219,11 +283,20 @@ const props = defineProps({
   availableFields: { 
     type: Array, 
     default: () => ['period_id', 'currency_id', 'disputed_amount', 'supporting_docs']
-  }
+  },
+  fields: { 
+    type: Array, 
+    default: () => [] 
+  } // Full field definitions with labels
 })
 
 const emit = defineEmits(['submit', 'close'])
 const { showSuccess, showError } = useToast()
+
+// Watch for currentDocuments changes
+watch(() => props.currentDocuments, (newDocs) => {
+  console.log('📄 [RequestRevisionModalV2] currentDocuments updated:', newDocs)
+}, { immediate: true, deep: true })
 
 // Form state
 const selectedFields = ref([])
@@ -258,17 +331,84 @@ const canSubmit = computed(() => {
 })
 
 const fieldLabel = (field) => {
+  // Special cases
+  if (field === 'supporting_docs') return 'Supporting Documents'
+  
+  // Look for the field in the fields array
+  if (props.fields && props.fields.length > 0) {
+    const fieldDef = props.fields.find(f => f.key === field)
+    if (fieldDef && fieldDef.label) {
+      return fieldDef.label
+    }
+  }
+  
+  // Fallback to hardcoded labels for common fields
   const labels = {
     'period_id': 'Fiscal Period',
     'currency_id': 'Currency',
     'disputed_amount': 'Disputed Amount (Nilai Sengketa)',
-    'supporting_docs': 'Supporting Documents'
+    'sp2_number': 'Nomor SP2 (SP2 Number)',
+    'issue_date': 'Tanggal Diterbitkan (Issue Date)',
+    'receipt_date': 'Tanggal Diterima (Receipt Date)',
+    'auditor_name': 'Auditor Name',
+    'auditor_phone': 'Auditor Phone',
+    'auditor_email': 'Auditor Email',
+    'sphp_number': 'Nomor SPHP (SPHP Number)',
+    'sphp_issue_date': 'Tanggal Diterbitkan (Issue Date)',
+    'sphp_receipt_date': 'Tanggal Diterima (Receipt Date)',
+    'royalty_finding': 'Royalty Finding Amount',
+    'service_finding': 'Service Finding Amount',
+    'other_finding': 'Other Finding Amount',
+    'other_finding_notes': 'Notes for Other Findings'
   }
   return labels[field] || field
 }
 
+const getFieldType = (field) => {
+  // Look for the field type in the fields array
+  if (props.fields && props.fields.length > 0) {
+    const fieldDef = props.fields.find(f => f.key === field)
+    if (fieldDef && fieldDef.type) {
+      return fieldDef.type
+    }
+  }
+  
+  // Fallback to hardcoded types for common fields
+  const types = {
+    'period_id': 'select',
+    'currency_id': 'select',
+    'disputed_amount': 'number',
+    'sp2_number': 'text',
+    'issue_date': 'date',
+    'receipt_date': 'date',
+    'auditor_name': 'text',
+    'auditor_phone': 'text',
+    'auditor_email': 'email',
+    'sphp_number': 'text',
+    'sphp_issue_date': 'date',
+    'sphp_receipt_date': 'date',
+    'royalty_finding': 'number',
+    'service_finding': 'number',
+    'other_finding': 'number',
+    'other_finding_notes': 'textarea'
+  }
+  return types[field] || 'text'
+}
+
 const handleFieldToggle = () => {
   fieldError.value = ''
+  // Initialize value for newly selected fields
+  selectedFields.value.forEach(field => {
+    if (!(field in proposedValues.value)) {
+      if (field === 'supporting_docs') {
+        // Already handled by proposedDocChanges
+      } else if (getFieldType(field) === 'number') {
+        proposedValues.value[field] = null
+      } else {
+        proposedValues.value[field] = ''
+      }
+    }
+  })
 }
 
 const handleFileSelect = (event) => {
@@ -412,6 +552,8 @@ const closeModal = () => {
 // Load dropdown options on mount
 onMounted(async () => {
   try {
+    console.log('📄 [RequestRevisionModalV2] onMounted - currentDocuments:', props.currentDocuments)
+    
     const [currRes, periodRes] = await Promise.all([
       fetch('/api/currencies'),
       fetch('/api/periods')

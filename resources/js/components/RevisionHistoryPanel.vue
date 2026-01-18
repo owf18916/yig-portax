@@ -107,6 +107,7 @@
       :case-id="caseId"
       :stage-id="stageId"
       :available-fields="availableFields"
+      :fields="fields"
       :current-documents="currentDocuments"
       @submit="onRevisionRequested"
       @close="showRequestModal = false"
@@ -128,6 +129,7 @@
       :all-documents="currentDocuments"
       :tax-case="taxCase"
       :periods-list="periodsList"
+      :fields="fields"
       @close="showApprovalModal = false"
       @approved="onRevisionApproved"
       @rejected="onRevisionRejected"
@@ -162,6 +164,10 @@ const props = defineProps({
       'supporting_docs'
     ]
   },
+  fields: { 
+    type: Array, 
+    default: () => [] 
+  }, // Full field definitions with labels
   entityType: { type: String, default: 'tax-cases' } // Support any entity type
 })
 
@@ -248,6 +254,15 @@ const formatDate = (date) => {
 }
 
 const fieldLabel = (field) => {
+  // Look for the field in the fields array first (highest priority)
+  if (props.fields && props.fields.length > 0) {
+    const fieldDef = props.fields.find(f => f.key === field)
+    if (fieldDef && fieldDef.label) {
+      return fieldDef.label
+    }
+  }
+  
+  // Fallback to getFieldLabel from composable
   return getFieldLabel(props.entityType, field)
 }
 

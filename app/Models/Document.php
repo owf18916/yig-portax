@@ -40,6 +40,9 @@ class Document extends Model
         'deleted_at' => 'datetime',
     ];
 
+    // Include name accessor in JSON
+    protected $appends = ['name'];
+
     // Relationships
     public function taxCase(): BelongsTo
     {
@@ -61,11 +64,16 @@ class Document extends Model
         return $this->hasMany(Document::class, 'previous_version_id', 'id');
     }
 
-    /**
-     * Get the documentable model (polymorphic relationship)
-     */
     public function documentable()
     {
         return $this->morphTo();
+    }
+
+    /**
+     * Get the document name (alias for original_filename)
+     */
+    public function getNameAttribute()
+    {
+        return $this->original_filename ?? $this->file_path;
     }
 }

@@ -13,6 +13,7 @@ class Revision extends Model
     protected $fillable = [
         'revisable_type',
         'revisable_id',
+        'stage_code',
         'revision_status',
         'original_data',
         'revised_data',

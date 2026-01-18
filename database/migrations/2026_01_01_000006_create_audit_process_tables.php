@@ -19,27 +19,15 @@ return new class extends Migration
             
             // Auditor Info
             $table->string('auditor_name')->nullable();
-            $table->string('auditor_title')->nullable();
-            $table->string('auditor_department')->nullable();
-            
-            // Findings
-            $table->text('findings')->nullable();
-            
-            // Workflow
-            $table->unsignedBigInteger('submitted_by')->nullable();
-            $table->timestamp('submitted_at')->nullable();
-            $table->unsignedBigInteger('approved_by')->nullable();
-            $table->timestamp('approved_at')->nullable();
-            $table->enum('status', ['draft', 'submitted', 'approved', 'rejected'])->default('draft');
+            $table->string('auditor_phone')->nullable();
+            $table->string('auditor_email')->nullable();
             
             $table->text('notes')->nullable();
             $table->timestamps();
             $table->softDeletes();
             
             $table->foreign('tax_case_id')->references('id')->on('tax_cases')->onDelete('cascade');
-            $table->foreign('submitted_by')->references('id')->on('users')->onDelete('set null');
-            $table->foreign('approved_by')->references('id')->on('users')->onDelete('set null');
-            $table->index('submitted_at');
+            $table->index('sp2_number');
         });
 
         Schema::create('sphp_records', function (Blueprint $table) {
@@ -48,28 +36,19 @@ return new class extends Migration
             
             // SPHP Data
             $table->string('sphp_number')->nullable();
-            $table->date('issue_date')->nullable();
-            $table->date('receipt_date')->nullable();
+            $table->date('sphp_issue_date')->nullable();
+            $table->date('sphp_receipt_date')->nullable();
             
-            // Corrections & Findings
-            $table->text('corrections')->nullable();
-            $table->decimal('additional_tax', 20, 2)->nullable();
-            $table->json('findings_breakdown')->nullable(); // royalty, service, other
+            // Audit Findings
+            $table->decimal('royalty_finding', 15, 2)->nullable();
+            $table->decimal('service_finding', 15, 2)->nullable();
+            $table->decimal('other_finding', 15, 2)->nullable();
+            $table->text('other_finding_notes')->nullable();
             
-            // Workflow
-            $table->unsignedBigInteger('submitted_by')->nullable();
-            $table->timestamp('submitted_at')->nullable();
-            $table->unsignedBigInteger('approved_by')->nullable();
-            $table->timestamp('approved_at')->nullable();
-            $table->enum('status', ['draft', 'submitted', 'approved', 'rejected'])->default('draft');
-            
-            $table->text('notes')->nullable();
             $table->timestamps();
             $table->softDeletes();
             
             $table->foreign('tax_case_id')->references('id')->on('tax_cases')->onDelete('cascade');
-            $table->foreign('submitted_by')->references('id')->on('users')->onDelete('set null');
-            $table->foreign('approved_by')->references('id')->on('users')->onDelete('set null');
         });
 
         Schema::create('skp_records', function (Blueprint $table) {

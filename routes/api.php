@@ -115,56 +115,110 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                 'request_all' => $request->all()
             ]);
             
-            // Update tax case with form data (only updatable fields)
-            $updateData = [];
-            if ($request->has('period_id')) $updateData['period_id'] = $request->input('period_id');
-            if ($request->has('currency_id')) $updateData['currency_id'] = $request->input('currency_id');
-            if ($request->has('disputed_amount')) $updateData['disputed_amount'] = $request->input('disputed_amount');
-            
-            if ($isDraft) {
-                // For draft, ONLY update the specific fields, DO NOT change case status
-                if (!empty($updateData)) {
-                    $taxCase->update($updateData);
+            try {
+                // Update tax case with form data (only updatable fields)
+                $updateData = [];
+                
+                // Stage 1 (SPT Filing) - tax_cases table fields
+                if ($stage === 1) {
+                    if ($request->has('period_id')) $updateData['period_id'] = $request->input('period_id');
+                    if ($request->has('currency_id')) $updateData['currency_id'] = $request->input('currency_id');
+                    if ($request->has('disputed_amount')) $updateData['disputed_amount'] = $request->input('disputed_amount');
                 }
                 
-                // Create workflow history for draft (status='draft')
+                // STAGE-SPECIFIC DATA HANDLING
+                // Route stage data to appropriate stage record tables
+                if ($stage == 2) {
+                    $sp2Data = $request->only([
+                        'sp2_number', 'issue_date', 'receipt_date',
+                        'auditor_name', 'auditor_phone', 'auditor_email', 'notes'
+                    ]);
+                    $sp2Data['tax_case_id'] = $taxCase->id;
+                    \App\Models\Sp2Record::updateOrCreate(
+                        ['tax_case_id' => $taxCase->id],
+                        $sp2Data
+                    );
+                    Log::info('SP2Record saved', ['sp2Data' => $sp2Data]);
+                } elseif ($stage == 3) {
+                    $sphpData = $request->only([
+                        'sphp_number', 'sphp_issue_date', 'sphp_receipt_date',
+                        'royalty_finding', 'service_finding', 'other_finding', 'other_finding_notes'
+                    ]);
+                    $sphpData['tax_case_id'] = $taxCase->id;
+                    \App\Models\SphpRecord::updateOrCreate(
+                        ['tax_case_id' => $taxCase->id],
+                        $sphpData
+                    );
+                    Log::info('SphpRecord saved', ['sphpData' => $sphpData]);
+                } elseif ($stage == 4) {
+                    $skpData = $request->only([
+                        'skp_number', 'issue_date', 'receipt_date', 'skp_type',
+                        'skp_amount', 'audit_corrections', 'additional_corrections', 'next_stage', 'notes'
+                    ]);
+                    $skpData['tax_case_id'] = $taxCase->id;
+                    \App\Models\SkpRecord::updateOrCreate(
+                        ['tax_case_id' => $taxCase->id],
+                        $skpData
+                    );
+                    Log::info('SkpRecord saved', ['skpData' => $skpData]);
+                }
+                
+                if ($isDraft) {
+                    // For draft, ONLY update the specific fields, DO NOT change case status
+                    if (!empty($updateData)) {
+                        $taxCase->update($updateData);
+                    }
+                    
+                    // Create workflow history for draft (status='draft')
+                    $taxCase->workflowHistories()->create([
+                        'stage_id' => $stage,
+                        'stage_from' => $taxCase->current_stage,
+                        'action' => 'submitted',
+                        'status' => 'draft',
+                        'user_id' => $user->id,
+                        'notes' => 'Stage saved as draft',
+                    ]);
+                    
+                    return response()->json([
+                        'success' => true,
+                        'message' => "Stage $stage draft saved successfully",
+                        'data' => $taxCase
+                    ]);
+                }
+                
+                // Submit stage - update case status and create workflow history
+                $updateData['case_status_id'] = 2; // SUBMITTED status
+                $updateData['current_stage'] = $stage;
+                
+                $taxCase->update($updateData);
+                
+                // Create workflow history for submission
                 $taxCase->workflowHistories()->create([
                     'stage_id' => $stage,
-                    'stage_from' => $taxCase->current_stage,
+                    'stage_from' => $taxCase->current_stage > $stage ? $taxCase->current_stage : null,
                     'action' => 'submitted',
-                    'status' => 'draft',
+                    'status' => 'submitted',
                     'user_id' => $user->id,
-                    'notes' => 'Stage saved as draft',
+                    'notes' => "Stage $stage submitted",
                 ]);
                 
                 return response()->json([
                     'success' => true,
-                    'message' => "Stage $stage draft saved successfully",
-                    'data' => $taxCase
+                    'message' => "Stage $stage submitted successfully",
+                    'data' => $taxCase->fresh(['workflowHistories'])
                 ]);
+            } catch (\Exception $e) {
+                Log::error('Workflow endpoint error', [
+                    'stage' => $stage,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error processing workflow: ' . $e->getMessage()
+                ], 500);
             }
-            
-            // Submit stage - update case status and create workflow history
-            $updateData['case_status_id'] = 2; // SUBMITTED status
-            $updateData['current_stage'] = $stage;
-            
-            $taxCase->update($updateData);
-            
-            // Create workflow history for submission
-            $taxCase->workflowHistories()->create([
-                'stage_id' => $stage,
-                'stage_from' => $taxCase->current_stage > $stage ? $taxCase->current_stage : null,
-                'action' => 'submitted',
-                'status' => 'submitted',
-                'user_id' => $user->id,
-                'notes' => "Stage $stage submitted",
-            ]);
-            
-            return response()->json([
-                'success' => true,
-                'message' => "Stage $stage submitted successfully",
-                'data' => $taxCase->fresh(['workflowHistories'])
-            ]);
         })->name('tax-cases.workflow');
         
         // SPHP Records - Stage 3

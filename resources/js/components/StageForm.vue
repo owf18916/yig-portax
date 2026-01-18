@@ -94,6 +94,18 @@
                 :disabled="field.readonly || submissionComplete || fieldsDisabled"
               />
 
+              <!-- Email Input -->
+              <FormField
+                v-if="field.type === 'email'"
+                :label="field.label"
+                type="email"
+                v-model="formData[field.key]"
+                :placeholder="field.placeholder"
+                :required="field.required"
+                :error="formErrors[field.key]"
+                :disabled="field.readonly || submissionComplete || fieldsDisabled"
+              />
+
               <!-- Date Input -->
               <FormField
                 v-if="field.type === 'date'"
@@ -254,9 +266,9 @@
                       </div>
                     </div>
                     <div class="flex items-center space-x-0.5 shrink-0 ml-1">
-                      <!-- Remove button (only when case status is 1 = CREATED and form not submitted) -->
+                      <!-- Remove button (only when current stage is not submitted and form not submitted) -->
                       <button
-                        v-if="caseStatus === 1 && !submissionComplete"
+                        v-if="!fieldsDisabled && !submissionComplete"
                         @click.stop="removeFile(file.id)"
                         class="px-1.5 py-0.5 text-xs bg-red-50 text-red-700 rounded hover:bg-red-100 transition whitespace-nowrap"
                         title="Remove document"
@@ -264,11 +276,11 @@
                         🗑️ Remove
                       </button>
                       
-                      <!-- Lock icon (when case status is > 1 = submitted or form is submitted) -->
+                      <!-- Lock icon (when current stage is submitted or form is submitted) -->
                       <span
                         v-else
                         class="px-1.5 py-0.5 text-xs bg-gray-100 text-gray-500 rounded cursor-not-allowed whitespace-nowrap"
-                        title="Case has been submitted - documents are locked"
+                        title="Stage has been submitted - documents are locked"
                       >
                         🔒 Locked
                       </span>
@@ -280,10 +292,10 @@
 
             <!-- Submit Buttons -->
             <div class="flex gap-1 pt-2 border-t">
-              <Button type="submit" variant="primary" :disabled="submitting || isLoading || caseStatus > 1 || submissionComplete" class="text-xs px-2 py-1.5">
+              <Button type="submit" variant="primary" :disabled="submitting || isLoading || fieldsDisabled || submissionComplete" class="text-xs px-2 py-1.5">
                 {{ submitting ? 'Submitting...' : 'Submit & Continue' }}
               </Button>
-              <Button type="button" @click="saveDraft" variant="secondary" :disabled="submitting || isLoading || caseStatus > 1 || submissionComplete" class="text-xs px-2 py-1.5">
+              <Button type="button" @click="saveDraft" variant="secondary" :disabled="submitting || isLoading || fieldsDisabled || submissionComplete" class="text-xs px-2 py-1.5">
                 Save as Draft
               </Button>
               <Button type="button" @click="$router.back()" variant="secondary" :disabled="isLoading" class="text-xs px-2 py-1.5">
@@ -444,7 +456,11 @@ const computedNextStageId = computed(() => {
 
 // Compute whether fields should be disabled based on case status
 const fieldsDisabled = computed(() => {
-  return props.caseStatus > 1
+  // Check if THIS STAGE has been submitted via workflow_history
+  const isStageSubmitted = props.prefillData?.workflowHistories?.some(
+    h => h.stage_id === props.stageId && (h.status === 'submitted' || h.status === 'approved')
+  )
+  return isStageSubmitted || false
 })
 
 // Initialize form data from fields

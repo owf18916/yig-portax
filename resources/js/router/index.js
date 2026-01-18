@@ -7,6 +7,8 @@ import WorkflowForm from '../pages/WorkflowForm.vue'
 import CreateCITCase from '../pages/CreateCITCase.vue'
 import CreateVATCase from '../pages/CreateVATCase.vue'
 import SptFilingForm from '../pages/SptFilingForm.vue'
+import Sp2FilingForm from '../pages/Sp2FilingForm.vue'
+import SphpFilingForm from '../pages/SphpFilingForm.vue'
 import SkpRecordForm from '../pages/SkpRecordForm.vue'
 import ObjectionDecisionForm from '../pages/ObjectionDecisionForm.vue'
 
@@ -45,6 +47,18 @@ const routes = [
     path: '/tax-cases/:id/workflow/1',
     name: 'SptFilingForm',
     component: SptFilingForm,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/tax-cases/:id/workflow/2',
+    name: 'Sp2FilingForm',
+    component: Sp2FilingForm,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/tax-cases/:id/workflow/3',
+    name: 'SphpFilingForm',
+    component: SphpFilingForm,
     meta: { requiresAuth: true }
   },
   {

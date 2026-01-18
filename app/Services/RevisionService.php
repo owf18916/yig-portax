@@ -8,6 +8,7 @@ use App\Models\Document;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use App\Events\RevisionRequested;
 use App\Events\RevisionApproved;
 use App\Events\RevisionRejected;
@@ -23,7 +24,8 @@ class RevisionService
         array $proposedValues,
         array $proposedDocumentChanges,
         string $reason,
-        array $fields = []
+        array $fields = [],
+        ?string $stageCode = null
     ): Revision {
         return DB::transaction(function () use (
             $revisable,
@@ -31,7 +33,8 @@ class RevisionService
             $proposedValues,
             $proposedDocumentChanges,
             $reason,
-            $fields
+            $fields,
+            $stageCode
         ) {
             // Check if there's already a pending revision
             $pendingRevision = $revisable->revisions()
@@ -40,6 +43,37 @@ class RevisionService
 
             if ($pendingRevision) {
                 throw new \Exception('There is already a revision pending review');
+            }
+
+            // Determine the actual data source based on stage
+            $dataSource = $revisable;
+            
+            Log::info("RevisionService: stageCode = {$stageCode}");
+            Log::info("RevisionService: revisable type = " . class_basename($revisable));
+            
+            if ($stageCode && $revisable instanceof \App\Models\TaxCase) {
+                Log::info("RevisionService: Is TaxCase, loading relationships");
+                
+                // For stage 2 (SP2), fetch data from sp2Record
+                if ((int)$stageCode === 2) {
+                    if (!$revisable->relationLoaded('sp2Record')) {
+                        $revisable->load('sp2Record');
+                    }
+                    if ($revisable->sp2Record) {
+                        $dataSource = $revisable->sp2Record;
+                        Log::info("RevisionService: Using sp2Record as data source");
+                    }
+                }
+                // For stage 3 (SPHP), fetch data from sphpRecord
+                elseif ((int)$stageCode === 3) {
+                    if (!$revisable->relationLoaded('sphpRecord')) {
+                        $revisable->load('sphpRecord');
+                    }
+                    if ($revisable->sphpRecord) {
+                        $dataSource = $revisable->sphpRecord;
+                        Log::info("RevisionService: Using sphpRecord as data source");
+                    }
+                }
             }
 
             // Prepare original data (only include fields being revised)
@@ -51,7 +85,10 @@ class RevisionService
                         $originalData[$field] = $revisable->documents()->pluck('id')->toArray();
                     }
                 } else {
-                    $originalData[$field] = $revisable->$field ?? null;
+                    // Get value from the appropriate data source
+                    $value = $dataSource->$field ?? null;
+                    $originalData[$field] = $value;
+                    Log::info("RevisionService: Field {$field} = " . json_encode($value));
                 }
             }
 
@@ -61,10 +98,11 @@ class RevisionService
                 fn($value) => $value !== null
             );
 
-            // Create revision record
+            // Create revision record dengan stage_code
             $revision = Revision::create([
                 'revisable_type' => class_basename($revisable),
                 'revisable_id' => $revisable->id,
+                'stage_code' => (int)$stageCode,
                 'revision_status' => 'requested',
                 'original_data' => $originalData,
                 'proposed_values' => $filteredProposedValues,
@@ -155,9 +193,47 @@ class RevisionService
             'approved_at' => now(),
         ]);
 
-        // Apply updates to revisable model
+        // Determine which model to update based on stage_code
+        $updateTarget = $revisable;
+        $stageCode = $revision->stage_code;
+        
+        Log::info('RevisionService: Approving revision', [
+            'revision_id' => $revision->id,
+            'stage_code' => $stageCode,
+            'revisable_type' => class_basename($revisable)
+        ]);
+        
+        if ($stageCode && $revisable instanceof \App\Models\TaxCase) {
+            // Load appropriate stage-specific relationship
+            if ($stageCode == 2) {
+                if (!$revisable->relationLoaded('sp2Record')) {
+                    $revisable->load('sp2Record');
+                }
+                if ($revisable->sp2Record) {
+                    $updateTarget = $revisable->sp2Record;
+                    Log::info('RevisionService: Using sp2Record as update target');
+                }
+            }
+            // Add more stage-specific relationships as they are created
+            elseif ($stageCode == 3) {
+                if (!$revisable->relationLoaded('sphpRecord')) {
+                    $revisable->load('sphpRecord');
+                }
+                if ($revisable->sphpRecord) {
+                    $updateTarget = $revisable->sphpRecord;
+                    Log::info('RevisionService: Using sphpRecord as update target');
+                }
+            }
+        }
+
+        // Apply updates to the appropriate model
         if (!empty($updates)) {
-            $revisable->update($updates);
+            $updateTarget->update($updates);
+            Log::info('RevisionService: Updates applied', [
+                'updates' => $updates,
+                'target_type' => class_basename($updateTarget),
+                'target_id' => $updateTarget->id
+            ]);
         }
 
         event(new RevisionApproved($revision));

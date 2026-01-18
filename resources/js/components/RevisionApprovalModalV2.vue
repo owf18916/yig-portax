@@ -128,7 +128,8 @@ const props = defineProps({
   allDocuments: { type: Array, default: () => [] },
   entityType: { type: String, default: 'tax-cases' }, // Support any entity type
   taxCase: { type: Object, default: null }, // For accessing related data like periods
-  periodsList: { type: Array, default: () => [] } // List of periods for formatting
+  periodsList: { type: Array, default: () => [] }, // List of periods for formatting
+  fields: { type: Array, default: () => [] } // Full field definitions with labels
 })
 
 const emit = defineEmits(['close', 'approved', 'rejected'])
@@ -147,6 +148,8 @@ const isSubmitting = computed(() => apiLoading.value)
 watch(() => props.revision, (newVal) => {
   if (newVal) {
     console.log('Revision data received:', newVal)
+    console.log('Original data:', newVal.original_data)
+    console.log('Proposed values:', newVal.proposed_values)
     console.log('Document changes:', newVal.proposed_document_changes)
   }
 }, { deep: true })
@@ -163,23 +166,74 @@ const formatDate = (date) => {
 }
 
 const fieldLabel = (field) => {
+  // Look for the field in the fields array first
+  if (props.fields && props.fields.length > 0) {
+    const fieldDef = props.fields.find(f => f.key === field)
+    if (fieldDef && fieldDef.label) {
+      return fieldDef.label
+    }
+  }
+  
+  // Fallback to getFieldLabel from composable
   return getFieldLabel(props.entityType, field)
 }
 
 const getOriginalValue = (field) => {
-  if (!props.revision?.original_data) return 'N/A'
-  const value = props.revision.original_data[field]
-  const displayValue = value !== null && value !== undefined ? value : 'N/A'
+  console.log(`[getOriginalValue] Getting value for field: ${field}`)
+  console.log(`[getOriginalValue] original_data keys:`, Object.keys(props.revision?.original_data || {}))
+  console.log(`[getOriginalValue] full original_data:`, props.revision?.original_data)
   
-  // For period_id, show the period_code instead of the ID
-  if (field === 'period_id' && displayValue !== 'N/A' && props.periodsList && props.periodsList.length > 0) {
-    const period = props.periodsList.find(p => p.id === displayValue)
-    if (period) {
-      return period.period_code
+  // First try to get from revision.original_data (backend provided)
+  if (props.revision?.original_data) {
+    console.log(`[getOriginalValue] Checking if "${field}" in original_data:`, field in props.revision.original_data)
+    if (field in props.revision.original_data) {
+      const value = props.revision.original_data[field]
+      console.log(`[getOriginalValue] Found in original_data:`, value)
+      
+      // Handle null/undefined - display as "Not set"
+      if (value === null || value === undefined) {
+        return '(Not set)'
+      }
+      
+      let displayValue = value
+      
+      // For period_id, show the period_code instead of the ID
+      if (field === 'period_id' && props.periodsList && props.periodsList.length > 0) {
+        const period = props.periodsList.find(p => p.id === displayValue)
+        if (period) {
+          return period.period_code
+        }
+      }
+      
+      return displayValue
     }
   }
   
-  return displayValue
+  // Fallback to taxCase data if available
+  if (props.taxCase && field in props.taxCase) {
+    const value = props.taxCase[field]
+    console.log(`[getOriginalValue] Found in taxCase:`, value)
+    
+    // Handle null/undefined - display as "Not set"
+    if (value === null || value === undefined) {
+      return '(Not set)'
+    }
+    
+    let displayValue = value
+    
+    // For period_id, show the period_code instead of the ID
+    if (field === 'period_id' && props.periodsList && props.periodsList.length > 0) {
+      const period = props.periodsList.find(p => p.id === displayValue)
+      if (period) {
+        return period.period_code
+      }
+    }
+    
+    return displayValue
+  }
+  
+  console.log(`[getOriginalValue] Not found, returning N/A`)
+  return 'N/A'
 }
 
 const formatProposedValue = (field, value) => {

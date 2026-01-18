@@ -37,6 +37,7 @@
         :current-documents="currentDocuments"
         :periods-list="periodsList"
         :available-fields="availableFields"
+        :fields="fields"
         @revision-requested="loadRevisions"
         @refresh="loadRevisions"
       />
@@ -342,23 +343,17 @@ const refreshTaxCase = async () => {
 // Load documents untuk case ini
 const loadDocuments = async () => {
   try {
-    // Load all documents (all statuses) for revision history display
-    const response = await fetch(`/api/documents?tax_case_id=${caseId}&status=DRAFT,ACTIVE,ARCHIVED,DELETED`)
-    
-    if (!response.ok) {
-      console.warn(`Failed to load documents: ${response.status}`)
+    // Fetch only documents for stage 1 (SPT) - use the new endpoint with stage filtering
+    const docsRes = await fetch(`/api/tax-cases/${caseId}/documents?stage_code=1`)
+    if (docsRes.ok) {
+      const docsData = await docsRes.json()
+      let stageDocs = docsData.data || docsData
+      
+      stageDocs = Array.isArray(stageDocs) ? stageDocs : []
+      currentDocuments.value = stageDocs
+    } else {
       currentDocuments.value = []
-      return
     }
-    
-    const data = await response.json()
-    currentDocuments.value = (data.data || data || []).map(doc => ({
-      id: doc.id,
-      name: doc.original_filename,
-      file_name: doc.original_filename,
-      original_filename: doc.original_filename,
-      size: doc.file_size ? (doc.file_size / 1024 / 1024).toFixed(2) : 'unknown'
-    }))
   } catch (err) {
     console.error('Failed to load documents:', err)
     currentDocuments.value = []
