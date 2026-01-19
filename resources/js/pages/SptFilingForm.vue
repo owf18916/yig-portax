@@ -12,7 +12,7 @@
       :stageName="`Stage 1: SPT Filing (Review & Submit)`"
       :stageDescription="`Review your initial tax return submission created during case creation`"
       :stageId="1"
-      :nextStageId="4"
+      :nextStageId="2"
       :caseId="caseId"
       :caseNumber="caseNumber"
       :fields="fields"
@@ -330,7 +330,8 @@ const refreshTaxCase = async () => {
       period_id: caseData.period_id,
       currency_id: caseData.currency_id,
       disputed_amount: caseData.disputed_amount ? parseFloat(caseData.disputed_amount) : null,
-      submitted_at: caseData.submitted_at || null
+      submitted_at: caseData.submitted_at || null,
+      workflowHistories: caseData.workflow_histories || []
     }
     
     caseNumber.value = caseData.case_number || 'N/A'

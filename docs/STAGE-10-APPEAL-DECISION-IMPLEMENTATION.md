@@ -755,7 +755,41 @@ const getFieldOptions = (field) => {
 
 ---
 
-## Implementation Checklist
+## 🚨 Known Obstacles & Solutions (Inherited from Stage 4 Pattern)
+
+When implementing Stage 10, be aware of these common issues that also apply to other DECISION POINT stages (7, 10, 12):
+
+### Obstacle 1: Decision Field Not Prefilled on Page Reload
+**Issue:** User selects decision, submits, then refreshes page - decision radio/select not showing selected value
+**Root Cause:** Decision field not in `fields` array, so not initialized in formData during onMounted
+**Fix:** Explicitly initialize all decision-related fields including those NOT in the form fields list (see Stage 4 Obstacles section 1)
+
+### Obstacle 2: Stage Accessibility Not Updating (Stages Locked When Should Be Accessible)
+**Issue:** After user makes decision, next stage remains locked/not accessible. New stage should appear based on decision outcome
+**Root Cause:** API returns snake_case (`appeal_decision_record`) but frontend expects camelCase (`appealDecisionRecord`)
+**Fix:** Handle BOTH naming conventions in decision getter functions and watchers (see Stage 4 Obstacles section 2)
+
+### Obstacle 3: Watcher Not Triggering When Data Changes
+**Issue:** Added watcher for decision field but it never triggers when data loaded
+**Root Cause:** Watcher added BEFORE data loaded, or watcher checks wrong property name (case sensitivity)
+**Fix:** 
+  - Add watcher AFTER onMounted() completes
+  - Watch for BOTH snake_case and camelCase naming: `() => [caseData.value?.appealDecisionRecord?.keputusan_banding, caseData.value?.appeal_decision_record?.keputusan_banding]`
+  - Add logging to verify which property contains data
+
+### Obstacle 4: Decision Routing Logic Incomplete
+**Issue:** Decision made but workflow doesn't route to correct next stage (Refund vs Supreme Court), OR multiple stages appear accessible simultaneously
+**Root Cause:** Accessibility logic missing explicit locking for non-chosen paths, OR missing else conditions
+**Fix:** Add explicit `stage.accessible = false` statements for locked stages, not just omitting the true assignment (see Stage 4 Obstacles section 4)
+
+### Obstacle 5: Appeal Decision Collapsible Section Disabled
+**Issue:** The collapsible section for Appeal stages (8-10) appears disabled even after decision is made
+**Root Cause:** Same as Obstacle 2 - decision getter function returns null due to case sensitivity mismatch
+**Fix:** Fix the snake_case/camelCase handling - this automatically enables the section
+
+---
+
+## 📋 Implementation Checklist
 
 ### Backend
 - [ ] Create `AppealDecisionRecord` model
@@ -766,10 +800,13 @@ const getFieldOptions = (field) => {
 - [ ] Update `DecisionPointService.php` Stage 10 mapping
 - [ ] Update API endpoint for Stage 10 workflow
 - [ ] Add logging for decision changes
+- [ ] **CRITICAL:** Ensure API returns complete object with all fields (including user_routing_choice or next_action field)
 
 ### Frontend - Components
 - [ ] Create `AppealDecisionForm.vue`
 - [ ] Update `StageForm.vue` to support Stage 10 decision field
+- [ ] **CRITICAL:** Initialize ALL special decision fields in formData (not just fields from fields array)
+- [ ] **CRITICAL:** Update watch to sync special fields (not in fields array)
 - [ ] Update `DecisionOptionsPanel.vue` configuration
 - [ ] Update `RequestRevisionModalV2.vue` field mappings
 - [ ] Add Stage 10 field type detection
@@ -778,6 +815,9 @@ const getFieldOptions = (field) => {
 
 ### Frontend - Pages
 - [ ] Update `TaxCaseDetail.vue` stage unlock logic
+- [ ] **CRITICAL:** Handle BOTH snake_case and camelCase in decision getter functions
+- [ ] **CRITICAL:** Add watchers for BOTH naming conventions
+- [ ] Add Stage 10 to decision point stages list
 - [ ] Add Stage 10 to decision point stages list
 - [ ] Test stage navigation after decision
 

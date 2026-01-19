@@ -275,6 +275,27 @@ const getUserRoutingChoice = () => {
   return skpRecord.user_routing_choice || null
 }
 
+// Helper function: Get Stage 7 decision type (for auto-routing)
+const getStage7Decision = () => {
+  // Try both camelCase and snake_case for compatibility
+  const objDecision = caseData.value.objectionDecision || caseData.value.objection_decision
+  if (objDecision && objDecision.decision_type) {
+    console.log('[getStage7Decision] ✓ Found in objectionDecision/objection_decision:', objDecision.decision_type)
+    return objDecision.decision_type
+  }
+  
+  // FALLBACK: Check workflow history for Stage 7 decision_value
+  // Sometimes the decision might be in workflow history before objectionDecision is fully loaded
+  const stage7History = workflowHistory.value.find(h => h.stage_id === 7 && h.status === 'submitted')
+  if (stage7History && stage7History.decision_value) {
+    console.log('[getStage7Decision] ⚠️ Using Stage 7 decision from workflow history (fallback):', stage7History.decision_value)
+    return stage7History.decision_value
+  }
+  
+  console.log('[getStage7Decision] ❌ No Stage 7 decision found anywhere!')
+  return null
+}
+
 // Helper function: Check apakah refund branch active
 const isRefundBranchActive = () => {
   return getUserRoutingChoice() === 'refund'
@@ -294,11 +315,17 @@ const getStagesByBranch = (branch) => {
 
 // Function untuk update accessibility berdasarkan workflow history
 const updateStageAccessibility = () => {
+  console.log('[updateStageAccessibility] 🔄 STARTING accessibility calculation...')
+  
   // Helper function: cek apakah stage tertentu sudah completed
   const isStageCompleted = (stageId) => {
-    return workflowHistory.value.some(
+    const result = workflowHistory.value.some(
       h => h.stage_id === stageId && (h.status === 'submitted' || h.status === 'completed')
     )
+    if (stageId === 7) {
+      console.log(`[isStageCompleted] Stage ${stageId}: ${result} (found ${workflowHistory.value.filter(h => h.stage_id === stageId).length} records)`)
+    }
+    return result
   }
   
   // Helper function: ambil decision dari decision point stages (4, 7, 10, 12)
@@ -338,8 +365,50 @@ const updateStageAccessibility = () => {
           stage.accessible = false
           console.log('[Accessibility] Stage 5 LOCKED - Stage 4 not completed')
         }
+      } else if (stage.id === 7) {
+        // SPECIAL: Stage 7 (Objection Decision) - Auto-routing based on decision_type
+        // If Stage 7 completed:
+        //   - granted → must go to Stage 13 (Refund)
+        //   - rejected → must go to Stage 8 (Appeal)
+        //   - partially_granted → user must choose (via frontend buttons)
+        if (isStageCompleted(6)) {
+          // Stage 6 (SPUH) completed, so Stage 7 is now accessible
+          stage.accessible = true
+          console.log('[Accessibility] Stage 7 ACCESSIBLE - Previous stage (Stage 6) completed')
+        } else {
+          stage.accessible = false
+          console.log('[Accessibility] Stage 7 LOCKED - Stage 6 not completed')
+        }
+      } else if (stage.id === 8) {
+        // SPECIAL: Stage 8 (Appeal) - Accessible only if:
+        // - Stage 7 completed AND decision_type is 'rejected' OR partially_granted with user choice
+        const stage7Decision = getStage7Decision()
+        const stage7Completed = isStageCompleted(7)
+        
+        if (!stage7Completed) {
+          stage.accessible = false
+          console.log('[Accessibility] Stage 8 LOCKED - Stage 7 not completed')
+        } else if (stage7Decision === 'rejected') {
+          // Auto-routed to Appeal
+          stage.accessible = true
+          console.log('[Accessibility] Stage 8 ACCESSIBLE - Stage 7 decision: REJECTED')
+        } else if (stage7Decision === 'partially_granted') {
+          // Check if user made choice to go to Appeal (via workflow_histories stage_to)
+          const stage7History = workflowHistory.value.find(h => h.stage_id === 7 && h.status === 'submitted')
+          if (stage7History && stage7History.stage_to === 8) {
+            stage.accessible = true
+            console.log('[Accessibility] Stage 8 ACCESSIBLE - Stage 7 partially granted, user chose Appeal')
+          } else {
+            stage.accessible = false
+            console.log('[Accessibility] Stage 8 LOCKED - Waiting for user choice at Stage 7')
+          }
+        } else {
+          // granted → goes to Stage 13, not Stage 8
+          stage.accessible = false
+          console.log('[Accessibility] Stage 8 LOCKED - Stage 7 decision: GRANTED (goes to Refund, not Appeal)')
+        }
       } else if (stage.id > 5) {
-        // Stages setelah 5 (6-12)
+        // Stages setelah 5 (except 7-8, those handled above) (6, 9-12)
         // Jika refund branch active, jangan bisa access stage 6-12
         const userChoice = getUserRoutingChoice()
         if (userChoice === 'refund' && isStage4Completed()) {
@@ -357,14 +426,45 @@ const updateStageAccessibility = () => {
         stage.accessible = isStageCompleted(previousStage)
       }
     } else if (stage.branch === 'refund') {
-      // REFUND BRANCH: Accessible hanya jika user memilih "refund" path
+      // REFUND BRANCH: Accessible if:
+      // 1. User chose "refund" path from Stage 4 AND Stage 4 completed, OR
+      // 2. Stage 7 decision is "granted" (auto-routed) OR "partially_granted" with user choice to refund
       const userChoice = getUserRoutingChoice()
-      console.log(`[Accessibility DEBUG] Stage ${stage.id} (refund branch) - userChoice='${userChoice}', stage4Completed=${isStage4Completed()}`)
+      const stage7Decision = getStage7Decision()
+      const stage7Completed = isStageCompleted(7)
+      const stage4Completed = isStage4Completed()
       
-      if (userChoice === 'refund' && isStage4Completed()) {
+      let canAccessRefund = false
+      let reason = ''
+      
+      // Check if Stage 4 refund path active
+      if (userChoice === 'refund' && stage4Completed) {
+        canAccessRefund = true
+        reason = 'Stage 4 refund path chosen'
+      }
+      // Check if Stage 7 granted (auto-routed to refund)
+      else if (stage7Completed && stage7Decision === 'granted') {
+        canAccessRefund = true
+        reason = 'Stage 7 decision: GRANTED'
+      }
+      // Check if Stage 7 rejected but user chose refund, OR partially_granted with refund choice
+      else if (stage7Completed && (stage7Decision === 'rejected' || stage7Decision === 'partially_granted')) {
+        // Check if Stage 7 workflow history has stage_to = 13 (user or auto chose refund)
+        const stage7History = workflowHistory.value.find(
+          h => h.stage_id === 7 && (h.status === 'submitted' || h.status === 'completed')
+        )
+        if (stage7History && stage7History.stage_to === 13) {
+          canAccessRefund = true
+          reason = `Stage 7 decision: ${stage7Decision} with stage_to=13`
+        }
+      }
+      
+      console.log(`[Accessibility DEBUG] Stage ${stage.id} (refund branch) - canAccessRefund=${canAccessRefund}, stage7Completed=${stage7Completed}, stage7Decision='${stage7Decision}', reason='${reason}'`)
+      
+      if (canAccessRefund) {
         if (stage.id === 13) {
           stage.accessible = true
-          console.log('[Accessibility] ✓ Stage 13 ACCESSIBLE - Refund path chosen')
+          console.log(`[Accessibility] ✓ Stage 13 ACCESSIBLE - ${reason}`)
         } else {
           // Stage 14 accessible jika stage 13 completed, dst
           const previousStage = stage.id - 1
@@ -449,7 +549,10 @@ onMounted(async () => {
     caseNumber.value = caseData.value.case_number || 'TAX-2026-001'
     console.log('✓ Case loaded, caseData:', caseData.value)
     console.log('✓ skpRecord:', caseData.value.skpRecord)
+    console.log('✓ objectionDecision:', caseData.value.objectionDecision)
+    console.log('✓ objectionDecision?.decision_type:', caseData.value.objectionDecision?.decision_type)
     console.log('✓ Stage 4 user choice:', getUserRoutingChoice())
+    console.log('✓ Stage 7 decision:', getStage7Decision())
   } catch (error) {
     apiError.value = error.message
     console.error('Failed to load case:', error)
@@ -457,6 +560,85 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+// ⭐ Reload function to refresh case data and recalculate accessibility
+const reloadCaseData = async () => {
+  console.log('[TaxCaseDetail] 🔄 RELOAD TRIGGERED - Fetching fresh case data...')
+  loading.value = true
+  try {
+    const response = await fetch(`/api/tax-cases/${route.params.id}`, {
+      credentials: 'include',
+      headers: { 'Accept': 'application/json' }
+    })
+    if (!response.ok) throw new Error('Failed to reload case')
+    const responseData = await response.json()
+    
+    if (responseData.data) {
+      const data = responseData.data
+      if (data.id && data.case_number) {
+        caseData.value = data
+      } else if (Array.isArray(data)) {
+        caseData.value = data[0] || {}
+      } else {
+        caseData.value = data
+      }
+    } else {
+      caseData.value = responseData
+    }
+    
+    // Reload workflow history
+    if (caseData.value.workflowHistories && Array.isArray(caseData.value.workflowHistories)) {
+      workflowHistory.value = caseData.value.workflowHistories
+    }
+    
+    if (caseData.value.id) {
+      try {
+        const historyResponse = await fetch(`/api/tax-cases/${route.params.id}/workflow-history`, {
+          credentials: 'include',
+          headers: { 'Accept': 'application/json' }
+        })
+        if (historyResponse.ok) {
+          const historyData = await historyResponse.json()
+          const histories = historyData.data || historyData
+          if (Array.isArray(histories)) {
+            workflowHistory.value = histories
+          }
+        }
+      } catch (e) {
+        console.warn('Could not reload workflow history:', e)
+      }
+    }
+    
+    // ⭐ DEBUG: Log what we loaded
+    console.log('Full caseFetchedData loaded')
+    console.log('  skpRecord:', caseData.value.skpRecord)
+    console.log('  objectionDecision:', caseData.value.objectionDecision)
+    console.log('  objection_decision:', caseData.value.objection_decision)
+    console.log('  objectionDecision?.decision_type:', caseData.value.objectionDecision?.decision_type)
+    console.log('  objection_decision?.decision_type:', caseData.value.objection_decision?.decision_type)
+    console.log('  workflowHistory count:', workflowHistory.value.length)
+    
+    // Recalculate accessibility
+    updateStageAccessibility()
+    console.log('✓ Case data reloaded successfully')
+  } catch (error) {
+    console.error('Failed to reload case:', error)
+    apiError.value = error.message
+  } finally {
+    loading.value = false
+  }
+}
+
+// ⭐ Watch for route changes and reload data
+watch(
+  () => route.params.id,
+  (newId, oldId) => {
+    if (newId && newId !== oldId) {
+      console.log(`[TaxCaseDetail] Route changed: ${oldId} → ${newId}, reloading data`)
+      reloadCaseData()
+    }
+  }
+)
 
 // ⭐ Watch for changes in SKP record user_routing_choice to update stage accessibility
 watch(
@@ -466,6 +648,32 @@ watch(
     const oldChoice = oldRoutingChoice1 || oldRoutingChoice2
     if (newChoice !== oldChoice) {
       console.log('[TaxCaseDetail] SKP routing choice changed:', oldChoice, '→', newChoice)
+      updateStageAccessibility()
+    }
+  }
+)
+
+// ⭐ Watch for changes in Objection Decision to update stage accessibility
+watch(
+  () => caseData.value,
+  (newCaseData) => {
+    if (newCaseData) {
+      const newDecision = newCaseData.objectionDecision?.decision_type || newCaseData.objection_decision?.decision_type
+      if (newDecision) {
+        console.log('[TaxCaseDetail] 🔔 Objection decision detected:', newDecision)
+        updateStageAccessibility()
+      }
+    }
+  },
+  { deep: true }
+)
+
+// ⭐ Watch for changes in workflow history (stage_to field for routing)
+watch(
+  () => workflowHistory.value.map(h => `${h.stage_id}-${h.stage_to}`).join(','),
+  (newHistory, oldHistory) => {
+    if (newHistory !== oldHistory) {
+      console.log('[TaxCaseDetail] Workflow history changed, recalculating accessibility')
       updateStageAccessibility()
     }
   }

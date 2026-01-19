@@ -309,6 +309,16 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                         $decisionData
                     );
                     Log::info('ObjectionDecision saved', ['decisionData' => $decisionData, 'nextStage' => $nextStage]);
+                } elseif ($stage == 8) {
+                    $appealData = $request->only([
+                        'appeal_letter_number', 'submission_date', 'appeal_amount', 'dispute_number'
+                    ]);
+                    $appealData['tax_case_id'] = $taxCase->id;
+                    \App\Models\AppealSubmission::updateOrCreate(
+                        ['tax_case_id' => $taxCase->id],
+                        $appealData
+                    );
+                    Log::info('AppealSubmission saved', ['appealData' => $appealData]);
                 }
                 
                 if ($isDraft) {
@@ -359,6 +369,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                 // STAGE 7 SPECIAL HANDLING: Auto-routing based on decision type
                 if ($stage == 7) {
                     $decisionType = $request->input('decision_type');
+                    $userChoice = $request->input('user_routing_choice'); // Appeal or Refund
                     $autoRoutedStage = null;
                     
                     if ($decisionType === 'granted') {
@@ -367,9 +378,15 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                     } elseif ($decisionType === 'rejected') {
                         $autoRoutedStage = 8;
                         $routingReason = 'Automatic routing: Decision REJECTED → Proceed to Appeal';
+                    } elseif ($decisionType === 'partially_granted' && $userChoice) {
+                        // Handle user choice for partially_granted
+                        $autoRoutedStage = ($userChoice === 'appeal') ? 8 : 13;
+                        $routingReason = $userChoice === 'appeal' 
+                            ? 'User selected: Partially Granted → Proceed to Appeal'
+                            : 'User selected: Partially Granted → Proceed to Refund';
                     }
                     
-                    // For auto-routed decisions, update workflow history with stage_to
+                    // For auto-routed decisions OR user choices, update workflow history with stage_to
                     if ($autoRoutedStage) {
                         $workflowHistory->update([
                             'stage_to' => $autoRoutedStage,
@@ -382,19 +399,20 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                         $taxCase->workflowHistories()->create([
                             'stage_id' => $autoRoutedStage,
                             'stage_from' => 7,
-                            'action' => 'auto_routed',
+                            'action' => 'routed',
                             'status' => 'draft',
                             'user_id' => $user->id,
                             'notes' => "Auto-created from Stage 7 decision: $decisionType",
                         ]);
                         
-                        Log::info("Stage 7 Auto-routing triggered", [
+                        Log::info("Stage 7 Routing triggered", [
                             'case_id' => $taxCase->id,
                             'decision_type' => $decisionType,
+                            'user_choice' => $userChoice,
                             'routed_to_stage' => $autoRoutedStage
                         ]);
                     } else {
-                        // For partially_granted, user must choose - no auto-routing yet
+                        // For partially_granted without user choice, user must choose - no auto-routing yet
                         Log::info("Stage 7 Partially Granted - User choice required", [
                             'case_id' => $taxCase->id
                         ]);
@@ -404,7 +422,13 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                 return response()->json([
                     'success' => true,
                     'message' => "Stage $stage submitted successfully",
-                    'data' => $taxCase->fresh(['workflowHistories'])
+                    'data' => $taxCase->fresh([
+                        'workflowHistories',
+                        'skpRecord',           // ⭐ For Stage 4 routing choice
+                        'objectionDecision',   // ⭐ For Stage 7 decision_type (CRITICAL!)
+                        'appealDecision',      // ⭐ For Stage 10 decision_type
+                        'supremeCourtDecision' // ⭐ For Stage 12 decision_type
+                    ])
                 ]);
             } catch (\Exception $e) {
                 Log::error('Workflow endpoint error', [

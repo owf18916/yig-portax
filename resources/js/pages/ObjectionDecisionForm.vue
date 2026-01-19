@@ -23,70 +23,11 @@
       :preFilledMessage="preFilledMessage"
       :prefillData="prefillData"
       :requireDocuments="true"
+      :showDecisionOptions="true"
       @submit="refreshTaxCase"
       @saveDraft="refreshTaxCase"
+      @update:formData="syncFormDataToParent"
     />
-
-    <!-- DECISION BUTTONS - Only show after Stage 7 is submitted -->
-    <div v-if="isStage7Submitted && currentDecisionType === 'partially_granted'" class="px-4 py-6">
-      <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
-        <h3 class="text-lg font-semibold text-yellow-900 mb-2">
-          ⚠️ Keputusan Dikabulkan Sebagian (Partially Granted)
-        </h3>
-        <p class="text-sm text-yellow-700 mb-4">
-          Jenis Keputusan: <span class="font-semibold">{{ currentDecisionType }}</span> | 
-          Nilai: Rp <span class="font-semibold">{{ formattedDecisionAmount }}</span>
-        </p>
-        <p class="text-yellow-700 mb-6">
-          Pilih kemana melanjutkan proses:
-        </p>
-        
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- Option 1: Appeal -->
-          <button
-            @click="proceedToAppeal"
-            class="p-4 border-2 border-blue-300 rounded-lg hover:bg-blue-100 transition-colors text-left"
-          >
-            <div class="font-semibold text-blue-900 mb-2">
-              📋 Lanjut ke Banding (Stage 8)
-            </div>
-            <div class="text-sm text-blue-700">
-              Ajukan Surat Banding (Appeal Letter)
-            </div>
-          </button>
-
-          <!-- Option 2: Refund -->
-          <button
-            @click="proceedToRefund"
-            class="p-4 border-2 border-green-300 rounded-lg hover:bg-green-100 transition-colors text-left"
-          >
-            <div class="font-semibold text-green-900 mb-2">
-              💰 Lanjut ke Refund (Stage 13)
-            </div>
-            <div class="text-sm text-green-700">
-              Proses Permintaan Transfer Bank
-            </div>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- AUTO-ROUTING MESSAGE - Show for granted or rejected -->
-    <div v-if="isStage7Submitted && (currentDecisionType === 'granted' || currentDecisionType === 'rejected')" class="px-4 py-6">
-      <div class="bg-blue-50 border border-blue-200 rounded-lg p-6">
-        <h3 class="text-lg font-semibold text-blue-900 mb-2">
-          ✅ Keputusan Tercatat
-        </h3>
-        <p class="text-blue-700">
-          <span v-if="currentDecisionType === 'granted'">
-            Status: <span class="font-semibold">DIKABULKAN</span> → Melanjutkan ke Refund (Stage 13)
-          </span>
-          <span v-else-if="currentDecisionType === 'rejected'">
-            Status: <span class="font-semibold">DITOLAK</span> → Melanjutkan ke Banding (Stage 8)
-          </span>
-        </p>
-      </div>
-    </div>
 
     <!-- REVISION HISTORY PANEL - Integrated -->
     <div class="px-4 py-6">
@@ -107,7 +48,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useRevisionAPI } from '@/composables/useRevisionAPI'
 import { useToast } from '@/composables/useToast'
@@ -237,9 +178,13 @@ const loadTaxCase = async () => {
     caseStatus.value = caseFetchedData.case_status
     caseData.value = caseFetchedData
 
-    // Load objectionDecision data if available
-    if (caseFetchedData.objectionDecision) {
-      const od = caseFetchedData.objectionDecision
+    console.log('Full caseFetchedData:', caseFetchedData)
+    console.log('workflow_histories:', caseFetchedData.workflow_histories)
+
+    // Load objectionDecision data if available (check both camelCase and snake_case)
+    const objDecision = caseFetchedData.objectionDecision || caseFetchedData.objection_decision
+    if (objDecision) {
+      const od = objDecision
       prefillData.value = {
         decision_number: od.decision_number || '',
         decision_date: formatDateForInput(od.decision_date),
@@ -248,8 +193,10 @@ const loadTaxCase = async () => {
         workflowHistories: caseFetchedData.workflow_histories || []
       }
       preFilledMessage.value = '✅ Stage 7 data loaded from previous submission'
+      console.log('Stage 7 Decision Data:', { objDecision, prefillData: prefillData.value })
     } else {
       preFilledMessage.value = '📝 Ready to enter Stage 7 data'
+      console.log('No objectionDecision found yet')
     }
 
     await loadRevisions()
@@ -264,7 +211,7 @@ const loadTaxCase = async () => {
 
 const loadRevisions = async () => {
   try {
-    const result = await listRevisions(caseId, 7)
+    const result = await listRevisions('tax-cases', caseId)
     if (result && Array.isArray(result)) {
       revisions.value = result
     }
@@ -273,8 +220,28 @@ const loadRevisions = async () => {
   }
 }
 
-const refreshTaxCase = () => {
-  loadTaxCase()
+const refreshTaxCase = async () => {
+  console.log('[ObjectionDecisionForm] Refreshing tax case after submission...')
+  await loadTaxCase()
+  
+  // ⭐ After loading, navigate back to parent TaxCaseDetail so it can re-calculate accessibility
+  // This ensures TaxCaseDetail watcher triggers and Stage 13 becomes accessible
+  console.log('[ObjectionDecisionForm] Navigating back to case detail view...')
+  setTimeout(() => {
+    router.push(`/tax-cases/${caseId}`)
+  }, 800)
+}
+
+// Sync form data from StageForm back to parent
+const syncFormDataToParent = (formDataUpdate) => {
+  if (formDataUpdate) {
+    Object.keys(formDataUpdate).forEach(key => {
+      if (key in prefillData.value) {
+        prefillData.value[key] = formDataUpdate[key]
+      }
+    })
+    console.log('[ObjectionDecisionForm] Form data synced:', formDataUpdate)
+  }
 }
 
 // Handle routing to Appeal (Stage 8) - User choice for partially_granted
@@ -344,6 +311,14 @@ const proceedToRefund = async () => {
     console.error('Error:', error)
   }
 }
+
+// Watcher to monitor decision data changes
+watch(prefillData, (newVal) => {
+  console.log('prefillData updated:', newVal)
+  console.log('isStage7Submitted:', isStage7Submitted.value)
+  console.log('currentDecisionType:', currentDecisionType.value)
+  console.log('Should show buttons?', isStage7Submitted.value && currentDecisionType.value === 'partially_granted')
+}, { deep: true })
 
 onMounted(() => {
   loadTaxCase()

@@ -782,6 +782,53 @@ const getFieldOptions = (field) => {
 
 ---
 
+## 🚨 Known Obstacles & Solutions (Inherited from Stage 4 Pattern)
+
+When implementing Stage 12 (the FINAL decision point), be aware of these common issues that also apply to other DECISION POINT stages (7, 10, 12):
+
+### Obstacle 1: Decision Field Not Prefilled on Page Reload
+**Issue:** User selects decision, submits, then refreshes page - decision radio/select not showing selected value
+**Root Cause:** Decision field not in `fields` array, so not initialized in formData during onMounted
+**Fix:** Explicitly initialize all decision-related fields including those NOT in the form fields list (see Stage 4 Obstacles section 1)
+
+### Obstacle 2: Stage Accessibility Not Updating (Stages Locked When Should Be Accessible)
+**Issue:** After user makes final decision, next stage (Refund vs KIAN) remains locked/not accessible
+**Root Cause:** API returns snake_case (`supreme_court_decision_record`) but frontend expects camelCase (`supremeCourtDecisionRecord`)
+**Fix:** Handle BOTH naming conventions in decision getter functions and watchers (see Stage 4 Obstacles section 2)
+
+### Obstacle 3: Watcher Not Triggering When Data Changes
+**Issue:** Added watcher for decision field but it never triggers when data loaded
+**Root Cause:** Watcher added BEFORE data loaded, or watcher checks wrong property name (case sensitivity)
+**Fix:** 
+  - Add watcher AFTER onMounted() completes
+  - Watch for BOTH snake_case and camelCase naming: `() => [caseData.value?.supremeCourtDecisionRecord?.keputusan_pk, caseData.value?.supreme_court_decision_record?.keputusan_pk]`
+  - Add logging to verify which property contains data
+
+### Obstacle 4: Final Decision Routing Logic Incomplete
+**Issue:** After final decision, workflow doesn't route to correct terminal stage (Refund vs KIAN), OR multiple stages appear accessible simultaneously
+**Root Cause:** Accessibility logic missing explicit locking for non-chosen paths, OR missing else conditions
+**Fix:** Add explicit `stage.accessible = false` statements for locked stages, not just omitting the true assignment (see Stage 4 Obstacles section 4)
+
+### Obstacle 5: KIAN Branch Collapsible Section Disabled
+**Issue:** The collapsible section for KIAN (Stage 16) appears disabled even after final decision is made
+**Root Cause:** Same as Obstacle 2 - decision getter function returns null due to case sensitivity mismatch
+**Fix:** Fix the snake_case/camelCase handling - this automatically enables the section
+
+### Obstacle 6: Case Not Marked as Completed After Final Decision
+**Issue:** After Stage 12 decision, case status doesn't update to GRANTED or NOT_GRANTED_PARTIAL
+**Root Cause:** API not updating case_status field when decision is saved
+**Fix:** Ensure backend API endpoint updates tax_cases.case_status based on decision outcome:
+```php
+$caseStatus = match($data['keputusan_pk']) {
+    'dikabulkan' => 'GRANTED',
+    'dikabulkan_sebagian' => 'GRANTED_PARTIAL',
+    'ditolak' => 'NOT_GRANTED_PARTIAL'
+};
+$taxCase->update(['case_status' => $caseStatus]);
+```
+
+---
+
 ## Implementation Checklist
 
 ### Backend
@@ -794,10 +841,14 @@ const getFieldOptions = (field) => {
 - [ ] Update API endpoint for Stage 12 workflow
 - [ ] Add case_status update logic (GRANTED vs NOT_GRANTED_PARTIAL)
 - [ ] Add logging for final decision
+- [ ] **CRITICAL:** Ensure API returns complete object with all fields
+- [ ] **CRITICAL:** Ensure API returns decision value correctly for determining next stage
 
 ### Frontend - Components
 - [ ] Create `SupremeCourtDecisionForm.vue`
 - [ ] Update `StageForm.vue` to support Stage 12 decision field
+- [ ] **CRITICAL:** Initialize ALL special decision fields in formData (not just fields from fields array)
+- [ ] **CRITICAL:** Update watch to sync special fields (not in fields array)
 - [ ] Update `DecisionOptionsPanel.vue` configuration
 - [ ] Update `RequestRevisionModalV2.vue` field mappings
 - [ ] Add Stage 12 field type detection
@@ -806,6 +857,8 @@ const getFieldOptions = (field) => {
 
 ### Frontend - Pages
 - [ ] Update `TaxCaseDetail.vue` stage unlock logic
+- [ ] **CRITICAL:** Handle BOTH snake_case and camelCase in decision getter functions
+- [ ] **CRITICAL:** Add watchers for BOTH naming conventions
 - [ ] Add Stage 12 to decision point stages list
 - [ ] Add terminal stage logic (marks as final decision)
 - [ ] Test stage navigation after decision

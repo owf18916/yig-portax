@@ -1379,75 +1379,221 @@ const getFieldOptions = (field) => {
 
 ## Known Obstacles & Solutions
 
-### Obstacle 1: DecisionOptionsPanel Not Appearing After Selecting skp_type
+### Obstacle 1: Radio Button Not Prefilled with User's Previous Choice
 
-**Problem:** User selects SKP type but no decision options appear below the field.
+**Problem:** User selects "Proceed to Refund" and submits. On page reload, radio button is not checked even though `user_routing_choice = 'refund'` is saved in database.
 
 **Root Cause:**
-- DecisionOptionsPanel component not imported in SkpFilingForm
-- v-if condition checking formData.skp_type is not reactive
-- Component not registered
+- `formData` object is not properly initialized with `user_routing_choice` field at component mount
+- `user_routing_choice` is NOT in the `fields` array, so it doesn't get initialized in onMounted loop
+- Watch for prefillData doesn't sync `user_routing_choice` because it's not in fields array
+- Radio button binding expects formData['user_routing_choice'] to exist as reactive property
 
 **Solution:**
 
-1. Ensure DecisionOptionsPanel is imported at top of SkpFilingForm.vue:
-   ```javascript
-   import DecisionOptionsPanel from '@/components/DecisionOptionsPanel.vue'
-   ```
+In StageForm.vue onMounted(), ensure all fields including non-form-field items are initialized:
 
-2. Check formData is reactive (should be ref, not const object):
-   ```javascript
-   const formData = ref({ skp_type: '', ... })
-   ```
+```javascript
+onMounted(() => {
+  // Initialize form fields from props.fields
+  props.fields.forEach(field => {
+    if (props.prefillData && props.prefillData[field.key] !== undefined && props.prefillData[field.key] !== null) {
+      formData[field.key] = props.prefillData[field.key]
+    } else if (field.value !== undefined && field.value !== null) {
+      formData[field.key] = field.value
+    } else {
+      formData[field.key] = ''
+    }
+  })
 
-3. Verify v-if="formData.skp_type" triggers when skp_type changes
+  // ⭐ CRITICAL: Also initialize special fields that are NOT in fields array
+  // These are typically decision routing or computed fields
+  if (props.prefillData?.user_routing_choice) {
+    formData['user_routing_choice'] = props.prefillData.user_routing_choice
+  }
+})
+```
 
-4. Test in browser DevTools:
-   - Open DevTools → Components tab
-   - Change skp_type value in form
-   - Check if DecisionOptionsPanel appears in component tree
-   - If not, check console for errors
+Also update watch to sync these fields:
+
+```javascript
+watch(() => [props.fields, props.prefillData], ([newFields, newPrefillData]) => {
+  newFields.forEach(field => {
+    if (newPrefillData && newPrefillData[field.key] !== undefined && newPrefillData[field.key] !== null) {
+      formData[field.key] = newPrefillData[field.key]
+    }
+  })
+  
+  // ⭐ Also sync special fields not in fields array
+  if (newPrefillData?.user_routing_choice) {
+    formData['user_routing_choice'] = newPrefillData.user_routing_choice
+  }
+}, { deep: true })
+```
+
+**Debug Steps:**
+1. Open DevTools → Elements tab
+2. Find radio buttons for decision options
+3. Check if `checked` attribute is present
+4. Open DevTools → Console
+5. Type: `$refs.stageForm?.formData?.user_routing_choice` to verify value in formData
+6. If undefined, check onMounted() initialization
 
 ---
 
-### Obstacle 2: Decision Choice Not Persisting to Database
+### Obstacle 2: Stage Accessibility Not Updating (Decision Path Locked)
 
-**Problem:** User selects decision choice (Refund or Objection), clicks "Submit & Continue" but next_stage_id doesn't update correctly.
+**Problem:** User chooses "Proceed to Refund", but after page reload, Stage 13 (Refund) is still LOCKED with "Awaiting Decision". Stage 5 (Objection) shows "Access" button even though it should be locked.
 
 **Root Cause:**
-- `next_action` field not being sent in API request
-- Backend validation rejecting invalid next_action value
-- next_stage_id not being calculated from next_action
+- API returns `skp_record` (snake_case) but frontend expects `skpRecord` (camelCase)
+- `getUserRoutingChoice()` function accesses `caseData.value.skpRecord` which is undefined
+- Therefore `userChoice` is null, so accessibility logic locks all stages
+- Watcher for `caseData.skpRecord` doesn't trigger because property is actually `skp_record`
 
 **Solution:**
 
-1. Verify SkpFilingForm sends `next_action` in handleSubmit():
-   ```javascript
-   const submitData = {
-     ...formData.value,
-     next_action: nextActionChoice.value // MUST be included
-   }
-   await axios.post(`/api/tax-cases/${props.caseId}/workflow/4`, submitData)
-   ```
+In TaxCaseDetail.vue, handle BOTH snake_case and camelCase:
 
-2. Verify API endpoint validates next_action (see Section B8.1):
-   ```php
-   'next_action' => 'nullable|in:refund,objection'
-   ```
+```javascript
+// ⭐ Support both API naming conventions
+const getUserRoutingChoice = () => {
+  const skpRecord = caseData.value.skpRecord || caseData.value.skp_record
+  if (!skpRecord) return null
+  return skpRecord.user_routing_choice || null
+}
+```
 
-3. Verify API calculates next_stage_id based on next_action:
-   ```php
-   $nextStageId = match($data['next_action']) {
-     'refund' => 13,
-     'objection' => 5,
-     default => 5
-   };
-   ```
+Update watcher to watch BOTH properties:
 
-4. Check Network tab in DevTools:
-   - Submit form
-   - Inspect POST request payload (should include `next_action`)
-   - Inspect response (should include updated `next_stage_id`)
+```javascript
+// ⭐ Watch for changes in BOTH naming conventions
+watch(
+  () => [caseData.value?.skpRecord?.user_routing_choice, caseData.value?.skp_record?.user_routing_choice],
+  ([newRoutingChoice1, newRoutingChoice2], [oldRoutingChoice1, oldRoutingChoice2]) => {
+    const newChoice = newRoutingChoice1 || newRoutingChoice2
+    const oldChoice = oldRoutingChoice1 || oldRoutingChoice2
+    if (newChoice !== oldChoice) {
+      console.log('[TaxCaseDetail] SKP routing choice changed:', oldChoice, '→', newChoice)
+      updateStageAccessibility()
+    }
+  }
+)
+```
+
+Add debug logging to updateStageAccessibility() to identify which naming is being used:
+
+```javascript
+const updateStageAccessibility = () => {
+  const userChoice = getUserRoutingChoice()
+  console.log('[DEBUG] userChoice value:', userChoice)
+  console.log('[DEBUG] skpRecord (camelCase):', caseData.value.skpRecord)
+  console.log('[DEBUG] skp_record (snake_case):', caseData.value.skp_record)
+  // ... rest of logic
+}
+```
+
+**Debug Steps:**
+1. Open DevTools → Console
+2. After page load, look for debug logs showing which property contains the data
+3. Check console output: 
+   - If `skp_record (snake_case): {...}` appears, API is returning snake_case
+   - If `skpRecord (camelCase): {...}` appears, something transformed it
+4. If `getUserRoutingChoice()` still returns null, check:
+   - Is data loaded? (check `caseData.value`)
+   - Is skpRecord relationship included in API response?
+   - Run in Console: `JSON.stringify(caseData.value)` to see full structure
+
+**Prevention for Future Stages:**
+- Always handle both naming conventions (Laravel's snake_case vs JavaScript's camelCase)
+- Test with: `caseData.value.relation_name || caseData.value.relationName`
+- Always add watcher AFTER data is loaded, not before
+
+---
+
+### Obstacle 3: Collapsible Refund Branch Section Disabled
+
+**Problem:** Refund branch (Stage 13-15) collapsible button is disabled (grayed out) even though user chose "Refund" path.
+
+**Root Cause:**
+- `isRefundBranchActive()` returns false because `getUserRoutingChoice()` returns null (same root cause as Obstacle 2)
+- Collapsible button logic checks `isRefundBranchActive()` to determine if section should be enabled
+- If false, button gets `:disabled="true"`
+
+**Solution:**
+
+Fix root cause (Obstacle 2) which resolves this issue. The collapsible button will automatically enable when `getUserRoutingChoice()` correctly returns 'refund'.
+
+Additionally, update collapsible button template to show helpful state:
+
+```vue
+<button
+  @click="expandedSections.refund = !expandedSections.refund"
+  class="w-full px-4 py-3 bg-amber-100 hover:bg-amber-200 flex items-center justify-between transition"
+  :disabled="!isRefundBranchActive()"
+  :class="isRefundBranchActive() ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'"
+>
+  <div class="flex items-center space-x-3">
+    <span :class="['transform transition', expandedSections.refund ? 'rotate-90' : '']">▶</span>
+    <h3 class="font-semibold text-gray-900">REFUND PROCESS</h3>
+    <span v-if="!isRefundBranchActive()" class="text-xs text-gray-500 italic">
+      (Select Refund option in Stage 4 to enable)
+    </span>
+  </div>
+</button>
+```
+
+---
+
+### Obstacle 4: Stage Accessibility Logic Too Permissive
+
+**Problem:** Both Stage 5 (Objection) and Stage 13 (Refund) appear accessible simultaneously, even though only ONE should be accessible based on user's choice.
+
+**Root Cause:**
+- Accessibility logic has incomplete else conditions
+- If `userChoice` is null, stages default to not accessible
+- If `userChoice` is 'refund', need to explicitly LOCK Stage 5 (not just fail to make it accessible)
+- If `userChoice` is 'objection', need to explicitly LOCK all refund branch stages (not just not enable them)
+
+**Solution:**
+
+Update updateStageAccessibility() with explicit LOCKING logic:
+
+```javascript
+// ⭐ EXPLICIT LOCK for Stage 5 when refund path chosen
+else if (stage.id === 5) {
+  const userChoice = getUserRoutingChoice()
+  if (isStage4Completed() && userChoice === 'objection') {
+    stage.accessible = true
+  } else if (isStage4Completed() && userChoice === 'refund') {
+    stage.accessible = false  // ⭐ EXPLICITLY lock
+  } else {
+    stage.accessible = false
+  }
+}
+
+// ⭐ EXPLICIT LOCK for refund branch stages when objection path chosen
+else if (stage.branch === 'refund') {
+  const userChoice = getUserRoutingChoice()
+  if (userChoice === 'refund' && isStage4Completed()) {
+    stage.accessible = true
+  } else if (userChoice === 'objection') {
+    stage.accessible = false  // ⭐ EXPLICITLY lock when objection chosen
+  } else {
+    stage.accessible = false  // ⭐ EXPLICITLY lock when no choice made
+  }
+}
+```
+
+**Test Scenario:**
+1. Complete Stage 4, choose "Objection"
+2. Verify: Stage 5 ACCESSIBLE, Stage 13 LOCKED
+3. Go back to Stage 4, change to "Refund"
+4. Refresh Tax Case Detail
+5. Verify: Stage 5 LOCKED, Stage 13 ACCESSIBLE
+6. Check console logs for decision path confirmation
+
+````
 
 ---
 

@@ -196,6 +196,21 @@
                 />
               </div>
 
+              <!-- Select Input (Dynamic) -->
+              <div v-if="getFieldType(field) === 'select'" class="mb-3">
+                <label class="form-label text-sm">{{ fieldLabel(field) }}</label>
+                <select 
+                  v-model="proposedValues[field]"
+                  class="form-control"
+                  required
+                >
+                  <option value="">-- Select {{ fieldLabel(field) }} --</option>
+                  <option v-for="opt in getFieldOptions(field)" :key="opt.value" :value="opt.value">
+                    {{ opt.label }}
+                  </option>
+                </select>
+              </div>
+
               <!-- Textarea Input -->
               <div v-if="getFieldType(field) === 'textarea'" class="mb-3">
                 <label class="form-label text-sm">{{ fieldLabel(field) }}</label>
@@ -440,7 +455,11 @@ const fieldLabel = (field) => {
     'submission_date': 'Tanggal Dilaporkan (Submission Date)',
     'objection_amount': 'Nilai Keberatan (Objection Amount)',
     'objection_grounds': 'Alasan Keberatan (Grounds for Objection)',
-    'supporting_evidence': 'Bukti Pendukung (Supporting Evidence)'
+    'supporting_evidence': 'Bukti Pendukung (Supporting Evidence)',
+    'decision_number': 'Nomor Surat Keputusan Keberatan (Decision Number)',
+    'decision_date': 'Tanggal Keputusan (Decision Date)',
+    'decision_type': 'Keputusan (Decision Type)',
+    'decision_amount': 'Nilai Keputusan (Decision Amount)'
   }
   return labels[field] || field
 }
@@ -486,7 +505,11 @@ const getFieldType = (field) => {
     'submission_date': 'date',
     'objection_amount': 'number',
     'objection_grounds': 'textarea',
-    'supporting_evidence': 'textarea'
+    'supporting_evidence': 'textarea',
+    'decision_number': 'text',
+    'decision_date': 'date',
+    'decision_type': 'select',
+    'decision_amount': 'number'
   }
   return types[field] || 'text'
 }
@@ -498,6 +521,36 @@ const getSkpTypeLabel = (skpType) => {
     'KB': 'SKP KB (Kurang Bayar - Underpayment)'
   }
   return labels[skpType] || skpType
+}
+
+const getFieldOptions = (field) => {
+  // Check if field is in props.fields and has options
+  if (props.fields && props.fields.length > 0) {
+    const fieldDef = props.fields.find(f => f.key === field)
+    if (fieldDef && fieldDef.options && Array.isArray(fieldDef.options)) {
+      return fieldDef.options
+    }
+  }
+  
+  // Fallback to hardcoded options for common select fields
+  const options = {
+    'decision_type': [
+      { value: 'granted', label: 'Dikabulkan (Granted - Accepted)' },
+      { value: 'partially_granted', label: 'Dikabulkan Sebagian (Partially Granted)' },
+      { value: 'rejected', label: 'Ditolak (Rejected)' }
+    ],
+    'skp_type': [
+      { value: 'LB', label: 'SKP LB (Lebih Bayar - Overpayment)' },
+      { value: 'NIHIL', label: 'NIHIL (Zero)' },
+      { value: 'KB', label: 'SKP KB (Kurang Bayar - Underpayment)' }
+    ],
+    'user_routing_choice': [
+      { value: 'objection', label: 'Proceed to Objection (Stage 5)' },
+      { value: 'refund', label: 'Proceed to Refund (Stage 13)' }
+    ]
+  }
+  
+  return options[field] || []
 }
 
 const handleFieldToggle = () => {

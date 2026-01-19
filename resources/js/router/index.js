@@ -13,6 +13,7 @@ import SkpFilingForm from '../pages/SkpFilingForm.vue'
 import ObjectionSubmissionForm from '../pages/ObjectionSubmissionForm.vue'
 import SpuhRecordForm from '../pages/SpuhRecordForm.vue'
 import ObjectionDecisionForm from '../pages/ObjectionDecisionForm.vue'
+import AppealSubmissionForm from '../pages/AppealSubmissionForm.vue'
 
 const routes = [
   {
@@ -85,6 +86,12 @@ const routes = [
     path: '/tax-cases/:id/workflow/7',
     name: 'ObjectionDecisionForm',
     component: ObjectionDecisionForm,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/tax-cases/:id/workflow/8',
+    name: 'AppealSubmissionForm',
+    component: AppealSubmissionForm,
     meta: { requiresAuth: true }
   },
   {

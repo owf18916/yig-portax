@@ -114,6 +114,16 @@ class RevisionService
                         Log::info("RevisionService: Using objectionDecision as data source");
                     }
                 }
+                // For stage 8 (Appeal Submission), fetch data from appealSubmission
+                elseif ((int)$stageCode === 8) {
+                    if (!$revisable->relationLoaded('appealSubmission')) {
+                        $revisable->load('appealSubmission');
+                    }
+                    if ($revisable->appealSubmission) {
+                        $dataSource = $revisable->appealSubmission;
+                        Log::info("RevisionService: Using appealSubmission as data source");
+                    }
+                }
             }
 
             // Prepare original data (only include fields being revised)
@@ -298,6 +308,15 @@ class RevisionService
                 if ($revisable->objectionDecision) {
                     $updateTarget = $revisable->objectionDecision;
                     Log::info('RevisionService: Using objectionDecision as update target');
+                }
+            }
+            elseif ($stageCode == 8) {
+                if (!$revisable->relationLoaded('appealSubmission')) {
+                    $revisable->load('appealSubmission');
+                }
+                if ($revisable->appealSubmission) {
+                    $updateTarget = $revisable->appealSubmission;
+                    Log::info('RevisionService: Using appealSubmission as update target');
                 }
             }
         }

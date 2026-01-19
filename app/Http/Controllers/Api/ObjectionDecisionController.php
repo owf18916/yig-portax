@@ -21,11 +21,10 @@ class ObjectionDecisionController extends ApiController
         }
 
         $validated = $request->validate([
-            'decision_letter_number' => 'required|string|unique:objection_decisions',
+            'decision_number' => 'required|string|unique:objection_decisions',
             'decision_date' => 'required|date',
             'decision_type' => 'required|in:granted,partially_granted,rejected',
             'decision_amount' => 'required|numeric|min:0',
-            'reasoning' => 'required|string|min:20',
             'notes' => 'nullable|string',
         ]);
 
@@ -127,15 +126,21 @@ class ObjectionDecisionController extends ApiController
 
     /**
      * Determine next stage based on objection decision
-     * Granted / Partially Granted → Stage 12 (Refund)
-     * Rejected → Stage 8 (Appeal)
+     * Granted → Stage 13 (Refund - Bank Transfer Request)
+     * Rejected → Stage 8 (Appeal - Banding)
+     * Partially Granted → null (user must choose via decision-choice endpoint)
+     * 
+     * CRITICAL: This method is for auto-routing only.
+     * For partially_granted decisions, next_stage remains null,
+     * and the user chooses via the frontend decision buttons.
      */
-    private function determineNextStageFromDecision(string $decisionType): int
+    private function determineNextStageFromDecision(string $decisionType): ?int
     {
         return match($decisionType) {
-            'granted', 'partially_granted' => 12,  // Refund process
-            'rejected' => 8,                         // Appeal
-            default => 8,
+            'granted' => 13,                  // Bank Transfer Request
+            'rejected' => 8,                  // Appeal (Banding)
+            'partially_granted' => null,      // User must choose
+            default => null,
         };
     }
 }

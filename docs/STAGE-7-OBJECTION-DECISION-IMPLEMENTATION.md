@@ -405,6 +405,35 @@ Don't add buttons for all decisions, only for `partially_granted`.
 
 ---
 
+## � Known Obstacles & Solutions (Inherited from Stage 4 Pattern)
+
+When implementing Stage 7, be aware of these common issues that also apply to other DECISION POINT stages (7, 10, 12):
+
+### Obstacle 1: Decision Field Not Prefilled on Page Reload
+**Issue:** User selects decision, submits, then refreshes page - decision radio/select not showing selected value
+**Root Cause:** Decision field not in `fields` array, so not initialized in formData during onMounted
+**Fix:** Explicitly initialize all decision-related fields including those NOT in the form fields list (see Stage 4 Obstacles section 1)
+
+### Obstacle 2: Stage Accessibility Not Updating (Stages Locked When Should Be Accessible)
+**Issue:** After user makes decision, next stage remains locked/not accessible. New stage should appear based on decision outcome
+**Root Cause:** API returns snake_case (`objection_decision`) but frontend expects camelCase (`objectionDecision`)
+**Fix:** Handle BOTH naming conventions in getUserRoutingChoice() and watchers (see Stage 4 Obstacles section 2)
+
+### Obstacle 3: Watcher Not Triggering When Data Changes
+**Issue:** Added watcher for decision field but it never triggers when data loaded
+**Root Cause:** Watcher added BEFORE data loaded, or watcher checks wrong property name (case sensitivity)
+**Fix:** 
+  - Add watcher AFTER onMounted() completes
+  - Watch for BOTH snake_case and camelCase: `() => [caseData.value?.objectionDecision?.decision, caseData.value?.objection_decision?.decision]`
+  - Add logging to verify which property contains data
+
+### Obstacle 4: Decision Routing Logic Incomplete
+**Issue:** Decision made but workflow doesn't route to correct next stage, OR multiple stages appear accessible
+**Root Cause:** Accessibility logic missing explicit locking for non-chosen paths
+**Fix:** Add explicit `stage.accessible = false` statements for locked stages, not just omitting the true assignment (see Stage 4 Obstacles section 4)
+
+---
+
 ## 📋 Implementation Order
 
 1. **Day 1 Morning:** Database setup & Models
@@ -421,6 +450,9 @@ Don't add buttons for all decisions, only for `partially_granted`.
 3. **Decision Logic:** Auto-routing for granted/rejected, user choice for partially_granted
 4. **Button Visibility:** ONLY show choice buttons when partially_granted
 5. **Computed Properties:** Use Vue reactivity for decision-type monitoring
+6. **Field Initialization:** Initialize ALL decision-related fields in formData, not just those in fields list
+7. **API Response Handling:** Support BOTH snake_case and camelCase property names
+8. **Watcher Timing:** Add watchers AFTER data is loaded, not before
 
 ---
 
@@ -429,3 +461,4 @@ Don't add buttons for all decisions, only for `partially_granted`.
 *Apply workflow path locking + decision-based routing patterns from Stage 4*
 
 *CRITICAL: Implement BOTH auto-routing AND user-choice logic correctly*
+*REFER TO STAGE-4-SKP-IMPLEMENTATION.md obstacles section for detailed solutions*
