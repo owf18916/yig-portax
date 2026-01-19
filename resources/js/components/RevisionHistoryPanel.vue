@@ -2,6 +2,7 @@
   <div class="revision-history-panel">
     <div class="panel-header">
       <h3>📋 Revision History</h3>
+      <!-- DEBUG: canRequestRevision={{ canRequestRevision }} -->
       <button 
         v-if="canRequestRevision" 
         @click="showRequestModal = true"
@@ -51,7 +52,7 @@
 
           <!-- APPROVED State -->
           <div v-if="revision.revision_status === 'approved'" class="approved-section">
-            <span class="status-icon success-icon">✅ APPROVED - Changes Applied</span>
+            <span class="status-icon success-icon">✅ APPROVED - Ready for Changes</span>
             <p v-if="revision.approved_at"><strong>Approved at:</strong> {{ formatDate(revision.approved_at) }}</p>
             <div v-if="revision.proposed_values" class="mt-2">
               <strong>Proposed Changes:</strong>
@@ -83,6 +84,15 @@
               <div v-if="!getDocumentChanges(revision).files_to_delete?.length && !getDocumentChanges(revision).files_to_add?.length && !getDocumentChanges(revision).new_files_names?.length" class="text-sm text-muted">
                 No document changes
               </div>
+            </div>
+            <!-- Next Action: Submit Revised Data -->
+            <div v-if="isCurrentUser" class="next-actions mt-3">
+              <button 
+                @click="openSubmitRevisedModal(revision)"
+                class="btn btn-sm btn-success"
+              >
+                ✎ Submit Revised Data
+              </button>
             </div>
           </div>
 
@@ -134,6 +144,18 @@
       @approved="onRevisionApproved"
       @rejected="onRevisionRejected"
     />
+
+    <!-- Submit Revised Data Modal -->
+    <SubmitRevisedDataModal
+      v-if="showSubmitRevisedModal"
+      :case-id="caseId"
+      :revision="revisionToSubmit"
+      :available-fields="availableFields"
+      :fields="fields"
+      :current-documents="currentDocuments"
+      @submit="onRevisedDataSubmitted"
+      @close="showSubmitRevisedModal = false"
+    />
   </div>
 </template>
 
@@ -144,6 +166,7 @@ import { useToast } from '@/composables/useToast'
 import RequestRevisionModalV2 from './RequestRevisionModalV2.vue'
 import BeforeAfterComparison from './BeforeAfterComparison.vue'
 import RevisionApprovalModalV2 from './RevisionApprovalModalV2.vue'
+import SubmitRevisedDataModal from './SubmitRevisedDataModal.vue'
 
 const { getFieldLabel } = useRevisionFields()
 
@@ -178,6 +201,8 @@ const showRequestModal = ref(false)
 const selectedRevision = ref(null)
 const showApprovalModal = ref(false)
 const revisionToApprove = ref(null)
+const showSubmitRevisedModal = ref(false)
+const revisionToSubmit = ref(null)
 
 // Check if user can request new revision
 const canRequestRevision = computed(() => {
@@ -187,11 +212,14 @@ const canRequestRevision = computed(() => {
     h => h.stage_id === stageIdNum && (h.status === 'submitted' || h.status === 'approved')
   )
   
-  if (!isStageSubmitted) return false
-  
-  // No pending revisions for THIS STAGE
   const pending = stageFilteredRevisions.value.find(r => r.revision_status === 'requested')
-  return !pending
+  const result = isStageSubmitted && !pending
+  
+  if (stageIdNum === 4) {
+    console.log(`[RevisionHistoryPanel DEBUG] Stage 4 - isStageSubmitted=${isStageSubmitted}, pending=${!!pending}, RESULT=${result}`)
+  }
+  
+  return result
 })
 
 // Message for why button is disabled
@@ -231,6 +259,12 @@ const sortedRevisions = computed(() => {
 const isHoldingUser = computed(() => {
   if (!props.currentUser) return false
   return props.currentUser?.entity?.entity_type === 'HOLDING'
+})
+
+// Check if current user is the one who requested revision (can submit revised data)
+const isCurrentUser = computed(() => {
+  if (!props.currentUser) return false
+  return props.currentUser?.entity?.entity_type !== 'HOLDING'
 })
 
 const statusClass = (status) => {
@@ -290,6 +324,18 @@ const onRevisionRequested = (revision) => {
 const openApprovalModal = (revision) => {
   revisionToApprove.value = revision
   showApprovalModal.value = true
+}
+
+const openSubmitRevisedModal = (revision) => {
+  revisionToSubmit.value = revision
+  showSubmitRevisedModal.value = true
+}
+
+const onRevisedDataSubmitted = (submittedData) => {
+  showSubmitRevisedModal.value = false
+  revisionToSubmit.value = null
+  emit('refresh')
+  showSuccess('Revised Data Submitted', 'Your changes have been submitted for approval.')
 }
 
 const onRevisionApproved = (revision) => {

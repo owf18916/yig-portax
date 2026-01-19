@@ -4,60 +4,53 @@ namespace App\Http\Controllers\Api;
 
 use App\Models\TaxCase;
 use App\Models\SpuhRecord;
-use App\Models\WorkflowHistory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class SpuhRecordController extends ApiController
 {
     /**
-     * Store SPUH record - Tax authority's response to objection (Stage 6)
+     * Store/Update SPUH record (Stage 6) - Multi-phase approach
+     * Phase 1: spuh_number, issue_date, receipt_date (required)
+     * Phase 2: reply_number, reply_date (optional, filled later)
      */
     public function store(Request $request, TaxCase $taxCase)
     {
         try {
             $validated = $request->validate([
-                'spuh_number' => 'required|string|unique:spuh_records',
-                'issued_date' => 'required|date',
-                'response_type' => 'required|in:PARTIAL_ACCEPTANCE,REJECTION,ACCEPTANCE',
-                'accepted_amount' => 'required|numeric|min:0',
-                'rejection_reason' => 'nullable|string',
+                'spuh_number' => 'required|string',
+                'issue_date' => 'required|date',
+                'receipt_date' => 'required|date',
+                'reply_number' => 'nullable|string',
+                'reply_date' => 'nullable|date',
                 'notes' => 'nullable|string',
             ]);
 
             DB::beginTransaction();
 
-            $spuhRecord = SpuhRecord::create([
-                'tax_case_id' => $taxCase->id,
-                'spuh_number' => $validated['spuh_number'],
-                'issued_date' => $validated['issued_date'],
-                'response_type' => $validated['response_type'],
-                'accepted_amount' => $validated['accepted_amount'],
-                'rejection_reason' => $validated['rejection_reason'] ?? null,
-                'notes' => $validated['notes'] ?? null,
-                'status' => 'DRAFT',
-                'received_date' => now(),
-            ]);
-
-            // Log workflow history
-            WorkflowHistory::create([
-                'tax_case_id' => $taxCase->id,
-                'stage_number' => 6,
-                'action' => 'SPUH_RECEIVED',
-                'description' => 'SPUH (Tax authority response to objection) received',
-                'performed_by' => auth()->id(),
-                'notes' => $validated['notes'] ?? null,
-            ]);
+            // Use updateOrCreate for partial updates (handles both Phase 1 and Phase 2)
+            $spuhRecord = SpuhRecord::updateOrCreate(
+                ['tax_case_id' => $taxCase->id],
+                [
+                    'spuh_number' => $validated['spuh_number'],
+                    'issue_date' => $validated['issue_date'],
+                    'receipt_date' => $validated['receipt_date'],
+                    'reply_number' => $validated['reply_number'] ?? null,
+                    'reply_date' => $validated['reply_date'] ?? null,
+                    'status' => 'submitted',
+                    'notes' => $validated['notes'] ?? null,
+                ]
+            );
 
             // Update tax case status
             $taxCase->update([
                 'current_stage' => 6,
-                'status' => 'SPUH_RECEIVED'
+                'case_status_id' => 2, // SUBMITTED status
             ]);
 
             DB::commit();
 
-            return $this->success($spuhRecord, 'SPUH record created successfully', 201);
+            return $this->success($spuhRecord, 'SPUH record saved successfully', 201);
         } catch (\Exception $e) {
             DB::rollBack();
             return $this->error($e->getMessage(), 500);
@@ -67,60 +60,19 @@ class SpuhRecordController extends ApiController
     /**
      * Display the specified SPUH record
      */
-    public function show(TaxCase $taxCase, SpuhRecord $spuhRecord)
-    {
-        if ($spuhRecord->tax_case_id !== $taxCase->id) {
-            return $this->error('SPUH record not found for this tax case', 404);
-        }
-
-        return $this->success($spuhRecord, 'SPUH record retrieved');
-    }
-
-    /**
-     * Approve SPUH and move to Stage 7 (Objection Decision)
-     */
-    public function approve(Request $request, TaxCase $taxCase, SpuhRecord $spuhRecord)
+    public function show(TaxCase $taxCase)
     {
         try {
-            if ($spuhRecord->tax_case_id !== $taxCase->id) {
+            $spuhRecord = $taxCase->spuhRecord;
+
+            if (!$spuhRecord) {
                 return $this->error('SPUH record not found for this tax case', 404);
             }
 
-            if ($spuhRecord->status !== 'DRAFT') {
-                return $this->error('Only draft SPUH records can be approved', 400);
-            }
-
-            DB::beginTransaction();
-
-            $spuhRecord->update([
-                'status' => 'APPROVED',
-                'approved_date' => now(),
-                'approved_by' => auth()->id(),
-            ]);
-
-            // Log workflow history
-            WorkflowHistory::create([
-                'tax_case_id' => $taxCase->id,
-                'stage_number' => 6,
-                'action' => 'SPUH_APPROVED',
-                'description' => 'SPUH record approved, moving to Stage 7 (Objection Decision)',
-                'performed_by' => auth()->id(),
-                'notes' => $request->input('notes'),
-                'next_stage' => 7,
-            ]);
-
-            // Update tax case status
-            $taxCase->update([
-                'current_stage' => 7,
-                'status' => 'OBJECTION_DECISION_AWAITING'
-            ]);
-
-            DB::commit();
-
-            return $this->success($spuhRecord, 'SPUH approved, proceeding to Stage 7', 200);
+            return $this->success($spuhRecord, 'SPUH record retrieved');
         } catch (\Exception $e) {
-            DB::rollBack();
             return $this->error($e->getMessage(), 500);
         }
     }
 }
+

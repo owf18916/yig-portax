@@ -159,7 +159,43 @@ class TaxCaseController extends ApiController
             'documents'
         ]);
 
+        // ⭐ ADD DECISION-BASED ROUTING INFO
+        // Determine which stages are accessible based on user's routing choice at Stage 4
+        $accessibleStages = $this->getAccessibleStages($taxCase);
+        
+        $taxCase->accessible_stages = $accessibleStages;
+
         return $this->success($taxCase);
+    }
+
+    /**
+     * ⭐ Determine which stages are accessible based on SKP decision (Stage 4)
+     */
+    private function getAccessibleStages(TaxCase $taxCase): array
+    {
+        $accessible = [];
+
+        // Stages 1-4 are always completed by this point
+        for ($i = 1; $i <= 4; $i++) {
+            $accessible[] = $i;
+        }
+
+        // Stage 4 is special - check if SKP has user_routing_choice decision
+        if ($taxCase->skpRecord && $taxCase->skpRecord->user_routing_choice) {
+            // Based on user's decision, ONLY one path is accessible
+            if ($taxCase->skpRecord->user_routing_choice === 'refund') {
+                // Refund path: Stage 13 only
+                $accessible[] = 13;
+            } elseif ($taxCase->skpRecord->user_routing_choice === 'objection') {
+                // Objection path: Stage 5
+                $accessible[] = 5;
+            }
+        } else {
+            // If no decision yet, only current stage is accessible
+            // (But this shouldn't happen if SKP is properly submitted)
+        }
+
+        return $accessible;
     }
 
     /**

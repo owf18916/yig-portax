@@ -28,14 +28,26 @@
           <p class="text-xs text-gray-500">{{ company.code }}</p>
         </div>
 
-        <!-- Year-Month Period (YYYY-MM format) -->
-        <FormField
-          label="Period (YYYY-MM)"
-          type="month"
-          v-model="formData.period"
-          required
-          :error="formErrors.period"
-        />
+        <!-- Year-Month Period (Dropdown) -->
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">
+            Period (YYYY-MM) *
+          </label>
+          <select 
+            v-model="formData.period_id" 
+            :disabled="loadingAvailablePeriods"
+            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+            required
+          >
+            <option value="">{{ loadingAvailablePeriods ? 'Loading periods...' : 'Select a period' }}</option>
+            <option v-for="period in availableVATPeriods" :key="period.id" :value="period.id">
+              {{ formatPeriod(period) }}
+            </option>
+          </select>
+          <p v-if="formErrors.period" class="text-sm text-red-600 mt-1">
+            {{ formErrors.period }}
+          </p>
+        </div>
 
         <!-- PPN Masukan (Input Tax) -->
         <FormField
@@ -123,11 +135,14 @@ const company = ref({
   code: ''
 })
 
-const periods = ref([])  // NEW: Store all periods
+const periods = ref([])  // Store all periods
+const availableVATPeriods = ref([])  // Store available periods (not used in tax_case for VAT)
+const usedPeriodIds = ref([])  // Store period_ids already used in tax_case
 const loadingCompany = ref(true)
+const loadingAvailablePeriods = ref(false)
 
 const formData = reactive({
-  period: '',
+  period_id: '',
   ppn_masukan: '',
   ppn_keluaran: ''
 })
@@ -143,14 +158,25 @@ const monthCodes = {
   '07': 'Jul', '08': 'Aug', '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dec'
 }
 
+const formatPeriod = (period) => {
+  const year = period.year
+  const month = String(period.month).padStart(2, '0')
+  return `${year}-${month}`
+}
+
 const previewCaseNumber = computed(() => {
-  if (!formData.period) {
+  if (!formData.period_id || !company.value.code) {
     return ''
   }
-  const [year, month] = formData.period.split('-')
-  const yearCode = year.slice(-2)
-  const monthCode = monthCodes[month] || ''
-  return `${company.value.code}${yearCode}${monthCode}V`
+  const selectedPeriod = availableVATPeriods.value.find(p => p.id === formData.period_id)
+  if (!selectedPeriod) return ''
+  
+  // Extract first 2 letters from entity code (uppercase)
+  const entityCode = company.value.code.substring(0, 2).toUpperCase()
+  const yearCode = String(selectedPeriod.year).slice(-2)
+  const monthCode = monthCodes[String(selectedPeriod.month).padStart(2, '0')] || ''
+  
+  return `${entityCode}${yearCode}${monthCode}V`
 })
 
 const calculateDispute = () => {
@@ -174,13 +200,61 @@ const getDirectionColor = () => {
 }
 
 const fetchPeriods = async () => {
+  loadingAvailablePeriods.value = true
   try {
-    const response = await fetch('/api/periods')
-    if (!response.ok) throw new Error('Failed to fetch periods')
-    const data = await response.json()
-    periods.value = Array.isArray(data) ? data : data.data || []
+    // Fetch all periods
+    const periodResponse = await fetch('/api/periods')
+    if (!periodResponse.ok) throw new Error('Failed to fetch periods')
+    const periodData = await periodResponse.json()
+    const allPeriods = Array.isArray(periodData) ? periodData : periodData.data || []
+    
+    // Get used periods in tax_case for current entity
+    const usedResponse = await fetch(`/api/tax-cases?entity_id=${company.value.id}&case_type=VAT&limit=1000`)
+    if (usedResponse.ok) {
+      const usedData = await usedResponse.json()
+      let usedCases = []
+      if (Array.isArray(usedData)) {
+        usedCases = usedData
+      } else if (usedData && usedData.data) {
+        // Check if usedData.data is pagination object with data property
+        if (Array.isArray(usedData.data.data)) {
+          usedCases = usedData.data.data
+        } else if (Array.isArray(usedData.data)) {
+          usedCases = usedData.data
+        }
+      } else if (usedData && typeof usedData === 'object') {
+        // Try to find data in other common structures
+        usedCases = Object.values(usedData).find(val => Array.isArray(val)) || []
+      }
+      
+      usedPeriodIds.value = usedCases
+        .filter(c => c && c.case_type === 'VAT')
+        .map(c => c.period_id)
+        .filter(id => id)
+    }
+    
+    // Filter periods that haven't been used for VAT
+    // Also filter out current month and future periods
+    const now = new Date()
+    const currentYear = now.getFullYear()
+    const currentMonth = now.getMonth() + 1 // getMonth() returns 0-11
+    
+    const availablePeriods = allPeriods.filter(p => {
+      const hasBeenUsed = usedPeriodIds.value.includes(p.id)
+      const isNotFuture = p.year < currentYear || (p.year === currentYear && p.month < currentMonth)
+      
+      return !hasBeenUsed && isNotFuture
+    })
+    
+    periods.value = allPeriods
+    availableVATPeriods.value = availablePeriods.sort((a, b) => {
+      if (a.year !== b.year) return b.year - a.year
+      return b.month - a.month
+    })
   } catch (error) {
     console.error('Error fetching periods:', error)
+  } finally {
+    loadingAvailablePeriods.value = false
   }
 }
 
@@ -258,7 +332,7 @@ const validateForm = async () => {
   formErrors.ppn_keluaran = ''
   let isValid = true
 
-  if (!formData.period) {
+  if (!formData.period_id) {
     formErrors.period = 'Period is required'
     isValid = false
   }
@@ -274,9 +348,9 @@ const validateForm = async () => {
   }
 
   // Check for duplicate case (same entity + same period + same case type)
-  if (isValid && company.value.id && formData.period) {
+  if (isValid && company.value.id && formData.period_id) {
     try {
-      const response = await fetch(`/api/tax-cases?entity_id=${company.value.id}&period=${formData.period}&case_type=VAT`, {
+      const response = await fetch(`/api/tax-cases?entity_id=${company.value.id}&period_id=${formData.period_id}&case_type=VAT`, {
         credentials: 'include',
         headers: { 'Accept': 'application/json' }
       })
@@ -310,22 +384,21 @@ const submitForm = async () => {
   document.body.style.cursor = 'wait'
 
   try {
-    const [year, month] = formData.period.split('-')
-    
-    // Find period_id dari dropdown period yang dipilih user
-    const selectedPeriod = periods.value.find(p => {
-      const pYear = String(p.year)
-      const pMonth = String(p.month).padStart(2, '0')
-      return `${pYear}-${pMonth}` === formData.period
-    })
+    // Get the selected period details
+    const selectedPeriod = availableVATPeriods.value.find(p => p.id === formData.period_id)
     
     if (!selectedPeriod) {
-      throw new Error(`Period ${formData.period} not found in database`)
+      throw new Error('Selected period not found')
     }
     
-    const yearCode = year.slice(-2)
+    const year = selectedPeriod.year
+    const month = String(selectedPeriod.month).padStart(2, '0')
+    const yearCode = String(year).slice(-2)
     const monthCode = monthCodes[month]
-    const caseNumber = `${company.value.code}${yearCode}${monthCode}V`
+    
+    // Extract first 2 letters from entity code (uppercase)
+    const entityCode = company.value.code.substring(0, 2).toUpperCase()
+    const caseNumber = `${entityCode}${yearCode}${monthCode}V`
 
     // Get CSRF token from meta tag
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')

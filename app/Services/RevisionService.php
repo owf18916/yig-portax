@@ -94,6 +94,26 @@ class RevisionService
                         Log::info("RevisionService: Using objectionSubmission as data source");
                     }
                 }
+                // For stage 6 (SPUH), fetch data from spuhRecord
+                elseif ((int)$stageCode === 6) {
+                    if (!$revisable->relationLoaded('spuhRecord')) {
+                        $revisable->load('spuhRecord');
+                    }
+                    if ($revisable->spuhRecord) {
+                        $dataSource = $revisable->spuhRecord;
+                        Log::info("RevisionService: Using spuhRecord as data source");
+                    }
+                }
+                // For stage 7 (Objection Decision), fetch data from objectionDecision
+                elseif ((int)$stageCode === 7) {
+                    if (!$revisable->relationLoaded('objectionDecision')) {
+                        $revisable->load('objectionDecision');
+                    }
+                    if ($revisable->objectionDecision) {
+                        $dataSource = $revisable->objectionDecision;
+                        Log::info("RevisionService: Using objectionDecision as data source");
+                    }
+                }
             }
 
             // Prepare original data (only include fields being revised)
@@ -260,6 +280,24 @@ class RevisionService
                 if ($revisable->objectionSubmission) {
                     $updateTarget = $revisable->objectionSubmission;
                     Log::info('RevisionService: Using objectionSubmission as update target');
+                }
+            }
+            elseif ($stageCode == 6) {
+                if (!$revisable->relationLoaded('spuhRecord')) {
+                    $revisable->load('spuhRecord');
+                }
+                if ($revisable->spuhRecord) {
+                    $updateTarget = $revisable->spuhRecord;
+                    Log::info('RevisionService: Using spuhRecord as update target');
+                }
+            }
+            elseif ($stageCode == 7) {
+                if (!$revisable->relationLoaded('objectionDecision')) {
+                    $revisable->load('objectionDecision');
+                }
+                if ($revisable->objectionDecision) {
+                    $updateTarget = $revisable->objectionDecision;
+                    Log::info('RevisionService: Using objectionDecision as update target');
                 }
             }
         }

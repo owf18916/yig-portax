@@ -17,25 +17,16 @@ class SpuhRecord extends Model
         'spuh_number',
         'issue_date',
         'receipt_date',
-        'explanation_required',
-        'explanation_provided',
-        'explanation_date',
-        'submitted_by',
-        'submitted_at',
-        'approved_by',
-        'approved_at',
+        'reply_number',
+        'reply_date',
         'status',
         'notes',
     ];
 
     protected $casts = [
-        'explanation_required' => 'boolean',
-        'explanation_provided' => 'boolean',
         'issue_date' => 'date',
         'receipt_date' => 'date',
-        'explanation_date' => 'date',
-        'submitted_at' => 'datetime',
-        'approved_at' => 'datetime',
+        'reply_date' => 'date',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',
@@ -47,13 +38,4 @@ class SpuhRecord extends Model
         return $this->belongsTo(TaxCase::class);
     }
 
-    public function submittedBy(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'submitted_by');
-    }
-
-    public function approvedBy(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'approved_by');
-    }
 }

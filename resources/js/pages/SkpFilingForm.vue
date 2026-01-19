@@ -22,63 +22,11 @@
       :caseStatus="caseStatus"
       :preFilledMessage="preFilledMessage"
       :prefillData="prefillData"
+      :showDecisionOptions="true"
       @submit="refreshTaxCase"
       @saveDraft="refreshTaxCase"
+      @update:formData="syncFormDataToParent"
     />
-
-    <!-- DECISION BUTTONS - Only show after Stage 4 is submitted -->
-    <div v-if="isStage4Submitted" class="px-4 py-6">
-      <div class="bg-blue-50 border border-blue-200 rounded-lg p-6">
-        <h3 class="text-lg font-semibold text-blue-900 mb-2">
-          ✅ SKP Received Successfully
-        </h3>
-        <p class="text-sm text-blue-600 mb-4">
-          SKP Type: <span class="font-semibold">{{ currentSkpType }}</span>
-        </p>
-        <p class="text-blue-700 mb-6">
-          Select where to proceed next:
-        </p>
-        
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- Option 1: Proceed to Objection (Always available) -->
-          <button
-            @click="proceedToObjection"
-            class="p-4 border-2 border-blue-300 rounded-lg hover:bg-blue-100 transition-colors text-left"
-          >
-            <div class="font-semibold text-blue-900 mb-2">
-              📋 Proceed to Objection (Stage 5)
-            </div>
-            <div class="text-sm text-blue-700">
-              File Surat Keberatan (Objection Letter)
-            </div>
-          </button>
-
-          <!-- Option 2: Proceed to Refund (Only if SKP type = LB) -->
-          <button
-            v-if="showRefundButton"
-            @click="proceedToRefund"
-            class="p-4 border-2 border-green-300 rounded-lg hover:bg-green-100 transition-colors text-left"
-          >
-            <div class="font-semibold text-green-900 mb-2">
-              💰 Proceed to Refund (Stage 13)
-            </div>
-            <div class="text-sm text-green-700">
-              Request Bank Transfer for Refund
-            </div>
-          </button>
-
-          <!-- Disabled message if Refund not available -->
-          <div v-else class="p-4 border-2 border-gray-300 rounded-lg bg-gray-50">
-            <div class="font-semibold text-gray-600 mb-2">
-              💤 Refund Option Unavailable
-            </div>
-            <div class="text-sm text-gray-600">
-              Refund only available for SKP type: LB (Lebih Bayar)
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
 
     <!-- REVISION HISTORY PANEL - Integrated -->
     <div class="px-4 py-6">
@@ -99,7 +47,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useRevisionAPI } from '@/composables/useRevisionAPI'
 import { useToast } from '@/composables/useToast'
@@ -138,7 +86,7 @@ const availableFields = [
   'royalty_correction',
   'service_correction',
   'other_correction',
-  'notes',
+  'correction_notes',
   'supporting_docs'
 ]
 
@@ -215,8 +163,8 @@ const fields = ref([
   {
     id: 9,
     type: 'textarea',
-    key: 'notes',
-    label: 'Notes',
+    key: 'correction_notes',
+    label: 'Catatan untuk koreksi Other (Notes for Other Corrections)',
     required: false,
     readonly: false
   }
@@ -232,9 +180,50 @@ const prefillData = ref({
   royalty_correction: 0,
   service_correction: 0,
   other_correction: 0,
-  notes: '',
+  correction_notes: '',
+  user_routing_choice: '',
   workflowHistories: []
 })
+
+// ⭐ REAL-TIME DECISION OPTIONS STATE
+const showDecisionOptions = ref(false)
+const selectedRoutingChoice = ref('')
+
+// ⭐ WATCHER: Show decision options INSTANTLY when skp_type is selected
+watch(() => prefillData.value.skp_type, (newType) => {
+  if (newType) {
+    showDecisionOptions.value = true
+  }
+})
+
+// ⭐ UPDATE ROUTING CHOICE: Store in prefillData
+const updateRoutingChoice = (choice) => {
+  selectedRoutingChoice.value = choice
+  prefillData.value.user_routing_choice = choice
+  console.log(`User selected routing choice: ${choice}`)
+}
+
+// ⭐ SYNC FORM DATA FROM STAGEFORM: Update prefillData in real-time
+const syncFormDataToParent = (formDataUpdate) => {
+  if (formDataUpdate) {
+    Object.keys(formDataUpdate).forEach(key => {
+      if (key in prefillData.value) {
+        prefillData.value[key] = formDataUpdate[key]
+      }
+    })
+    console.log('[SkpFilingForm] Form data synced:', formDataUpdate)
+  }
+}
+
+// ⭐ HELPER: Get SKP type label
+const getSkpTypeLabel = (type) => {
+  const labels = {
+    'LB': 'SKP LB (Lebih Bayar - Overpayment)',
+    'NIHIL': 'SKP NIHIL (Zero)',
+    'KB': 'SKP KB (Kurang Bayar - Underpayment)'
+  }
+  return labels[type] || type
+}
 
 // Computed property: Check if Stage 4 is submitted
 const isStage4Submitted = computed(() => {
@@ -362,7 +351,8 @@ onMounted(async () => {
         royalty_correction: skpRecord.royalty_correction || 0,
         service_correction: skpRecord.service_correction || 0,
         other_correction: skpRecord.other_correction || 0,
-        notes: skpRecord.notes || '',
+        correction_notes: skpRecord.correction_notes || '',
+        user_routing_choice: skpRecord.user_routing_choice || '',
         workflowHistories: caseFetchedData.workflow_histories || []
       }
     } else {
@@ -453,7 +443,8 @@ const refreshTaxCase = async () => {
           royalty_correction: skpRecord.royalty_correction || 0,
           service_correction: skpRecord.service_correction || 0,
           other_correction: skpRecord.other_correction || 0,
-          notes: skpRecord.notes || '',
+          correction_notes: skpRecord.correction_notes || '',
+          user_routing_choice: skpRecord.user_routing_choice || '',
           workflowHistories: caseFetchedData.workflow_histories || []
         }
       }

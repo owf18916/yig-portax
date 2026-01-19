@@ -14,18 +14,12 @@ class ObjectionDecision extends Model
 
     protected $fillable = [
         'tax_case_id',
-        'decision_letter_number',
+        'decision_number',
         'decision_date',
         'decision_type',
         'decision_amount',
-        'reasoning',
         'next_stage',
-        'submitted_by',
-        'submitted_at',
-        'approved_by',
-        'approved_at',
         'status',
-        'notes',
     ];
 
     protected $casts = [

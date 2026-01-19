@@ -175,6 +175,9 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
             // Request a new revision
             Route::post('/request', [RevisionController::class, 'requestRevision'])->name('revisions.request');
             
+            // Submit revised data (User submits filled-in revised values)
+            Route::patch('/{revision}/submit', [RevisionController::class, 'submitRevisedData'])->name('revisions.submit');
+            
             // Decide on submitted revision (Holding only)
             Route::patch('/{revision}/decide', [RevisionController::class, 'decideRevision'])->name('revisions.decide');
         });
@@ -185,6 +188,9 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
             $action = $request->input('action');
             $isDraft = ($action === 'draft') || ($action === null && $request->boolean('is_draft', false));
             $user = auth()->user();
+            
+            // Variable to store decision point value for workflow history
+            $decisionValue = null;
             
             // DEBUG: Log the request to help troubleshoot
             Log::info('Workflow endpoint called', [
@@ -233,14 +239,28 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                 } elseif ($stage == 4) {
                     $skpData = $request->only([
                         'skp_number', 'issue_date', 'receipt_date', 'skp_type',
-                        'skp_amount', 'royalty_correction', 'service_correction', 'other_correction', 'notes'
+                        'skp_amount', 'royalty_correction', 'service_correction', 'other_correction', 'notes',
+                        'correction_notes', 'user_routing_choice'
                     ]);
                     $skpData['tax_case_id'] = $taxCase->id;
+                    
+                    // ⭐ If user_routing_choice is provided, update tax_case next_stage_id
+                    if ($request->has('user_routing_choice')) {
+                        $routingChoice = $request->input('user_routing_choice');
+                        $nextStageId = ($routingChoice === 'refund') ? 13 : 5;
+                        $taxCase->update(['next_stage_id' => $nextStageId]);
+                        $decisionValue = $routingChoice;
+                        Log::info('Stage 4 Routing Choice', ['choice' => $routingChoice, 'next_stage' => $nextStageId]);
+                    } else {
+                        $decisionValue = $request->input('skp_type');
+                    }
+                    
                     \App\Models\SkpRecord::updateOrCreate(
                         ['tax_case_id' => $taxCase->id],
                         $skpData
                     );
                     Log::info('SkpRecord saved', ['skpData' => $skpData]);
+
                 } elseif ($stage == 5) {
                     $objectionData = $request->only([
                         'objection_number', 'submission_date', 'objection_amount'
@@ -251,6 +271,44 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                         $objectionData
                     );
                     Log::info('ObjectionSubmission saved', ['objectionData' => $objectionData]);
+                } elseif ($stage == 6) {
+                    $spuhData = $request->only([
+                        'spuh_number', 'issue_date', 'receipt_date', 'reply_number', 'reply_date'
+                    ]);
+                    $spuhData['tax_case_id'] = $taxCase->id;
+                    \App\Models\SpuhRecord::updateOrCreate(
+                        ['tax_case_id' => $taxCase->id],
+                        $spuhData
+                    );
+                    Log::info('SpuhRecord saved', ['spuhData' => $spuhData]);
+                } elseif ($stage == 7) {
+                    $decisionData = $request->only([
+                        'decision_number', 'decision_date', 'decision_type', 'decision_amount'
+                    ]);
+                    $decisionData['tax_case_id'] = $taxCase->id;
+                    
+                    // Determine next_stage based on decision_type (auto-routing logic)
+                    $decisionType = $request->input('decision_type');
+                    $decisionValue = $decisionType; // Store for workflow history
+                    $nextStage = null;
+                    
+                    if ($decisionType === 'granted') {
+                        $nextStage = 13;  // Auto-route to Refund
+                        Log::info('Decision: GRANTED → Auto-route to Refund (Stage 13)');
+                    } elseif ($decisionType === 'rejected') {
+                        $nextStage = 8;   // Auto-route to Appeal
+                        Log::info('Decision: REJECTED → Auto-route to Appeal (Stage 8)');
+                    } elseif ($decisionType === 'partially_granted') {
+                        $nextStage = null;  // User must choose - no auto-routing
+                        Log::info('Decision: PARTIALLY_GRANTED → User must choose between Appeal or Refund');
+                    }
+                    
+                    $decisionData['next_stage'] = $nextStage;
+                    \App\Models\ObjectionDecision::updateOrCreate(
+                        ['tax_case_id' => $taxCase->id],
+                        $decisionData
+                    );
+                    Log::info('ObjectionDecision saved', ['decisionData' => $decisionData, 'nextStage' => $nextStage]);
                 }
                 
                 if ($isDraft) {
@@ -283,14 +341,65 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                 $taxCase->update($updateData);
                 
                 // Create workflow history for submission
-                $taxCase->workflowHistories()->create([
+                $workflowHistory = $taxCase->workflowHistories()->create([
                     'stage_id' => $stage,
                     'stage_from' => $taxCase->current_stage > $stage ? $taxCase->current_stage : null,
                     'action' => 'submitted',
                     'status' => 'submitted',
                     'user_id' => $user->id,
                     'notes' => "Stage $stage submitted",
+                    'decision_value' => $decisionValue, // For Stage 4 (SKP) or Stage 7+ decisions
                 ]);
+                
+                Log::info('Workflow history created', [
+                    'stage_id' => $stage,
+                    'decision_value' => $decisionValue
+                ]);
+                
+                // STAGE 7 SPECIAL HANDLING: Auto-routing based on decision type
+                if ($stage == 7) {
+                    $decisionType = $request->input('decision_type');
+                    $autoRoutedStage = null;
+                    
+                    if ($decisionType === 'granted') {
+                        $autoRoutedStage = 13;
+                        $routingReason = 'Automatic routing: Decision GRANTED → Proceed to Refund';
+                    } elseif ($decisionType === 'rejected') {
+                        $autoRoutedStage = 8;
+                        $routingReason = 'Automatic routing: Decision REJECTED → Proceed to Appeal';
+                    }
+                    
+                    // For auto-routed decisions, update workflow history with stage_to
+                    if ($autoRoutedStage) {
+                        $workflowHistory->update([
+                            'stage_to' => $autoRoutedStage,
+                            'decision_point' => 'objection_decision',
+                            'decision_value' => $decisionType,
+                            'notes' => $routingReason
+                        ]);
+                        
+                        // Create next stage entry in draft status
+                        $taxCase->workflowHistories()->create([
+                            'stage_id' => $autoRoutedStage,
+                            'stage_from' => 7,
+                            'action' => 'auto_routed',
+                            'status' => 'draft',
+                            'user_id' => $user->id,
+                            'notes' => "Auto-created from Stage 7 decision: $decisionType",
+                        ]);
+                        
+                        Log::info("Stage 7 Auto-routing triggered", [
+                            'case_id' => $taxCase->id,
+                            'decision_type' => $decisionType,
+                            'routed_to_stage' => $autoRoutedStage
+                        ]);
+                    } else {
+                        // For partially_granted, user must choose - no auto-routing yet
+                        Log::info("Stage 7 Partially Granted - User choice required", [
+                            'case_id' => $taxCase->id
+                        ]);
+                    }
+                }
                 
                 return response()->json([
                     'success' => true,
@@ -337,7 +446,6 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         // SPUH Records - Stage 6
         Route::post('/spuh-records', [SpuhRecordController::class, 'store'])->name('spuh-records.store');
         Route::get('/spuh-records', [SpuhRecordController::class, 'show'])->name('spuh-records.show');
-        Route::post('/spuh-records/{spuhRecord}/approve', [SpuhRecordController::class, 'approve'])->name('spuh-records.approve');
         
         // Objection Decisions - Stage 7
         Route::post('/objection-decisions', [ObjectionDecisionController::class, 'store'])->name('objection-decisions.store');

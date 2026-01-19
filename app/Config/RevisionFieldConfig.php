@@ -23,8 +23,14 @@ class RevisionFieldConfig
             'SKP' => [
                 'skp_number' => 'SKP Number',
                 'issue_date' => 'Issue Date',
-                'amount' => 'Amount',
-                'attachments' => 'Attachments',
+                'receipt_date' => 'Receipt Date',
+                'skp_type' => 'SKP Type',
+                'skp_amount' => 'SKP Amount',
+                'royalty_correction' => 'Royalty Correction',
+                'service_correction' => 'Service Correction',
+                'other_correction' => 'Other Correction',
+                'correction_notes' => 'Correction Notes',
+                'user_routing_choice' => 'Routing Choice (Refund/Objection)',
             ],
             'SPHP' => [
                 'sphp_number' => 'SPHP Number',
@@ -66,8 +72,14 @@ class RevisionFieldConfig
             'SKP' => [
                 'skp_number',
                 'issue_date',
-                'amount',
-                'attachments',
+                'receipt_date',
+                'skp_type',
+                'skp_amount',
+                'royalty_correction',
+                'service_correction',
+                'other_correction',
+                'correction_notes',
+                'user_routing_choice',
             ],
             'SPHP' => [
                 'sphp_number',

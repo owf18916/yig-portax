@@ -11,6 +11,7 @@ import Sp2FilingForm from '../pages/Sp2FilingForm.vue'
 import SphpFilingForm from '../pages/SphpFilingForm.vue'
 import SkpFilingForm from '../pages/SkpFilingForm.vue'
 import ObjectionSubmissionForm from '../pages/ObjectionSubmissionForm.vue'
+import SpuhRecordForm from '../pages/SpuhRecordForm.vue'
 import ObjectionDecisionForm from '../pages/ObjectionDecisionForm.vue'
 
 const routes = [
@@ -72,6 +73,12 @@ const routes = [
     path: '/tax-cases/:id/workflow/5',
     name: 'ObjectionSubmissionForm',
     component: ObjectionSubmissionForm,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/tax-cases/:id/workflow/6',
+    name: 'SpuhRecordForm',
+    component: SpuhRecordForm,
     meta: { requiresAuth: true }
   },
   {

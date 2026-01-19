@@ -64,7 +64,7 @@
               </select>
             </div>
 
-            <!-- SKP Type -->
+            <!-- SKP Type (if selected) -->
             <div v-if="selectedFields.includes('skp_type')" class="mb-3">
               <label class="form-label text-sm">{{ fieldLabel('skp_type') }}</label>
               <select 
@@ -76,6 +76,59 @@
                 <option value="LB">SKP LB (Lebih Bayar - Overpayment)</option>
                 <option value="NIHIL">NIHIL (Zero)</option>
                 <option value="KB">SKP KB (Kurang Bayar - Underpayment)</option>
+              </select>
+            </div>
+
+            <!-- ⭐ DECISION OPTIONS - Show when skp_type is selected -->
+            <div v-if="proposedValues.skp_type" class="mb-4 bg-blue-50 border-2 border-blue-200 rounded-lg p-4 space-y-3">
+              <h3 class="font-semibold text-blue-900">⭐ Select Next Action</h3>
+              <p class="text-sm text-blue-700">
+                SKP Type: <strong>{{ getSkpTypeLabel(proposedValues.skp_type) }}</strong>
+              </p>
+
+              <!-- Option 1: Objection -->
+              <label class="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-white transition"
+                :class="proposedValues.user_routing_choice === 'objection' ? 'bg-white border-blue-500 ring-2 ring-blue-300' : 'bg-white'">
+                <input
+                  type="radio"
+                  value="objection"
+                  v-model="proposedValues.user_routing_choice"
+                  class="w-4 h-4 text-blue-600"
+                />
+                <div class="ml-3 flex-1">
+                  <p class="font-medium text-gray-900">→ Proceed to Objection (Stage 5)</p>
+                  <p class="text-xs text-gray-600">File Surat Keberatan</p>
+                </div>
+                <span v-if="proposedValues.user_routing_choice === 'objection'" class="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded">✓ Selected</span>
+              </label>
+
+              <!-- Option 2: Refund -->
+              <label class="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-white transition"
+                :class="proposedValues.user_routing_choice === 'refund' ? 'bg-white border-green-500 ring-2 ring-green-300' : 'bg-white'">
+                <input
+                  type="radio"
+                  value="refund"
+                  v-model="proposedValues.user_routing_choice"
+                  class="w-4 h-4 text-green-600"
+                />
+                <div class="ml-3 flex-1">
+                  <p class="font-medium text-gray-900">✓ Proceed to Refund (Stage 13)</p>
+                  <p class="text-xs text-gray-600">Request Bank Transfer</p>
+                </div>
+                <span v-if="proposedValues.user_routing_choice === 'refund'" class="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded">✓ Selected</span>
+              </label>
+            </div>
+
+            <!-- User Routing Choice (hidden, only for form submission) -->
+            <div v-if="selectedFields.includes('user_routing_choice')" style="display: none;">
+              <select 
+                v-model="proposedValues.user_routing_choice"
+                class="form-control"
+                required
+              >
+                <option value="">-- Select Routing Choice --</option>
+                <option value="objection">Proceed to Objection (Stage 5)</option>
+                <option value="refund">Proceed to Refund (Stage 13)</option>
               </select>
             </div>
 
@@ -381,7 +434,8 @@ const fieldLabel = (field) => {
     'royalty_correction': 'Royalty Correction Amount',
     'service_correction': 'Service Correction Amount',
     'other_correction': 'Other Correction Amount',
-    'notes': 'Notes',
+    'correction_notes': 'Catatan untuk koreksi (Notes for Corrections)',
+    'user_routing_choice': 'Routing Choice (Refund/Objection)',
     'objection_number': 'Nomor Surat Keberatan (Objection Letter Number)',
     'submission_date': 'Tanggal Dilaporkan (Submission Date)',
     'objection_amount': 'Nilai Keberatan (Objection Amount)',
@@ -419,12 +473,15 @@ const getFieldType = (field) => {
     'other_finding': 'number',
     'other_finding_notes': 'textarea',
     'skp_number': 'text',
+    'issue_date': 'date',
+    'receipt_date': 'date',
     'skp_type': 'select',
     'skp_amount': 'number',
     'royalty_correction': 'number',
     'service_correction': 'number',
     'other_correction': 'number',
-    'notes': 'textarea',
+    'correction_notes': 'textarea',
+    'user_routing_choice': 'select',
     'objection_number': 'text',
     'submission_date': 'date',
     'objection_amount': 'number',
@@ -432,6 +489,15 @@ const getFieldType = (field) => {
     'supporting_evidence': 'textarea'
   }
   return types[field] || 'text'
+}
+
+const getSkpTypeLabel = (skpType) => {
+  const labels = {
+    'LB': 'SKP LB (Lebih Bayar - Overpayment)',
+    'NIHIL': 'NIHIL (Zero)',
+    'KB': 'SKP KB (Kurang Bayar - Underpayment)'
+  }
+  return labels[skpType] || skpType
 }
 
 const handleFieldToggle = () => {

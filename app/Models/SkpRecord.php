@@ -18,10 +18,12 @@ class SkpRecord extends Model
         'issue_date',
         'receipt_date',
         'skp_type',
+        'user_routing_choice',
         'skp_amount',
         'royalty_correction',
         'service_correction',
         'other_correction',
+        'correction_notes',
         'notes',
     ];
 

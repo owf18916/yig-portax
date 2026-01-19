@@ -220,6 +220,71 @@ class RevisionController extends Controller
     }
 
     /**
+     * User submits revised data for an approved revision
+     * User fills in the revised values that were approved
+     * NEW FLOW: User submits revised data → Holding decides to grant/reject
+     * 
+     * PATCH /api/tax-cases/{taxCase}/revisions/{revision}/submit
+     */
+    public function submitRevisedData(Request $request, TaxCase $taxCase, Revision $revision): JsonResponse
+    {
+        $user = auth()->user();
+        
+        // Ensure entity is loaded for authorization
+        $user->load('entity');
+        
+        // Check authorization - only non-Holding users can submit
+        if ($user->entity?->entity_type === 'HOLDING') {
+            return response()->json([
+                'error' => 'Only non-Holding users can submit revised data',
+            ], 403);
+        }
+
+        // Check if revision is approved
+        if ($revision->revision_status !== 'approved') {
+            return response()->json([
+                'error' => 'Revision must be in approved status to submit revised data',
+            ], 422);
+        }
+
+        // Verify revision belongs to this tax case
+        if ($revision->revisable_id !== $taxCase->id || $revision->revisable_type !== 'TaxCase') {
+            return response()->json([
+                'error' => 'Revision does not belong to this tax case',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'revised_data' => 'required|array',
+            'revision_id' => 'required|integer',
+        ]);
+
+        try {
+            // Update revision status to 'submitted'
+            $revision->update([
+                'revision_status' => 'submitted',
+                'revised_data' => $validated['revised_data'],
+                'submitted_by' => auth()->id(),
+                'submitted_at' => now(),
+            ]);
+
+            return response()->json([
+                'message' => 'Revised data submitted successfully. Waiting for Holding decision.',
+                'revision' => $revision->load(['requestedBy', 'submittedBy']),
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('RevisionController: Error submitting revised data', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'error' => 'Failed to submit revised data: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Holding decides on revision - APPROVED (apply to tax_case) or REJECTED (discard)
      * NEW FLOW: Direct decision with optional rejection reason
      * Files are uploaded AFTER approval (not before)

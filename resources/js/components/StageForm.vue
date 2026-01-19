@@ -213,6 +213,48 @@
               </div>
             </div>
 
+            <!-- ⭐ DECISION OPTIONS - Show when skp_type is selected (Stage 4 SKP) -->
+            <div v-if="showSkpDecisionOptions && formData.skp_type" class="bg-blue-50 border-2 border-blue-200 rounded-lg p-4 space-y-3 mt-4">
+              <h3 class="font-semibold text-blue-900">⭐ Select Next Action</h3>
+              <p class="text-sm text-blue-700">
+                SKP Type: <strong>{{ getSkpTypeLabel(formData.skp_type) }}</strong>
+              </p>
+
+              <!-- Option 1: Objection -->
+              <label class="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-white transition"
+                :class="formData.user_routing_choice === 'objection' ? 'bg-white border-blue-500 ring-2 ring-blue-300' : 'bg-white'">
+                <input
+                  type="radio"
+                  value="objection"
+                  v-model="formData.user_routing_choice"
+                  :disabled="submissionComplete || fieldsDisabled"
+                  class="w-4 h-4 text-blue-600"
+                />
+                <div class="ml-3 flex-1">
+                  <p class="font-medium text-gray-900">→ Proceed to Objection (Stage 5)</p>
+                  <p class="text-xs text-gray-600">File Surat Keberatan</p>
+                </div>
+                <span v-if="formData.user_routing_choice === 'objection'" class="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded">✓ Selected</span>
+              </label>
+
+              <!-- Option 2: Refund -->
+              <label class="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-white transition"
+                :class="formData.user_routing_choice === 'refund' ? 'bg-white border-green-500 ring-2 ring-green-300' : 'bg-white'">
+                <input
+                  type="radio"
+                  value="refund"
+                  v-model="formData.user_routing_choice"
+                  :disabled="submissionComplete || fieldsDisabled"
+                  class="w-4 h-4 text-green-600"
+                />
+                <div class="ml-3 flex-1">
+                  <p class="font-medium text-gray-900">✓ Proceed to Refund (Stage 13)</p>
+                  <p class="text-xs text-gray-600">Request Bank Transfer</p>
+                </div>
+                <span v-if="formData.user_routing_choice === 'refund'" class="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded">✓ Selected</span>
+              </label>
+            </div>
+
             <!-- Document Upload Section -->
             <div class="border-t pt-2 mt-2">
               <h3 class="text-sm font-medium text-gray-900 mb-1">📎 Supporting Documents</h3>
@@ -417,10 +459,14 @@ const props = defineProps({
   prefillData: {
     type: Object,
     default: () => ({})
+  },
+  showDecisionOptions: {
+    type: Boolean,
+    default: false
   }
 })
 
-const emit = defineEmits(['submit', 'saveDraft'])
+const emit = defineEmits(['submit', 'saveDraft', 'update:formData'])
 
 // Toast reference
 const toastRef = ref(null)
@@ -436,6 +482,15 @@ const uploadedFiles = ref([])
 const loadingDocuments = ref(false)
 const uploadProgress = ref(0)
 const uploadingFiles = ref({}) // Track progress per file: { fileId: percentage }
+
+// ⭐ WATCHER: Emit form data changes in real-time to parent
+watch(
+  () => formData,
+  (newData) => {
+    emit('update:formData', { ...newData })
+  },
+  { deep: true }
+)
 
 // PDF Viewer state
 const selectedPdfId = ref(null)
@@ -464,18 +519,51 @@ const fieldsDisabled = computed(() => {
   return isStageSubmitted || false
 })
 
+// ⭐ Compute whether to show SKP decision options
+const showSkpDecisionOptions = computed(() => {
+  const shouldShow = props.showDecisionOptions && props.stageId === 4
+  if (props.stageId === 4) {
+    console.log(`[StageForm DEBUG] Stage 4 - showDecisionOptions=${props.showDecisionOptions}, stageId=${props.stageId}, result=${shouldShow}`)
+  }
+  return shouldShow
+})
+
+// ⭐ Helper function to get SKP type label
+const getSkpTypeLabel = (type) => {
+  const labels = {
+    'LB': 'SKP LB (Lebih Bayar - Overpayment)',
+    'NIHIL': 'SKP NIHIL (Zero)',
+    'KB': 'SKP KB (Kurang Bayar - Underpayment)'
+  }
+  return labels[type] || type
+}
+
 // Initialize form data from fields
 onMounted(() => {
+  // First, initialize all fields from props.fields
   props.fields.forEach(field => {
-    // Priority: 1) prefillData dari parent, 2) field.value, 3) empty string
+    // Priority: 1) prefillData dari parent, 2) field.value, 3) empty/default value
     if (props.prefillData && props.prefillData[field.key] !== undefined && props.prefillData[field.key] !== null) {
       formData[field.key] = props.prefillData[field.key]
     } else if (field.value !== undefined && field.value !== null) {
       formData[field.key] = field.value
     } else {
-      formData[field.key] = ''
+      // Set default value based on field type
+      if (field.type === 'number') {
+        formData[field.key] = 0
+      } else if (field.type === 'checkbox') {
+        formData[field.key] = false
+      } else {
+        formData[field.key] = ''
+      }
     }
   })
+
+  // ⭐ Also initialize user_routing_choice from prefillData if it exists but not in fields
+  if (props.prefillData?.user_routing_choice) {
+    formData['user_routing_choice'] = props.prefillData.user_routing_choice
+    console.log('[StageForm DEBUG] user_routing_choice prefilled:', formData['user_routing_choice'])
+  }
 
   // Show pre-filled notification as toast
   if (props.preFilledMessage && props.preFilledMessage.trim()) {
@@ -495,6 +583,12 @@ watch(() => [props.fields, props.prefillData], ([newFields, newPrefillData]) => 
       formData[field.key] = field.value
     }
   })
+  
+  // ⭐ Also sync user_routing_choice from prefillData if it exists but not in fields
+  if (newPrefillData?.user_routing_choice) {
+    formData['user_routing_choice'] = newPrefillData.user_routing_choice
+    console.log('[StageForm WATCH] user_routing_choice updated:', formData['user_routing_choice'])
+  }
 }, { deep: true })
 
 const fetchDocuments = async () => {
@@ -951,5 +1045,12 @@ const executeSaveDraft = async () => {
   }
 }
 
+// ⭐ DEBUG: Watch skp_type changes for Stage 4
+if (props.stageId === 4) {
+  watch(() => formData.skp_type, (newVal, oldVal) => {
+    console.log(`[StageForm DEBUG] Stage 4 - skp_type changed from "${oldVal}" to "${newVal}"`)
+    console.log(`[StageForm DEBUG] formData.skp_type current value:`, formData.skp_type)
+  }, { deep: true })
+}
 
 </script>

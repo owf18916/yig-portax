@@ -28,20 +28,20 @@
           <p class="text-xs text-gray-500">{{ currentEntity?.code || '' }}</p>
         </div>
 
-        <!-- Fiscal Year Selection -->
+        <!-- Fiscal Year Selection (Available March Periods) -->
         <div>
           <label class="block text-sm font-semibold text-gray-700 mb-2">
             Fiscal Year *
           </label>
           <select 
             v-model.number="formData.fiscal_year" 
-            :disabled="loadingFiscalYears"
+            :disabled="loadingAvailablePeriods"
             class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
             required
           >
-            <option v-if="loadingFiscalYears" disabled>Loading fiscal years...</option>
-            <option v-for="fy in fiscalYears" :key="fy.id" :value="fy.year">
-              {{ fy.year }}
+            <option value="">{{ loadingAvailablePeriods ? 'Loading available periods...' : 'Select a fiscal year' }}</option>
+            <option v-for="period in availableMarchPeriods" :key="period.id" :value="period.fiscal_year_id">
+              {{ period.year }}
             </option>
           </select>
           <p v-if="formErrors.fiscal_year" class="text-sm text-red-600 mt-1">
@@ -136,10 +136,13 @@ const successMessage = ref('')
 // Reference data from API
 const entities = ref([])
 const fiscalYears = ref([])
-const periods = ref([])  // NEW: Store periods
+const periods = ref([])  // Store all periods
+const availableMarchPeriods = ref([])  // Store available March periods (not used in tax_case)
 const currencies = ref([])
+const usedPeriodIds = ref([])  // Store period_ids already used in tax_case
 const loadingEntities = ref(false)
 const loadingFiscalYears = ref(false)
+const loadingAvailablePeriods = ref(false)
 const loadingCurrencies = ref(false)
 
 // Form state
@@ -171,14 +174,22 @@ const previewCaseNumber = computed(() => {
   }
   const entity = currentEntity.value
   if (!entity) return ''
-  const yearCode = String(formData.fiscal_year).slice(-2)
-  return `${entity.code}${yearCode}MarC`
+  
+  // Find the selected fiscal year period
+  const selectedPeriod = availableMarchPeriods.value.find(p => p.fiscal_year_id === formData.fiscal_year)
+  if (!selectedPeriod) return ''
+  
+  // Extract first 2 letters from entity code (uppercase)
+  const entityCode = entity.code.substring(0, 2).toUpperCase()
+  const yearCode = String(selectedPeriod.year).slice(-2)
+  
+  return `${entityCode}${yearCode}MarC`
 })
 
 onMounted(() => {
   loadCurrentUser()
-  fetchFiscalYears()
   fetchPeriods()
+  fetchAvailableMarchPeriods()
   fetchCurrencies()
 })
 
@@ -239,17 +250,93 @@ const fetchEntityDetails = async (entityId) => {
   }
 }
 
-const fetchFiscalYears = async () => {
-  loadingFiscalYears.value = true
+const fetchAvailableMarchPeriods = async () => {
+  loadingAvailablePeriods.value = true
   try {
-    const response = await fetch('/api/fiscal-years')
-    if (!response.ok) throw new Error('Failed to fetch fiscal years')
-    const data = await response.json()
-    fiscalYears.value = Array.isArray(data) ? data : data.data || []
+    // Fetch all periods first
+    const periodResponse = await fetch('/api/periods')
+    if (!periodResponse.ok) throw new Error('Failed to fetch periods')
+    const periodData = await periodResponse.json()
+    const allPeriods = Array.isArray(periodData) ? periodData : periodData.data || []
+    
+    console.log('All periods fetched:', allPeriods.length)
+    console.log('Selected entity ID:', selectedEntityId.value)
+    
+    // Get used periods in tax_case for current entity
+    const usedResponse = await fetch(`/api/tax-cases?entity_id=${selectedEntityId.value}&case_type=CIT&limit=1000`)
+    console.log('Used Response Status:', usedResponse.status, usedResponse.ok)
+    
+    if (usedResponse.ok) {
+      const usedData = await usedResponse.json()
+      console.log('Used Data Raw:', usedData)
+      
+      let usedCases = []
+      if (Array.isArray(usedData)) {
+        usedCases = usedData
+      } else if (usedData && usedData.data) {
+        // Check if usedData.data is pagination object with data property
+        if (Array.isArray(usedData.data.data)) {
+          console.log('Found usedData.data.data:', usedData.data.data)
+          usedCases = usedData.data.data
+        } else if (Array.isArray(usedData.data)) {
+          console.log('Found usedData.data:', usedData.data)
+          usedCases = usedData.data
+        }
+      } else if (usedData && typeof usedData === 'object') {
+        // Try to find data in other common structures
+        usedCases = Object.values(usedData).find(val => Array.isArray(val)) || []
+      }
+      
+      console.log('Used Cases (after extraction):', usedCases)
+      console.log('Total cases found:', usedCases.length)
+      
+      usedPeriodIds.value = usedCases
+        .filter(c => c && c.case_type === 'CIT')
+        .map(c => c.period_id)
+        .filter(id => id)
+      
+      console.log('Filtered to CIT only:', usedCases.filter(c => c && c.case_type === 'CIT'))
+      console.log('Used period IDs for CIT:', usedPeriodIds.value)
+    } else {
+      console.log('No used cases found or error')
+    }
+    
+    // Filter March periods (month = 3) that haven't been used, group by year
+    // Also filter out current month and future periods
+    const now = new Date()
+    const currentYear = now.getFullYear()
+    const currentMonth = now.getMonth() + 1 // getMonth() returns 0-11
+    
+    const marchPeriods = allPeriods.filter(p => {
+      const hasBeenUsed = usedPeriodIds.value.includes(p.id)
+      const isMarch = p.month === 3
+      const isNotFuture = p.year < currentYear || (p.year === currentYear && p.month < currentMonth)
+      
+      return isMarch && !hasBeenUsed && isNotFuture
+    })
+    
+    console.log('All March periods:', allPeriods.filter(p => p.month === 3))
+    console.log('Available March periods (after filter):', marchPeriods)
+    
+    // Group by fiscal year and get unique years
+    const uniqueYearMap = new Map()
+    marchPeriods.forEach(p => {
+      if (!uniqueYearMap.has(p.fiscal_year_id)) {
+        uniqueYearMap.set(p.fiscal_year_id, {
+          id: p.id,
+          fiscal_year_id: p.fiscal_year_id,
+          year: p.year,
+          month: p.month
+        })
+      }
+    })
+    
+    availableMarchPeriods.value = Array.from(uniqueYearMap.values()).sort((a, b) => b.year - a.year)
+    console.log('Final available March periods:', availableMarchPeriods.value)
   } catch (error) {
-    console.error('Error fetching fiscal years:', error)
+    console.error('Error fetching available March periods:', error)
   } finally {
-    loadingFiscalYears.value = false
+    loadingAvailablePeriods.value = false
   }
 }
 
@@ -349,23 +436,19 @@ const submitForm = async () => {
 
   try {
     const entity = currentEntity.value
-    const fiscalYearRecord = currentFiscalYear.value
     
-    if (!fiscalYearRecord) {
-      throw new Error('Fiscal year data not found')
-    }
-    
-    // Find period_id for March (month = 3) dari fiscal year yang dipilih
-    const marchPeriod = periods.value.find(p => 
-      p.fiscal_year_id === fiscalYearRecord.id && p.month === 3
-    )
+    // Find the selected March period
+    const marchPeriod = availableMarchPeriods.value.find(p => p.fiscal_year_id === formData.fiscal_year)
     
     if (!marchPeriod) {
-      throw new Error(`March period not found for fiscal year ${formData.fiscal_year}`)
+      throw new Error('March period not found for selected fiscal year')
     }
     
-    const yearCode = String(formData.fiscal_year).slice(-2)
-    const caseNumber = `${entity.code}${yearCode}MarC`
+    const yearCode = String(marchPeriod.year).slice(-2)
+    
+    // Extract first 2 letters from entity code (uppercase)
+    const entityCode = entity.code.substring(0, 2).toUpperCase()
+    const caseNumber = `${entityCode}${yearCode}MarC`
 
     // Get CSRF token from meta tag
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
@@ -382,8 +465,8 @@ const submitForm = async () => {
         entity_id: selectedEntityId.value,
         case_number: caseNumber,
         case_type: 'CIT',
-        fiscal_year_id: fiscalYearRecord.id,
-        period_id: marchPeriod.id,  // CHANGED: kirim period_id, bukan period string
+        fiscal_year_id: marchPeriod.fiscal_year_id,
+        period_id: marchPeriod.id,
         status: 'PENDING',
         disputed_amount: formData.amount,
         currency_id: formData.currency_id

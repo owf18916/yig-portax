@@ -11,7 +11,8 @@ class SkpRecordController extends ApiController
 {
     /**
      * Store SKP record (Stage 4)
-     * DECISION POINT: SKP Type determines next stage
+     * DECISION POINT: User's explicit choice (user_routing_choice) determines next stage
+     * NOT based on skp_type - user has explicit control
      */
     public function store(Request $request, TaxCase $taxCase): JsonResponse
     {
@@ -26,8 +27,11 @@ class SkpRecordController extends ApiController
             'receipt_date' => 'nullable|date',
             'skp_type' => 'required|in:LB,NIHIL,KB',
             'skp_amount' => 'required|numeric|min:0',
-            'assessment_details' => 'nullable|json',
-            'notes' => 'nullable|string',
+            'royalty_correction' => 'nullable|numeric|min:0',
+            'service_correction' => 'nullable|numeric|min:0',
+            'other_correction' => 'nullable|numeric|min:0',
+            'correction_notes' => 'nullable|string',
+            'user_routing_choice' => 'required|in:refund,objection',
         ]);
 
         $validated['tax_case_id'] = $taxCase->id;
@@ -35,19 +39,24 @@ class SkpRecordController extends ApiController
         $validated['submitted_at'] = now();
         $validated['status'] = 'submitted';
 
-        // Determine next stage based on SKP type
-        $nextStage = $this->determineNextStageFromSkpType($validated['skp_type']);
-        $validated['next_stage'] = $nextStage;
+        // Determine next stage based on USER'S CHOICE, NOT skp_type
+        $nextStageId = $this->determineNextStageFromUserChoice($validated['user_routing_choice']);
+        $validated['next_stage_id'] = $nextStageId;
 
         $skpRecord = SkpRecord::create($validated);
 
-        // Log workflow with decision
+        // Update tax case with next stage
+        $taxCase->update([
+            'next_stage_id' => $nextStageId,
+        ]);
+
+        // Log workflow with user's decision
         $taxCase->workflowHistories()->create([
             'stage_from' => 4,
             'stage_to' => 4,
             'action' => 'submitted',
-            'decision_point' => 'skp_type',
-            'decision_value' => $validated['skp_type'],
+            'decision_point' => 'user_routing_choice',
+            'decision_value' => $validated['user_routing_choice'],
             'user_id' => auth()->id(),
             'created_at' => now(),
         ]);
@@ -60,7 +69,7 @@ class SkpRecordController extends ApiController
     }
 
     /**
-     * Approve SKP record and route to next stage
+     * Approve SKP record and route to next stage based on user's choice
      */
     public function approve(Request $request, TaxCase $taxCase, SkpRecord $skpRecord): JsonResponse
     {
@@ -73,38 +82,38 @@ class SkpRecordController extends ApiController
         }
 
         $validated = $request->validate([
-            'notes' => 'nullable|string',
+            'correction_notes' => 'nullable|string',
         ]);
 
         $skpRecord->update([
             'approved_by' => auth()->id(),
             'approved_at' => now(),
             'status' => 'approved',
-            'notes' => $validated['notes'] ?? $skpRecord->notes,
+            'correction_notes' => $validated['correction_notes'] ?? $skpRecord->correction_notes,
         ]);
 
-        // Update tax case with next stage
-        $nextStage = $skpRecord->next_stage ?? $this->determineNextStageFromSkpType($skpRecord->skp_type);
+        // Next stage determined by user's routing choice, NOT skp_type
+        $nextStageId = $skpRecord->next_stage_id ?? $this->determineNextStageFromUserChoice($skpRecord->user_routing_choice);
         $taxCase->update([
-            'current_stage' => $nextStage,
+            'next_stage_id' => $nextStageId,
         ]);
 
         // Log workflow
         $taxCase->workflowHistories()->create([
             'stage_from' => 4,
-            'stage_to' => $nextStage,
+            'stage_to' => $nextStageId,
             'action' => 'approved',
-            'decision_point' => 'skp_type',
-            'decision_value' => $skpRecord->skp_type,
+            'decision_point' => 'user_routing_choice',
+            'decision_value' => $skpRecord->user_routing_choice,
             'user_id' => auth()->id(),
             'created_at' => now(),
         ]);
 
-        $stageName = $nextStage === 5 ? 'Objection' : 'Refund';
+        $stageName = $nextStageId === 5 ? 'Objection (Stage 5)' : 'Refund (Stage 13)';
 
         return $this->success(
             $skpRecord->fresh(['taxCase', 'approvedBy']),
-            "SKP record approved and case routed to Stage {$nextStage} ({$stageName})"
+            "SKP record approved and case routed to {$stageName}"
         );
     }
 
@@ -123,16 +132,16 @@ class SkpRecordController extends ApiController
     }
 
     /**
-     * Determine next stage based on SKP type
-     * LB (Lebih Bayar) → Stage 12 (Refund)
-     * NIHIL / KB → Stage 5 (Objection)
+     * Determine next stage based on user's explicit choice (NOT skp_type)
+     * 'refund' → Stage 13 (Bank Transfer Request)
+     * 'objection' → Stage 5 (Surat Keberatan)
      */
-    private function determineNextStageFromSkpType(string $skpType): int
+    private function determineNextStageFromUserChoice(string $userChoice): int
     {
-        return match($skpType) {
-            'LB' => 12,           // Refund process
-            'NIHIL', 'KB' => 5,   // Objection
-            default => 5,
+        return match($userChoice) {
+            'refund' => 13,       // Bank Transfer Request
+            'objection' => 5,     // Surat Keberatan (Objection)
+            default => 5,         // Default to Objection if invalid
         };
     }
 }

@@ -69,7 +69,7 @@ return new class extends Migration
             $table->decimal('service_correction', 15, 2)->nullable();
             $table->decimal('other_correction', 15, 2)->nullable();
             
-            $table->text('notes')->nullable();
+            $table->text('correction_notes')->nullable();
             $table->timestamps();
             $table->softDeletes();
             

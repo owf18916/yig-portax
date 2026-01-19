@@ -63,7 +63,7 @@ const fields = ref([
   {
     id: 2,
     type: 'date',
-    key: 'skp_issue_date',
+    key: 'issue_date',
     label: 'Tanggal Diterbitkan (Issue Date)',
     required: true,
     readonly: false
@@ -71,7 +71,7 @@ const fields = ref([
   {
     id: 3,
     type: 'date',
-    key: 'skp_receipt_date',
+    key: 'receipt_date',
     label: 'Tanggal Diterima (Receipt Date)',
     required: true,
     readonly: false
@@ -142,14 +142,15 @@ const fields = ref([
 ```javascript
 const prefillData = ref({
   skp_number: '',
-  skp_issue_date: null,
-  skp_receipt_date: null,
+  issue_date: null,
+  receipt_date: null,
   skp_type: '',  // 'LB', 'NIHIL', or 'KB'
   skp_amount: 0,
   royalty_correction: 0,
   service_correction: 0,
   other_correction: 0,
   correction_notes: '',
+  user_routing_choice: '', // 'refund' or 'objection' - User's explicit choice
   workflowHistories: []
 })
 ```
@@ -159,14 +160,15 @@ const prefillData = ref({
 ```javascript
 const availableFields = [
   'skp_number',
-  'skp_issue_date',
-  'skp_receipt_date',
+  'issue_date',
+  'receipt_date',
   'skp_type',
   'skp_amount',
   'royalty_correction',
   'service_correction',
   'other_correction',
   'correction_notes',
+  'user_routing_choice',
   'supporting_docs'
 ]
 ```
@@ -177,11 +179,11 @@ const availableFields = [
 
 ### ⚠️ CRITICAL: User Choice After SKP - Not Automatic Routing
 
-**This is a KEY DIFFERENTIATOR from previous stages. Regardless of which SKP Type the user selects (LB, NIHIL, or KB), the system must provide the user with a CHOICE to proceed to either Refund or Objection.**
+**This is a KEY DIFFERENTIATOR from previous stages. The user MUST explicitly choose between Refund and Objection paths REGARDLESS of which SKP Type they select (LB, NIHIL, or KB). The system does NOT automatically route based on skp_type.**
 
-Unlike other stages where routing is automatic based on decision outcomes, Stage 4 (SKP) gives the user explicit control over the next path.
+Unlike other stages where routing is automatic based on decision outcomes, Stage 4 (SKP) gives the user explicit control over the next path via the `user_routing_choice` field.
 
-### B3.1 Decision Tree
+### B3.1 Decision Tree - Real-Time Trigger (Embedded in Form)
 
 ```
 Stage 4: SKP Received
@@ -189,46 +191,70 @@ Stage 4: SKP Received
    User enters SKP data
    (Type: LB, NIHIL, or KB)
         ↓
-   SKP data saved
+   User selects skp_type (dropdown change)
         ↓
-   User selects next action
+   ⚡ INSTANT TRIGGER (Real-Time, NO API call needed)
         ↓
-   ┌────────────────────────────────────────┐
-   │  User Choice: Where to Proceed?        │
-   └────────────────────────────────────────┘
+   ┌────────────────────────────────────────────────┐
+   │  Decision Options APPEAR INLINE in form        │
+   │  (Below SKP Type field)                        │
+   │                                                │
+   │  ○ Proceed to Objection (Stage 5)             │
+   │  ○ Proceed to Refund (Stage 13)               │
+   │                                                │
+   │  User clicks one → selected instantly          │
+   └────────────────────────────────────────────────┘
               ↙              ↘
-      Option A:          Option B:
-      Proceed to         Proceed to
-      Refund             Objection
+      User Selects:      User Selects:
+      Objection          Refund
          ↓                     ↓
-    Next Stage:            Next Stage:
-    13 (Refund)        5 (Objection)
+      user_routing_choice:  user_routing_choice:
+      'objection'          'refund'
+         ↓                     ↓
+      Stored in form      Stored in form
+      state               state
+         ↓                     ↓
+   User clicks "Submit & Continue" OR "Save as Draft"
+         ↓
+   POST/PATCH to API with:
+   - SKP data (all 9 fields)
+   - user_routing_choice value
+         ↓
+   API updates DB:
+   - skp_records table
+   - tax_cases.next_stage_id (13 for 'refund', 5 for 'objection')
 ```
 
-**IMPORTANT:** This choice is available for ALL SKP Types (LB, NIHIL, KB)
+**CRITICAL DIFFERENCE**: 
+- ✅ Decision Options appear INSTANTLY when skp_type is selected (Vue watcher, no API call)
+- ✅ User selects choice (radio button)
+- ✅ Choice stored in component state AND in `user_routing_choice` field
+- ✅ Choice persisted to DB ONLY when user clicks "Submit & Continue" or "Save as Draft"
+- ❌ NO auto-submission, NO page refresh needed
+- ❌ Decision is NOT determined by skp_type - user has explicit choice
 
 ### B3.2 Decision Logic by Choice
 
-| User Choice | Next Stage | Case Status |
-|------------|-----------|-------------|
-| **Proceed to Refund** | 13 (Bank Transfer Request) | SKP_RECEIVED |
-| **Proceed to Objection** | 5 (Surat Keberatan) | SKP_RECEIVED |
+| User Choice | Next Stage | Case Status | DB Field |
+|------------|-----------|-------------|----------|
+| **Proceed to Refund** | 13 (Bank Transfer Request) | SKP_RECEIVED | user_routing_choice = 'refund' |
+| **Proceed to Objection** | 5 (Surat Keberatan) | SKP_RECEIVED | user_routing_choice = 'objection' |
 
 **Note:** Both options are available regardless of SKP Type selected (LB, NIHIL, or KB)
 
 ### B3.3 Backend Implementation of Decision Logic
 
-**Location:** `app/Services/RevisionService.php` (new method needed)
+**Location:** `app/Http/Controllers/Api/SkpRecordController.php` (update() method)
 
 ```php
 /**
- * Get next stage based on user's choice after SKP
- * NOT based on SKP type - user explicitly chooses
+ * Determine next stage based on user's explicit choice
+ * NOT based on SKP type - user selects via user_routing_choice field
  * 
  * @param string $userChoice - 'refund' or 'objection'
  * @return int - Next stage ID (13 for refund, 5 for objection)
  */
-private function getNextStageAfterSkp(string $userChoice): int
+private function getNextStageFromUserChoice(string $userChoice): int
 {
     return match($userChoice) {
         'refund' => 13,      // Bank Transfer Request
@@ -238,20 +264,25 @@ private function getNextStageAfterSkp(string $userChoice): int
 }
 ```
 
-**Usage in approveRevision() or when next_stage is determined:**
+**Usage in store() method:**
 
 ```php
-// User selects their choice (not automatic based on skp_type)
-$userChoice = $request->input('next_action'); // 'refund' or 'objection'
-$nextStageId = $this->getNextStageAfterSkp($userChoice);
+// User's explicit choice is in the form data
+$userChoice = $validated['user_routing_choice']; // 'refund' or 'objection'
 
-// Update the TaxCase with next_stage_id
-$taxCase->update([
-    'next_stage_id' => $nextStageId
-]);
+// Determine next stage based on user's choice, NOT skp_type
+if ($userChoice) {
+    $nextStageId = $this->getNextStageFromUserChoice($userChoice);
+    
+    $taxCase->update([
+        'next_stage_id' => $nextStageId
+    ]);
+}
 ```
 
-### B3.4 Frontend Decision Handler in SkpFilingForm.vue
+### B3.4 Frontend Decision Handler in SkpFilingForm.vue (Embedded)
+
+The decision options are embedded directly in the form component, not as separate component.
 
 ```javascript
 /**
@@ -259,54 +290,90 @@ $taxCase->update([
  * User can choose to proceed to Refund or Objection
  * regardless of SKP type
  */
-const nextActionChoice = ref('') // 'refund' or 'objection'
+const selectedRoutingChoice = ref('') // 'refund' or 'objection'
 
-const handleNextActionChoice = (choice) => {
-  nextActionChoice.value = choice
+// Watcher to show options when skp_type is selected
+watch(() => formData.value.skp_type, (newType) => {
+  if (newType) {
+    // Show decision options when skp_type is selected
+    showDecisionOptions.value = true
+  }
+})
+
+const handleRoutingChoice = (choice) => {
+  selectedRoutingChoice.value = choice
+  formData.value.user_routing_choice = choice
   
-  // Emit event to parent about decision
-  emit('action-selected', {
-    stageCode: 4,
-    choice: choice,
-    nextStage: choice === 'refund' ? 13 : 5,
-    message: choice === 'refund' 
-      ? 'Case will proceed to Refund Procedure (Stage 13)'
-      : 'Case will proceed to Objection (Stage 5)'
-  })
+  console.log(`User selected routing: ${choice}`)
+  console.log(`Case will proceed to: ${choice === 'refund' ? 'Stage 13 (Refund)' : 'Stage 5 (Objection)'}`)
 }
 ```
 
-**In Form Template:**
+**In Form Template (Embedded):**
 
 ```vue
-<div class="mt-6 p-4 bg-gray-50 border rounded-lg">
-  <h3 class="font-semibold mb-4">Select Next Action</h3>
+<!-- Decision Options - Show when skp_type is selected -->
+<div v-if="formData.skp_type && showDecisionOptions" class="mt-6 p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
+  <h3 class="text-lg font-semibold text-blue-900 mb-4">Select Next Action</h3>
+  <p class="text-sm text-blue-600 mb-4">
+    Your SKP type is: <strong>{{ skpTypeLabel }}</strong>. 
+    Choose where this case will proceed next:
+  </p>
+  
   <div class="space-y-3">
-    <button
-      @click="handleNextActionChoice('objection')"
+    <label class="flex items-center p-3 border-2 rounded-lg cursor-pointer transition"
       :class="[
-        'w-full p-3 rounded-lg border-2 text-left',
-        nextActionChoice === 'objection'
-          ? 'border-blue-500 bg-blue-50'
-          : 'border-gray-300 bg-white hover:bg-gray-100'
-      ]"
-    >
-      <p class="font-medium">→ Proceed to Objection (Stage 5)</p>
-      <p class="text-sm text-gray-600">File Surat Keberatan</p>
-    </button>
+        selectedRoutingChoice === 'objection'
+          ? 'bg-white border-blue-500 ring-2 ring-blue-300'
+          : 'border-gray-300 hover:border-blue-400'
+      ]">
+      <input
+        type="radio"
+        value="objection"
+        v-model="selectedRoutingChoice"
+        @change="handleRoutingChoice('objection')"
+        class="w-4 h-4 text-blue-600"
+      />
+      <div class="ml-3 flex-1">
+        <p class="font-medium text-gray-900">→ Proceed to Objection (Stage 5)</p>
+        <p class="text-sm text-gray-600">File Surat Keberatan</p>
+      </div>
+      <span v-if="selectedRoutingChoice === 'objection'" class="ml-2 px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded">
+        SELECTED
+      </span>
+    </label>
 
-    <button
-      @click="handleNextActionChoice('refund')"
+    <label class="flex items-center p-3 border-2 rounded-lg cursor-pointer transition"
       :class="[
-        'w-full p-3 rounded-lg border-2 text-left',
-        nextActionChoice === 'refund'
-          ? 'border-green-500 bg-green-50'
-          : 'border-gray-300 bg-white hover:bg-gray-100'
-      ]"
-    >
-      <p class="font-medium">✓ Proceed to Refund (Stage 13)</p>
-      <p class="text-sm text-gray-600">Request Bank Transfer</p>
-    </button>
+        selectedRoutingChoice === 'refund'
+          ? 'bg-white border-green-500 ring-2 ring-green-300'
+          : 'border-gray-300 hover:border-green-400'
+      ]">
+      <input
+        type="radio"
+        value="refund"
+        v-model="selectedRoutingChoice"
+        @change="handleRoutingChoice('refund')"
+        class="w-4 h-4 text-green-600"
+      />
+      <div class="ml-3 flex-1">
+        <p class="font-medium text-gray-900">✓ Proceed to Refund (Stage 13)</p>
+        <p class="text-sm text-gray-600">Request Bank Transfer</p>
+      </div>
+      <span v-if="selectedRoutingChoice === 'refund'" class="ml-2 px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded">
+        SELECTED
+      </span>
+    </label>
+  </div>
+  
+  <div v-if="selectedRoutingChoice" class="mt-4 p-3 bg-white rounded border-l-4 border-green-500">
+    <p class="text-sm text-gray-700">
+      <strong>✓ Selected:</strong>
+      {{ selectedRoutingChoice === 'refund' ? 'Refund (Stage 13)' : 'Objection (Stage 5)' }}
+    </p>
+    <p class="text-xs text-gray-600 mt-1">
+      This choice will be saved when you click "Submit & Continue" or "Save as Draft"
+    </p>
   </div>
 </div>
 ```
@@ -343,8 +410,8 @@ Schema::create('skp_records', function (Blueprint $table) {
 
     // SKP-specific fields
     $table->string('skp_number')->nullable();
-    $table->date('skp_issue_date')->nullable();
-    $table->date('skp_receipt_date')->nullable();
+    $table->date('issue_date')->nullable();
+    $table->date('receipt_date')->nullable();
     
     // Decision field - stores SKP type
     $table->enum('skp_type', ['LB', 'NIHIL', 'KB'])->nullable();
@@ -357,6 +424,9 @@ Schema::create('skp_records', function (Blueprint $table) {
     
     // Notes field
     $table->text('correction_notes')->nullable();
+
+    // User's explicit routing choice
+    $table->enum('user_routing_choice', ['refund', 'objection'])->nullable()->comment('User explicit choice: refund or objection');
 
     $table->timestamps();
     $table->softDeletes();
@@ -385,19 +455,20 @@ class SkpRecord extends Model
     protected $fillable = [
         'tax_case_id',
         'skp_number',
-        'skp_issue_date',
-        'skp_receipt_date',
+        'issue_date',
+        'receipt_date',
         'skp_type',
         'skp_amount',
         'royalty_correction',
         'service_correction',
         'other_correction',
-        'correction_notes'
+        'correction_notes',
+        'user_routing_choice'
     ];
 
     protected $casts = [
-        'skp_issue_date' => 'date',
-        'skp_receipt_date' => 'date',
+        'issue_date' => 'date',
+        'receipt_date' => 'date',
         'skp_amount' => 'decimal:2',
         'royalty_correction' => 'decimal:2',
         'service_correction' => 'decimal:2',
@@ -458,12 +529,14 @@ elseif ($stageCode == 4 && $revisable->skpRecord) {
     $updateTarget = $revisable->skpRecord;
 }
 
-// After update target is determined, handle SKP type decision:
-if ($stageCode === 4 && isset($updateData['skp_type'])) {
-    $nextStageId = $this->getNextStageForSkp($updateData['skp_type']);
+// After update target is determined, handle user routing choice:
+if ($stageCode === 4 && isset($updateData['user_routing_choice'])) {
+    $nextStageId = $this->getNextStageForSkp($updateData['user_routing_choice']);
     $revisable->update(['next_stage_id' => $nextStageId]);
 }
 ```
+
+**Status**: 🟡 Needs update - currently uses skp_type, should use user_routing_choice
 
 ### B5.2 Stage Code Detection
 
@@ -477,7 +550,7 @@ private function detectStageFromFields(array $fieldNames): ?int
     $stageFieldMaps = [
         2 => ['sp2_number', 'issue_date', 'receipt_date', 'auditor_name', 'auditor_phone', 'auditor_email'],
         3 => ['sphp_number', 'sphp_issue_date', 'sphp_receipt_date', 'royalty_finding', 'service_finding', 'other_finding'],
-        4 => ['skp_number', 'skp_issue_date', 'skp_receipt_date', 'skp_type', 'skp_amount', 'royalty_correction', 'service_correction', 'other_correction'],
+        4 => ['skp_number', 'issue_date', 'receipt_date', 'skp_type', 'skp_amount', 'royalty_correction', 'service_correction', 'other_correction', 'correction_notes', 'user_routing_choice'],
         // ... other stages
     ];
 
@@ -491,6 +564,69 @@ private function detectStageFromFields(array $fieldNames): ?int
     return null;
 }
 ```
+
+**Status**: ✅ Already handles user_routing_choice
+
+### B5.3 Update SkpRecordController Decision Logic
+
+**File:** `app/Http/Controllers/Api/SkpRecordController.php`
+
+The controller's decision logic needs to be **UPDATED** from automatic SKP Type routing to user choice routing:
+
+```php
+/**
+ * CRITICAL UPDATE: Change from automatic routing to user choice
+ * 
+ * OLD (Current - INCORRECT):
+ * - determineNextStageFromSkpType() matches skp_type directly
+ * - LB → 12, NIHIL/KB → 5 (automatic, no user choice)
+ * 
+ * NEW (Correct):
+ * - Use user_routing_choice field to determine next stage
+ * - user_routing_choice = 'refund' → Stage 13
+ * - user_routing_choice = 'objection' → Stage 5
+ */
+private function determineNextStageFromUserChoice(string $userChoice): int
+{
+    return match($userChoice) {
+        'refund' => 13,      // Bank Transfer Request
+        'objection' => 5,    // Surat Keberatan (Objection)
+        default => 5         // Default to Objection if invalid
+    };
+}
+```
+
+**Update validation to include user_routing_choice:**
+
+```php
+$validated = $request->validate([
+    'skp_number' => 'required|string|unique:skp_records',
+    'issue_date' => 'required|date',
+    'receipt_date' => 'nullable|date',
+    'skp_type' => 'required|in:LB,NIHIL,KB',
+    'skp_amount' => 'required|numeric|min:0',
+    'royalty_correction' => 'nullable|numeric|min:0',
+    'service_correction' => 'nullable|numeric|min:0',
+    'other_correction' => 'nullable|numeric|min:0',
+    'correction_notes' => 'nullable|string',
+    'user_routing_choice' => 'required|in:refund,objection',  // ← ADD THIS
+]);
+```
+
+**In store() method, use user_routing_choice NOT skp_type:**
+
+```php
+// When creating SKP record, use user_routing_choice NOT skp_type
+if (isset($validated['user_routing_choice']) && $validated['user_routing_choice']) {
+    $nextStageId = $this->determineNextStageFromUserChoice($validated['user_routing_choice']);
+    
+    $taxCase->update([
+        'next_stage_id' => $nextStageId
+    ]);
+}
+```
+
+**Status**: 🟡 CRITICAL - Needs update - currently uses skp_type for routing
 
 ---
 
@@ -510,26 +646,6 @@ private function detectStageFromFields(array $fieldNames): ?int
           Stage 4: SKP (Surat Ketetapan Pajak)
         </h1>
 
-        <!-- Decision Alert -->
-        <div
-          v-if="formData.skp_type"
-          :class="[
-            'mb-6 p-4 rounded-lg',
-            formData.skp_type === 'LB'
-              ? 'bg-green-50 border border-green-200'
-              : 'bg-blue-50 border border-blue-200'
-          ]"
-        >
-          <p class="text-sm font-medium">
-            <span v-if="formData.skp_type === 'LB'" class="text-green-800">
-              ✓ SKP LB Selected: Case will proceed to Refund Procedure (Stage 13)
-            </span>
-            <span v-else class="text-blue-800">
-              → NIHIL/KB Selected: Case will proceed to Objection (Stage 5)
-            </span>
-          </p>
-        </div>
-
         <!-- Main Form -->
         <StageForm
           :fields="fields"
@@ -543,6 +659,18 @@ private function detectStageFromFields(array $fieldNames): ?int
           @save-draft="handleSaveDraft"
           @update:formData="(v) => (formData = v)"
           @field-changed="handleFieldChanged"
+        />
+
+        <!-- ⭐ REAL-TIME DECISION OPTIONS PANEL (Appears when skp_type is selected) -->
+        <DecisionOptionsPanel
+          v-if="formData.skp_type"
+          :stageCode="4"
+          :triggerValue="formData.skp_type"
+          :currentValue="nextActionChoice"
+          :options="decisionOptions"
+          :displayMode="'radio'"
+          class="mt-6"
+          @update:modelValue="(choice) => handleDecisionChoice(choice)"
         />
       </div>
     </div>
@@ -582,9 +710,10 @@ private function detectStageFromFields(array $fieldNames): ?int
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import StageForm from '@/components/StageForm.vue'
 import RevisionHistoryPanel from '@/components/RevisionHistoryPanel.vue'
+import DecisionOptionsPanel from '@/components/DecisionOptionsPanel.vue'
 import { useRevisionAPI } from '@/composables/useRevisionAPI'
 import axios from 'axios'
 
@@ -686,6 +815,12 @@ const fields = ref([
   }
 ])
 
+// ⭐ DECISION OPTIONS FOR REAL-TIME DISPLAY
+const decisionOptions = ref([
+  { value: 'objection', label: 'Proceed to Objection (Stage 5)', nextStage: 5, nextStageName: 'Surat Keberatan' },
+  { value: 'refund', label: 'Proceed to Refund (Stage 13)', nextStage: 13, nextStageName: 'Bank Transfer Request' }
+])
+
 const prefillData = ref({
   skp_number: '',
   skp_issue_date: null,
@@ -710,6 +845,9 @@ const formData = ref({
   other_correction: 0,
   correction_notes: ''
 })
+
+// ⭐ REAL-TIME DECISION STATE
+const nextActionChoice = ref('') // User's choice: 'objection' or 'refund'
 
 const formErrors = ref({})
 const revisions = ref([])
@@ -770,7 +908,13 @@ const handleSubmit = async () => {
     submissionComplete.value = true
     fieldsDisabled.value = true
 
-    await axios.post(`/api/tax-cases/${props.caseId}/workflow/4`, formData.value)
+    // ⭐ Include user's decision choice in submission
+    const submitData = {
+      ...formData.value,
+      next_action: nextActionChoice.value // Include the user's choice
+    }
+
+    await axios.post(`/api/tax-cases/${props.caseId}/workflow/4`, submitData)
     await refreshTaxCase()
   } catch (error) {
     console.error('Error submitting:', error)
@@ -781,7 +925,13 @@ const handleSubmit = async () => {
 
 const handleSaveDraft = async () => {
   try {
-    await axios.patch(`/api/tax-cases/${props.caseId}/workflow/4`, formData.value)
+    // ⭐ Include user's decision choice in draft save
+    const draftData = {
+      ...formData.value,
+      next_action: nextActionChoice.value // Include the user's choice
+    }
+
+    await axios.patch(`/api/tax-cases/${props.caseId}/workflow/4`, draftData)
     await refreshTaxCase()
   } catch (error) {
     console.error('Error saving draft:', error)
@@ -789,10 +939,15 @@ const handleSaveDraft = async () => {
 }
 
 const handleFieldChanged = (fieldKey) => {
-  // Handle SKP Type change to show decision
-  if (fieldKey === 'skp_type') {
-    // Decision info is shown in the alert box via reactive data
-  }
+  // ⭐ Real-time decision trigger happens here via DecisionOptionsPanel
+  // No additional logic needed - DecisionOptionsPanel is tied to formData.skp_type
+}
+
+// ⭐ HANDLE USER'S DECISION CHOICE (Real-Time - No API call)
+const handleDecisionChoice = (choice) => {
+  nextActionChoice.value = choice
+  console.log(`User selected: ${choice}`)
+  // This is stored in component state and will be sent when user clicks Submit/Save Draft
 }
 
 const deleteDocument = async (docId) => {
@@ -816,17 +971,19 @@ const refreshTaxCase = async () => {
 </style>
 ```
 
+**Status**: ✅ Component exists - needs update to embed decision options inline
+
 ### B6.2 Router Configuration
 
 **File:** `resources/js/router/index.js`
 
-Add import and route:
+Verify import and route exist:
 
 ```javascript
 // Import statement
 import SkpFilingForm from '@/pages/SkpFilingForm.vue'
 
-// In routes array, add:
+// In routes array, verify this route exists:
 {
   path: '/tax-cases/:id/workflow/4',
   component: SkpFilingForm,
@@ -836,63 +993,170 @@ import SkpFilingForm from '@/pages/SkpFilingForm.vue'
 }
 ```
 
+**Status**: ✅ Already configured
+
+---
+
+## Frontend Implementation Updates
+
+### B6.3 Update SkpFilingForm.vue - Embed Decision Options Inline
+
+**File:** `resources/js/pages/SkpFilingForm.vue`
+
+**CRITICAL UPDATE NEEDED:**
+
+Current implementation shows decision buttons AFTER stage 4 is submitted (`v-if="isStage4Submitted"`).
+
+**MUST BE CHANGED TO:**
+- Show decision options INSTANTLY when skp_type is selected (watcher)
+- Show BOTH options (refund and objection) regardless of skp_type
+- Store choice in `formData.user_routing_choice`
+- Include in form submission
+
+**Implementation Steps:**
+
+1. **Add watcher for real-time trigger:**
+```javascript
+import { ref, onMounted, watch } from 'vue'
+
+const showDecisionOptions = ref(false)
+const selectedRoutingChoice = ref('')
+
+// Watcher to show options when skp_type changes
+watch(() => formData.value.skp_type, (newType) => {
+  if (newType) {
+    showDecisionOptions.value = true
+  }
+})
+
+const handleRoutingChoice = (choice) => {
+  selectedRoutingChoice.value = choice
+  formData.value.user_routing_choice = choice
+}
+```
+
+2. **Update form template to embed decision options:**
+```vue
+<!-- Decision Options Section - EMBEDDED in form -->
+<div v-if="formData.skp_type && showDecisionOptions" class="mt-6 p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
+  <h3 class="text-lg font-semibold text-blue-900 mb-4">Select Next Action</h3>
+  
+  <div class="space-y-3">
+    <label class="flex items-center p-3 border-2 rounded-lg cursor-pointer transition"
+      :class="[
+        selectedRoutingChoice === 'objection'
+          ? 'bg-white border-blue-500 ring-2 ring-blue-300'
+          : 'border-gray-300 hover:border-blue-400'
+      ]">
+      <input
+        type="radio"
+        value="objection"
+        v-model="selectedRoutingChoice"
+        @change="handleRoutingChoice('objection')"
+        class="w-4 h-4"
+      />
+      <div class="ml-3 flex-1">
+        <p class="font-medium">→ Proceed to Objection (Stage 5)</p>
+        <p class="text-sm text-gray-600">File Surat Keberatan</p>
+      </div>
+    </label>
+
+    <label class="flex items-center p-3 border-2 rounded-lg cursor-pointer transition"
+      :class="[
+        selectedRoutingChoice === 'refund'
+          ? 'bg-white border-green-500 ring-2 ring-green-300'
+          : 'border-gray-300 hover:border-green-400'
+      ]">
+      <input
+        type="radio"
+        value="refund"
+        v-model="selectedRoutingChoice"
+        @change="handleRoutingChoice('refund')"
+        class="w-4 h-4"
+      />
+      <div class="ml-3 flex-1">
+        <p class="font-medium">✓ Proceed to Refund (Stage 13)</p>
+        <p class="text-sm text-gray-600">Request Bank Transfer</p>
+      </div>
+    </label>
+  </div>
+</div>
+```
+
+3. **Include user_routing_choice in form submission:**
+```javascript
+const handleSubmit = async () => {
+  try {
+    const submitData = {
+      ...formData.value,
+      user_routing_choice: selectedRoutingChoice.value  // ← Include this
+    }
+    
+    await axios.post(`/api/tax-cases/${caseId}/workflow/4`, submitData)
+    // ...
+  } catch (error) {
+    console.error('Error submitting:', error)
+  }
+}
+```
+
+**Status**: 🟡 NEEDS UPDATE - Currently shows buttons AFTER submit, should show INSTANTLY
+
 ---
 
 ## API Endpoint Configuration
 
-### B7.1 Workflow Endpoint
+### B8.1 Workflow Endpoint
 
 **File:** `routes/api.php`
 
-Update the generic workflow endpoint to support Stage 4:
+Update the generic workflow endpoint to support Stage 4 with user_routing_choice:
 
 ```php
-Route::patch('/tax-cases/{id}/workflow/{stage}', function (Request $request, $id, $stage) {
+Route::post('/tax-cases/{id}/workflow/4', function (Request $request, $id) {
     $taxCase = TaxCase::findOrFail($id);
     
-    // ... existing code for stages 1-3 ...
-
     // Stage 4: SKP
-    if ($stage === 4) {
-        $data = $request->validate([
-            'skp_number' => 'nullable|string',
-            'skp_issue_date' => 'nullable|date',
-            'skp_receipt_date' => 'nullable|date',
-            'skp_type' => 'nullable|in:LB,NIHIL,KB',
-            'skp_amount' => 'nullable|numeric|min:0',
-            'royalty_correction' => 'nullable|numeric|min:0',
-            'service_correction' => 'nullable|numeric|min:0',
-            'other_correction' => 'nullable|numeric|min:0',
-            'correction_notes' => 'nullable|string',
-            'next_action' => 'nullable|in:refund,objection'  // User's choice
-        ]);
+    $data = $request->validate([
+        'skp_number' => 'required|string',
+        'issue_date' => 'required|date',
+        'receipt_date' => 'nullable|date',
+        'skp_type' => 'required|in:LB,NIHIL,KB',
+        'skp_amount' => 'required|numeric|min:0',
+        'royalty_correction' => 'nullable|numeric|min:0',
+        'service_correction' => 'nullable|numeric|min:0',
+        'other_correction' => 'nullable|numeric|min:0',
+        'correction_notes' => 'nullable|string',
+        'user_routing_choice' => 'required|in:refund,objection'  // ← REQUIRED
+    ]);
 
-        // Update or create SKP Record
-        $taxCase->skpRecord()->updateOrCreate(
-            ['tax_case_id' => $id],
-            $data
-        );
+    // Update or create SKP Record
+    $taxCase->skpRecord()->updateOrCreate(
+        ['tax_case_id' => $id],
+        $data
+    );
 
-        // Handle user's choice for next stage
-        if (isset($data['next_action'])) {
-            $nextStageId = match($data['next_action']) {
-                'refund' => 13,      // Bank Transfer Request
-                'objection' => 5,    // Surat Keberatan
-                default => 5
-            };
+    // Handle user's choice for next stage (NOT based on skp_type)
+    if (isset($data['user_routing_choice'])) {
+        $nextStageId = match($data['user_routing_choice']) {
+            'refund' => 13,      // Bank Transfer Request
+            'objection' => 5,    // Surat Keberatan
+            default => 5
+        };
 
-            $taxCase->update(['next_stage_id' => $nextStageId]);
-            Log::info("SKP Completed → User chose {$data['next_action']} → Next Stage: {$nextStageId}");
-        }
-
-        return response()->json(['message' => 'SKP data saved successfully']);
+        $taxCase->update(['next_stage_id' => $nextStageId]);
+        Log::info("SKP Completed → User chose {$data['user_routing_choice']} → Next Stage: {$nextStageId}");
     }
 
-    // ... existing code for other stages ...
+    return response()->json(['message' => 'SKP data saved successfully']);
 })->middleware('auth');
 ```
 
-### B7.2 API Response Structure
+**Status**: 🟡 NEEDS UPDATE - Current implementation may use skp_type for routing
+
+````
+
+### B8.2 API Response Structure
 
 When fetching `/api/tax-cases/{id}`, the response should include:
 
@@ -922,9 +1186,109 @@ When fetching `/api/tax-cases/{id}`, the response should include:
 
 ---
 
+## TaxCaseDetail.vue Verification & Enhancement
+
+### B7.1 Check: Stage Unlock Logic Based on Decision
+
+**File:** `resources/js/pages/TaxCaseDetail.vue`
+
+After Stage 4 is complete, TaxCaseDetail must unlock the correct next stage based on the user's choice.
+
+**Check these methods exist:**
+
+```javascript
+/**
+ * Get the decision choice made for a specific stage
+ * @param {int} stageCode - Stage number (4, 7, 10, 12)
+ * @returns {string} - Decision choice ('objection', 'refund', etc.)
+ */
+const getDecisionForStage = (stageCode) => {
+  // Check tax_cases.next_action field for stage 4
+  if (stageCode === 4) {
+    return taxCase.value?.next_action || null
+  }
+  // Similar for stages 7, 10, 12
+  return null
+}
+
+/**
+ * Calculate accessible stages based on decision history
+ * E.g., if user chose 'objection' at Stage 4, unlock Stage 5
+ * If user chose 'refund' at Stage 4, unlock Stage 13
+ */
+const getAccessibleStagesForDecisionPath = () => {
+  const accessible = []
+  const decision4 = getDecisionForStage(4)
+
+  if (taxCase.value?.stage_code >= 4) {
+    // Stage 4 completed, check user's choice
+    if (decision4 === 'objection') {
+      accessible.push(5) // Next: Objection
+    } else if (decision4 === 'refund') {
+      accessible.push(13) // Next: Refund
+    }
+  }
+
+  return accessible
+}
+
+/**
+ * Watch for changes in next_stage_id and next_action
+ * Update stage unlock accordingly
+ */
+watch(
+  () => [taxCase.value?.next_stage_id, taxCase.value?.next_action],
+  ([nextStageId, nextAction]) => {
+    console.log(`Decision updated: next_stage_id=${nextStageId}, next_action=${nextAction}`)
+    updateStageAccessibility()
+  }
+)
+```
+
+**If these methods don't exist**, add them to TaxCaseDetail.vue.
+
+**If they exist but don't handle Stage 4**, update them to include Stage 4 logic.
+
+### B7.2 Update: unlockedStages Computed Property
+
+Make sure unlockedStages includes logic for decision routing:
+
+```javascript
+const unlockedStages = computed(() => {
+  const unlocked = []
+  
+  // Get completed stages
+  const completedStages = workflowHistories.value
+    .filter(wh => wh.status === 'COMPLETED')
+    .map(wh => wh.stage_code)
+
+  // Add stages up to current stage
+  for (let i = 1; i <= taxCase.value?.stage_code; i++) {
+    unlocked.push(i)
+  }
+
+  // Add decision-based stages
+  if (completedStages.includes(4)) {
+    // Stage 4 complete, check decision
+    const decision = getDecisionForStage(4)
+    if (decision === 'objection') {
+      unlocked.push(5) // Objection
+    } else if (decision === 'refund') {
+      unlocked.push(13) // Refund
+    }
+  }
+
+  // Similar logic for stages 7, 10, 12 when implemented
+
+  return [...new Set(unlocked)].sort((a, b) => a - b)
+})
+```
+
+---
+
 ## Revision System Integration
 
-### B8.1 Stage 4 in Field Type Mapping
+### B9.1 Stage 4 in Field Type Mapping
 
 **File:** `resources/js/components/RequestRevisionModalV2.vue`
 
@@ -937,21 +1301,22 @@ const getFieldType = (field) => {
   // Stage 4: SKP fields
   const skpFieldTypes = {
     'skp_number': 'text',
-    'skp_issue_date': 'date',
-    'skp_receipt_date': 'date',
+    'issue_date': 'date',
+    'receipt_date': 'date',
     'skp_type': 'select',
     'skp_amount': 'number',
     'royalty_correction': 'number',
     'service_correction': 'number',
     'other_correction': 'number',
-    'correction_notes': 'textarea'
+    'correction_notes': 'textarea',
+    'user_routing_choice': 'select'
   }
 
   return skpFieldTypes[field] || 'text'
 }
 ```
 
-### B8.2 Field Label Mapping for Revisions
+### B9.2 Field Label Mapping for Revisions
 
 **File:** `resources/js/components/RequestRevisionModalV2.vue`
 
@@ -962,23 +1327,24 @@ const fieldLabel = (field) => {
   const labels = {
     // ... existing labels ...
     'skp_number': 'SKP Number',
-    'skp_issue_date': 'Issue Date',
-    'skp_receipt_date': 'Receipt Date',
+    'issue_date': 'Issue Date',
+    'receipt_date': 'Receipt Date',
     'skp_type': 'SKP Type',
     'skp_amount': 'SKP Amount',
     'royalty_correction': 'Royalty Correction',
     'service_correction': 'Service Correction',
     'other_correction': 'Other Correction',
-    'correction_notes': 'Correction Notes'
+    'correction_notes': 'Correction Notes',
+    'user_routing_choice': 'Routing Choice (Refund/Objection)'
   }
 
   return labels[field] || field
 }
 ```
 
-### B8.3 Select Options for SKP Type in Modal
+### B9.3 Select Options for SKP Type and Routing Choice in Modal
 
-When skp_type field is selected for revision, the modal needs to show options:
+When skp_type or user_routing_choice field is selected for revision, the modal needs to show options:
 
 ```javascript
 // In handleFieldToggle() or getFieldOptions()
@@ -986,6 +1352,21 @@ const getFieldOptions = (field) => {
   if (field === 'skp_type') {
     return [
       { value: 'LB', label: 'SKP LB (Lebih Bayar)' },
+      { value: 'NIHIL', label: 'NIHIL (Zero)' },
+      { value: 'KB', label: 'SKP KB (Kurang Bayar)' }
+    ]
+  }
+  
+  if (field === 'user_routing_choice') {
+    return [
+      { value: 'objection', label: 'Proceed to Objection (Stage 5)' },
+      { value: 'refund', label: 'Proceed to Refund (Stage 13)' }
+    ]
+  }
+  
+  return []
+}
+```
       { value: 'NIHIL', label: 'NIHIL (Zero)' },
       { value: 'KB', label: 'SKP KB (Kurang Bayar)' }
     ]
@@ -998,110 +1379,176 @@ const getFieldOptions = (field) => {
 
 ## Known Obstacles & Solutions
 
-### Obstacle 1: Decision Logic Not Triggered by User's Choice
+### Obstacle 1: DecisionOptionsPanel Not Appearing After Selecting skp_type
 
-**Problem:** User selects next action (Refund or Objection) but case doesn't update next_stage_id correctly.
+**Problem:** User selects SKP type but no decision options appear below the field.
 
-**Root Cause:** 
-- Backend might not have logic to handle user's choice
-- next_action not being sent from frontend
-- next_stage_id not being updated based on user choice
-
-**Solution:**
-
-1. Add `next_action` field to form submission (refund or objection)
-2. Add validation for next_action in API endpoint
-3. Ensure next_stage_id updates based on user choice (not skp_type)
-
-**Code Reference:** See Section B7.1 API Endpoint
-
----
-
-### Obstacle 2: Select Field Not Showing Options in Revision Modal
-
-**Problem:** When user selects skp_type field to revise, modal shows empty dropdown or no input at all.
-
-**Root Cause:** RequestRevisionModalV2 doesn't have handler for 'select' type with options, or options aren't passed correctly.
+**Root Cause:**
+- DecisionOptionsPanel component not imported in SkpFilingForm
+- v-if condition checking formData.skp_type is not reactive
+- Component not registered
 
 **Solution:**
 
-1. Ensure getFieldType() returns 'select' for skp_type
-2. Ensure getFieldOptions() returns array of options
-3. Add select input handler in the modal template:
+1. Ensure DecisionOptionsPanel is imported at top of SkpFilingForm.vue:
+   ```javascript
+   import DecisionOptionsPanel from '@/components/DecisionOptionsPanel.vue'
+   ```
 
-```vue
-<!-- Select Input for skp_type -->
-<div v-if="getFieldType(field) === 'select'" class="mb-3">
-  <select v-model="proposedValues[field]">
-    <option value="">Select an option</option>
-    <option
-      v-for="opt in getFieldOptions(field)"
-      :key="opt.value"
-      :value="opt.value"
-    >
-      {{ opt.label }}
-    </option>
-  </select>
-</div>
-```
+2. Check formData is reactive (should be ref, not const object):
+   ```javascript
+   const formData = ref({ skp_type: '', ... })
+   ```
+
+3. Verify v-if="formData.skp_type" triggers when skp_type changes
+
+4. Test in browser DevTools:
+   - Open DevTools → Components tab
+   - Change skp_type value in form
+   - Check if DecisionOptionsPanel appears in component tree
+   - If not, check console for errors
 
 ---
 
-### Obstacle 3: Number and Textarea Fields Not Showing in Revision Modal
+### Obstacle 2: Decision Choice Not Persisting to Database
 
-**Problem:** When selecting royalty_correction, service_correction, other_correction (number fields) or correction_notes (textarea field), no input form appears.
+**Problem:** User selects decision choice (Refund or Objection), clicks "Submit & Continue" but next_stage_id doesn't update correctly.
 
-**Root Cause:** This was the obstacle from Stage 3 that was fixed in RequestRevisionModalV2.
-
-**Solution:** ✅ Already Fixed in Phase 3
-- Number Input Handler exists (lines 117-127 in RequestRevisionModalV2.vue)
-- Textarea Input Handler exists (lines 131-140 in RequestRevisionModalV2.vue)
-- Field type mappings already updated
-
-**Validation:** The fix from Stage 3 should handle these automatically.
-
-**Prevention:** When adding new number/textarea fields in future stages, remember to:
-1. Add handlers in RequestRevisionModalV2.vue
-2. Map field types in getFieldType()
-3. Map field labels in fieldLabel()
-
----
-
-### Obstacle 4: User Choice UI Not Showing Options
-
-**Problem:** After filling SKP form, user doesn't see buttons to choose between Refund or Objection.
-
-**Root Cause:** 
-- Frontend doesn't have the choice buttons/selector
-- Form submission doesn't include next_action field
+**Root Cause:**
+- `next_action` field not being sent in API request
+- Backend validation rejecting invalid next_action value
+- next_stage_id not being calculated from next_action
 
 **Solution:**
 
-Add choice buttons section to SkpFilingForm.vue after SKP data fields:
+1. Verify SkpFilingForm sends `next_action` in handleSubmit():
+   ```javascript
+   const submitData = {
+     ...formData.value,
+     next_action: nextActionChoice.value // MUST be included
+   }
+   await axios.post(`/api/tax-cases/${props.caseId}/workflow/4`, submitData)
+   ```
 
-```vue
-<div class="mt-6 p-4 bg-gray-50 border rounded-lg">
-  <h3 class="font-semibold mb-4">Select Next Action</h3>
-  <div class="space-y-3">
-    <button
-      @click="nextActionChoice = 'objection'"
-      :class="['w-full p-3 rounded-lg border-2', 
-        nextActionChoice === 'objection' ? 'border-blue-500 bg-blue-50' : 'border-gray-300']"
-    >
-      → Proceed to Objection (Stage 5)
-    </button>
-    <button
-      @click="nextActionChoice = 'refund'"
-      :class="['w-full p-3 rounded-lg border-2',
-        nextActionChoice === 'refund' ? 'border-green-500 bg-green-50' : 'border-gray-300']"
-    >
-      ✓ Proceed to Refund (Stage 13)
-    </button>
-  </div>
-</div>
-```
+2. Verify API endpoint validates next_action (see Section B8.1):
+   ```php
+   'next_action' => 'nullable|in:refund,objection'
+   ```
 
-Pass `nextActionChoice` in form submission data.
+3. Verify API calculates next_stage_id based on next_action:
+   ```php
+   $nextStageId = match($data['next_action']) {
+     'refund' => 13,
+     'objection' => 5,
+     default => 5
+   };
+   ```
+
+4. Check Network tab in DevTools:
+   - Submit form
+   - Inspect POST request payload (should include `next_action`)
+   - Inspect response (should include updated `next_stage_id`)
+
+---
+
+### Obstacle 3: TaxCaseDetail Not Unlocking Correct Next Stage
+
+**Problem:** SKP stage completes, user's decision is saved, but TaxCaseDetail doesn't show the correct next stage as unlocked.
+
+**Root Cause:**
+- TaxCaseDetail.unlockedStages doesn't check tax_cases.next_stage_id
+- getDecisionForStage() or getAccessibleStagesForDecisionPath() not implemented
+- Stage unlock logic only considers linear progression (1→2→3→4...)
+
+**Solution:**
+
+1. Add getDecisionForStage() method to TaxCaseDetail.vue (see Section B7.1):
+   ```javascript
+   const getDecisionForStage = (stageCode) => {
+     if (stageCode === 4) {
+       return taxCase.value?.next_action || null
+     }
+     return null
+   }
+   ```
+
+2. Add getAccessibleStagesForDecisionPath() method (see Section B7.1):
+   ```javascript
+   const getAccessibleStagesForDecisionPath = () => {
+     const accessible = []
+     const decision4 = getDecisionForStage(4)
+     
+     if (taxCase.value?.stage_code >= 4) {
+       if (decision4 === 'objection') {
+         accessible.push(5)
+       } else if (decision4 === 'refund') {
+         accessible.push(13)
+       }
+     }
+     return accessible
+   }
+   ```
+
+3. Update unlockedStages computed property to include decision-based stages:
+   ```javascript
+   const unlockedStages = computed(() => {
+     const unlocked = []
+     for (let i = 1; i <= taxCase.value?.stage_code; i++) {
+       unlocked.push(i)
+     }
+     const decisionStages = getAccessibleStagesForDecisionPath()
+     return [...new Set([...unlocked, ...decisionStages])].sort((a,b) => a-b)
+   })
+   ```
+
+4. Test by:
+   - Complete Stage 4 with "Refund" choice
+   - Refresh TaxCaseDetail
+   - Verify Stage 13 appears as unlocked
+   - Repeat with "Objection" choice
+   - Verify Stage 5 appears as unlocked
+
+---
+
+### Obstacle 4: Revision Modal Shows Wrong Choices for next_action Field
+
+**Problem:** When requesting revision on next_action field, modal shows skp_type options instead of action options.
+
+**Root Cause:**
+- next_action field is being treated as if it were skp_type
+- getFieldOptions() doesn't distinguish between them
+- RequestRevisionModalV2 doesn't have handler for action choice fields
+
+**Solution:**
+
+1. Update RequestRevisionModalV2.vue getFieldOptions():
+   ```javascript
+   const getFieldOptions = (field) => {
+     if (field === 'skp_type') {
+       return [
+         { value: 'LB', label: 'SKP LB (Lebih Bayar)' },
+         { value: 'NIHIL', label: 'NIHIL (Zero)' },
+         { value: 'KB', label: 'SKP KB (Kurang Bayar)' }
+       ]
+     }
+     
+     if (field === 'next_action') {
+       return [
+         { value: 'objection', label: 'Proceed to Objection (Stage 5)' },
+         { value: 'refund', label: 'Proceed to Refund (Stage 13)' }
+       ]
+     }
+     
+     return []
+   }
+   ```
+
+2. Ensure getFieldType() handles next_action:
+   ```javascript
+   if (field === 'next_action') return 'select'
+   ```
+
+3. Test by requesting revision on next_action field and verifying correct options appear
 
 ---
 

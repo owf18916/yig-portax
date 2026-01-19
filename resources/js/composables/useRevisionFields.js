@@ -67,6 +67,25 @@ const FIELD_CONFIGURATIONS = {
       'attachments'
     ],
     documentFields: ['attachments']
+  },
+  'spuh-records': {
+    labels: {
+      'spuh_number': 'SPUH Number',
+      'issue_date': 'Issue Date',
+      'receipt_date': 'Receipt Date',
+      'reply_number': 'Reply Letter Number',
+      'reply_date': 'Reply Date',
+      'supporting_docs': 'Supporting Documents'
+    },
+    availableFields: [
+      'spuh_number',
+      'issue_date',
+      'receipt_date',
+      'reply_number',
+      'reply_date',
+      'supporting_docs'
+    ],
+    documentFields: ['supporting_docs']
   }
 }
 

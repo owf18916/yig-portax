@@ -38,18 +38,15 @@ return new class extends Migration
             $table->id();
             $table->unsignedBigInteger('tax_case_id')->unique();
             
+            // Phase 1: SPUH Receipt
             $table->string('spuh_number')->nullable();
-            $table->date('request_date')->nullable();
-            $table->date('due_date')->nullable();
-            $table->text('explanation_required')->nullable();
-            $table->text('explanation_provided')->nullable();
-            $table->date('explanation_date')->nullable();
+            $table->date('issue_date')->nullable();
+            $table->date('receipt_date')->nullable();
             
-            // Workflow
-            $table->unsignedBigInteger('submitted_by')->nullable();
-            $table->timestamp('submitted_at')->nullable();
-            $table->unsignedBigInteger('approved_by')->nullable();
-            $table->timestamp('approved_at')->nullable();
+            // Phase 2: Reply (filled later)
+            $table->string('reply_number')->nullable();
+            $table->date('reply_date')->nullable();
+            
             $table->enum('status', ['draft', 'submitted', 'approved', 'rejected'])->default('draft');
             
             $table->text('notes')->nullable();
@@ -57,8 +54,6 @@ return new class extends Migration
             $table->softDeletes();
             
             $table->foreign('tax_case_id')->references('id')->on('tax_cases')->onDelete('cascade');
-            $table->foreign('submitted_by')->references('id')->on('users')->onDelete('set null');
-            $table->foreign('approved_by')->references('id')->on('users')->onDelete('set null');
         });
 
         Schema::create('objection_decisions', function (Blueprint $table) {
