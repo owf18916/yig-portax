@@ -14,6 +14,12 @@ class AppealDecision extends Model
 
     protected $fillable = [
         'tax_case_id',
+        'keputusan_banding_number',
+        'keputusan_banding_date',
+        'keputusan_banding',
+        'keputusan_banding_amount',
+        'keputusan_banding_notes',
+        'user_routing_choice',
         'decision_letter_number',
         'decision_date',
         'decision_type',
@@ -31,6 +37,8 @@ class AppealDecision extends Model
     protected $casts = [
         'decision_amount' => 'decimal:2',
         'decision_date' => 'date',
+        'keputusan_banding_date' => 'date',
+        'keputusan_banding_amount' => 'decimal:2',
         'next_stage' => 'integer',
         'submitted_at' => 'datetime',
         'approved_at' => 'datetime',

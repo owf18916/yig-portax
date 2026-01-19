@@ -65,14 +65,23 @@ return new class extends Migration
             $table->id();
             $table->unsignedBigInteger('tax_case_id')->unique();
             
-            $table->string('decision_number');
-            $table->date('decision_date');
-            $table->enum('decision_type', ['granted', 'partially_granted', 'rejected', 'skp_kb']);
+            // Stage 10: Keputusan Banding (Appeal Decision) - Following Stage 4 SKP pattern
+            $table->string('keputusan_banding_number')->nullable()->comment('Nomor SKP Keputusan Banding');
+            $table->date('keputusan_banding_date')->nullable()->comment('Tanggal Keputusan Banding');
+            $table->enum('keputusan_banding', ['dikabulkan', 'dikabulkan_sebagian', 'ditolak'])->nullable()->comment('Decision type');
+            $table->decimal('keputusan_banding_amount', 20, 2)->nullable()->comment('Decision amount');
+            $table->text('keputusan_banding_notes')->nullable()->comment('Notes for decision');
+            $table->enum('user_routing_choice', ['refund', 'supreme_court'])->nullable()->comment('User explicit choice: refund (Stage 13) or supreme_court (Stage 11)');
+            
+            // Legacy fields (for backward compatibility)
+            $table->string('decision_number')->nullable();
+            $table->date('decision_date')->nullable();
+            $table->enum('decision_type', ['granted', 'partially_granted', 'rejected', 'skp_kb'])->nullable();
             $table->decimal('decision_amount', 20, 2)->nullable();
             $table->text('decision_notes')->nullable();
             
             // Decision Routing
-            $table->integer('next_stage')->nullable()->comment('11=Supreme Court or 12=Refund');
+            $table->integer('next_stage')->nullable()->comment('11=Supreme Court or 13=Refund');
             
             // Workflow
             $table->unsignedBigInteger('submitted_by')->nullable();
@@ -81,6 +90,7 @@ return new class extends Migration
             $table->timestamp('approved_at')->nullable();
             $table->enum('status', ['draft', 'submitted', 'approved', 'rejected'])->default('draft');
             
+            $table->text('notes')->nullable();
             $table->timestamps();
             $table->softDeletes();
             

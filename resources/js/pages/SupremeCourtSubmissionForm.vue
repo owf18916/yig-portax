@@ -9,14 +9,14 @@
     </div>
 
     <StageForm
-      :stageName="`Stage 8: Appeal Submission (Surat Banding)`"
-      :stageDescription="`Enter appeal submission details to file appeal to tax court`"
-      :stageId="8"
-      :nextStageId="9"
+      :stageName="`Stage 11: Supreme Court Submission (Peninjauan Kembali)`"
+      :stageDescription="`Enter Supreme Court submission details for final judicial review`"
+      :stageId="11"
+      :nextStageId="12"
       :caseId="caseId"
       :caseNumber="caseNumber"
       :fields="fields"
-      :apiEndpoint="`/api/tax-cases/${caseId}/workflow/8`"
+      :apiEndpoint="`/api/tax-cases/${caseId}/workflow/11`"
       :isReviewMode="false"
       :isLoading="isLoading"
       :caseStatus="caseStatus"
@@ -30,7 +30,7 @@
     <div class="px-4 py-6">
       <RevisionHistoryPanel 
         :case-id="caseId"
-        :stage-id="8"
+        :stage-id="11"
         :tax-case="caseData"
         :revisions="revisions"
         :current-user="currentUser"
@@ -75,24 +75,20 @@ const currentDocuments = ref([])
 
 // Available fields untuk revisi
 const availableFields = [
-  'appeal_number',
+  'supreme_court_letter_number',
   'submission_date',
-  'appeal_amount',
-  'dispute_number',
-  'supporting_docs'
+  'review_amount'
 ]
 
-// Phase 1: Required fields (Initial Appeal)
-// Phase 2: Optional field (Dispute Number - assigned by court)
 const fields = ref([
   {
     id: 1,
     type: 'text',
-    key: 'appeal_number',
-    label: 'Nomor Surat Banding (Appeal Letter Number)',
+    key: 'supreme_court_letter_number',
+    label: 'Nomor Surat Peninjauan Kembali (Supreme Court Letter Number)',
     required: true,
     readonly: false,
-    placeholder: 'e.g., SB/2024/001'
+    placeholder: 'e.g., PK/2024/001'
   },
   {
     id: 2,
@@ -105,29 +101,19 @@ const fields = ref([
   {
     id: 3,
     type: 'number',
-    key: 'appeal_amount',
-    label: 'Nilai (Appeal Amount)',
+    key: 'review_amount',
+    label: 'Nilai (Review Amount)',
     required: true,
     readonly: false,
     placeholder: 'e.g., 500000000'
-  },
-  {
-    id: 4,
-    type: 'text',
-    key: 'dispute_number',
-    label: 'Nomor Sengketa (Dispute Number)',
-    required: false,
-    readonly: false,
-    placeholder: 'e.g., 001/BDG/2024'
   }
 ])
 
 // Pre-fill form data
 const prefillData = ref({
-  appeal_number: '',
+  supreme_court_letter_number: '',
   submission_date: null,
-  appeal_amount: 0,
-  dispute_number: '',
+  review_amount: '',
   workflowHistories: []
 })
 
@@ -151,14 +137,13 @@ onMounted(async () => {
     // Store full case data
     caseData.value = caseFetchedData
 
-    // Pre-fill dengan existing Appeal Submission record jika ada
-    const appealRecord = caseFetchedData.appeal_submission
-    if (appealRecord) {
+    // Pre-fill dengan existing Supreme Court Submission record jika ada
+    const supremeCourtSubmission = caseFetchedData.supreme_court_submission
+    if (supremeCourtSubmission) {
       prefillData.value = {
-        appeal_number: appealRecord.appeal_number || '',
-        submission_date: formatDateForInput(appealRecord.submission_date),
-        appeal_amount: appealRecord.appeal_amount || 0,
-        dispute_number: appealRecord.dispute_number || '',
+        supreme_court_letter_number: supremeCourtSubmission.supreme_court_letter_number || '',
+        submission_date: formatDateForInput(supremeCourtSubmission.submission_date),
+        review_amount: supremeCourtSubmission.review_amount || '',
         workflowHistories: caseFetchedData.workflow_histories || []
       }
     } else {
@@ -209,20 +194,20 @@ const loadRevisions = async () => {
 
 const loadDocuments = async () => {
   try {
-    const docsRes = await fetch(`/api/tax-cases/${caseId}/documents?stage_code=8`)
+    const docsRes = await fetch(`/api/tax-cases/${caseId}/documents?stage_code=11`)
     if (docsRes.ok) {
       const docsData = await docsRes.json()
       let allDocs = docsData.data || docsData
       
       allDocs = Array.isArray(allDocs) ? allDocs : []
-      console.log('📄 [APPEAL] All documents from API:', allDocs)
-      console.log('📄 [APPEAL] Total docs count:', allDocs.length)
+      console.log('📄 [Stage 11] All documents from API:', allDocs)
+      console.log('📄 [Stage 11] Total docs count:', allDocs.length)
       
-      // Filter to stage 8 documents
-      const stageDocs = allDocs.filter(doc => doc.stage_code === '8' || doc.stage_code === 8)
+      // Filter to stage 11 documents
+      const stageDocs = allDocs.filter(doc => doc.stage_code === '11' || doc.stage_code === 11)
       currentDocuments.value = stageDocs
       
-      console.log('📄 [APPEAL] Documents set to currentDocuments:', currentDocuments.value)
+      console.log('📄 [Stage 11] Documents set to currentDocuments:', currentDocuments.value)
     }
   } catch (error) {
     console.error('Failed to load documents:', error)
@@ -237,14 +222,13 @@ const refreshTaxCase = async () => {
       const caseFetchedData = caseResponse.data ? caseResponse.data : caseResponse
       caseData.value = caseFetchedData
       
-      // Refresh prefill data dari appeal_submission terbaru
-      const appealRecord = caseFetchedData.appeal_submission
-      if (appealRecord) {
+      // Refresh prefill data dari supreme_court_submission terbaru
+      const supremeCourtSubmission = caseFetchedData.supreme_court_submission
+      if (supremeCourtSubmission) {
         prefillData.value = {
-          appeal_letter_number: appealRecord.appeal_letter_number || '',
-          submission_date: formatDateForInput(appealRecord.submission_date),
-          appeal_amount: appealRecord.appeal_amount || 0,
-          dispute_number: appealRecord.dispute_number || '',
+          supreme_court_letter_number: supremeCourtSubmission.supreme_court_letter_number || '',
+          submission_date: formatDateForInput(supremeCourtSubmission.submission_date),
+          review_amount: supremeCourtSubmission.review_amount || '',
           workflowHistories: caseFetchedData.workflow_histories || []
         }
       }

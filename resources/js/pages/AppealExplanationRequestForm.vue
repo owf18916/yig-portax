@@ -9,14 +9,14 @@
     </div>
 
     <StageForm
-      :stageName="`Stage 8: Appeal Submission (Surat Banding)`"
-      :stageDescription="`Enter appeal submission details to file appeal to tax court`"
-      :stageId="8"
-      :nextStageId="9"
+      :stageName="`Stage 9: Request for Explanation (Permintaan Penjelasan Banding)`"
+      :stageDescription="`Tax court requests explanation for appeal; enter request details and optionally submit explanation`"
+      :stageId="9"
+      :nextStageId="10"
       :caseId="caseId"
       :caseNumber="caseNumber"
       :fields="fields"
-      :apiEndpoint="`/api/tax-cases/${caseId}/workflow/8`"
+      :apiEndpoint="`/api/tax-cases/${caseId}/workflow/9`"
       :isReviewMode="false"
       :isLoading="isLoading"
       :caseStatus="caseStatus"
@@ -30,7 +30,7 @@
     <div class="px-4 py-6">
       <RevisionHistoryPanel 
         :case-id="caseId"
-        :stage-id="8"
+        :stage-id="9"
         :tax-case="caseData"
         :revisions="revisions"
         :current-user="currentUser"
@@ -75,59 +75,68 @@ const currentDocuments = ref([])
 
 // Available fields untuk revisi
 const availableFields = [
-  'appeal_number',
-  'submission_date',
-  'appeal_amount',
-  'dispute_number',
+  'request_number',
+  'request_issue_date',
+  'request_receipt_date',
+  'explanation_letter_number',
+  'explanation_submission_date',
   'supporting_docs'
 ]
 
-// Phase 1: Required fields (Initial Appeal)
-// Phase 2: Optional field (Dispute Number - assigned by court)
+// Phase 1 Fields (Request Receipt - required)
 const fields = ref([
   {
     id: 1,
     type: 'text',
-    key: 'appeal_number',
-    label: 'Nomor Surat Banding (Appeal Letter Number)',
+    key: 'request_number',
+    label: 'Nomor Surat Permintaan Penjelasan Banding (Request Number)',
     required: true,
     readonly: false,
-    placeholder: 'e.g., SB/2024/001'
+    placeholder: 'e.g., SPB/2024/001'
   },
   {
     id: 2,
     type: 'date',
-    key: 'submission_date',
-    label: 'Tanggal Dilaporkan (Submission Date)',
+    key: 'request_issue_date',
+    label: 'Tanggal Diterbitkan (Issue Date)',
     required: true,
     readonly: false
   },
   {
     id: 3,
-    type: 'number',
-    key: 'appeal_amount',
-    label: 'Nilai (Appeal Amount)',
+    type: 'date',
+    key: 'request_receipt_date',
+    label: 'Tanggal Diterima (Receipt Date)',
     required: true,
-    readonly: false,
-    placeholder: 'e.g., 500000000'
+    readonly: false
   },
+  // Phase 2 Fields (Explanation Submission - optional)
   {
     id: 4,
     type: 'text',
-    key: 'dispute_number',
-    label: 'Nomor Sengketa (Dispute Number)',
+    key: 'explanation_letter_number',
+    label: 'Nomor Surat Penjelasan (Explanation Letter Number)',
     required: false,
     readonly: false,
-    placeholder: 'e.g., 001/BDG/2024'
+    placeholder: 'e.g., PEN-2024-001'
+  },
+  {
+    id: 5,
+    type: 'date',
+    key: 'explanation_submission_date',
+    label: 'Tanggal Dilaporkan (Submission Date)',
+    required: false,
+    readonly: false
   }
 ])
 
 // Pre-fill form data
 const prefillData = ref({
-  appeal_number: '',
-  submission_date: null,
-  appeal_amount: 0,
-  dispute_number: '',
+  request_number: null,
+  request_issue_date: null,
+  request_receipt_date: null,
+  explanation_letter_number: null,
+  explanation_submission_date: null,
   workflowHistories: []
 })
 
@@ -151,109 +160,93 @@ onMounted(async () => {
     // Store full case data
     caseData.value = caseFetchedData
 
-    // Pre-fill dengan existing Appeal Submission record jika ada
-    const appealRecord = caseFetchedData.appeal_submission
-    if (appealRecord) {
+    // Pre-fill dengan existing Appeal Explanation Request record jika ada
+    const explanationRequest = caseFetchedData.appeal_explanation_request
+    if (explanationRequest) {
       prefillData.value = {
-        appeal_number: appealRecord.appeal_number || '',
-        submission_date: formatDateForInput(appealRecord.submission_date),
-        appeal_amount: appealRecord.appeal_amount || 0,
-        dispute_number: appealRecord.dispute_number || '',
+        request_number: explanationRequest.request_number ?? null,
+        request_issue_date: formatDateForInput(explanationRequest.request_issue_date),
+        request_receipt_date: formatDateForInput(explanationRequest.request_receipt_date),
+        explanation_letter_number: explanationRequest.explanation_letter_number ?? null,
+        explanation_submission_date: formatDateForInput(explanationRequest.explanation_submission_date),
         workflowHistories: caseFetchedData.workflow_histories || []
       }
     } else {
       prefillData.value.workflowHistories = caseFetchedData.workflow_histories || []
     }
 
-    caseNumber.value = caseFetchedData.case_number || 'N/A'
-    caseStatus.value = caseFetchedData.case_status_id
-    preFilledMessage.value = `✅ Case: ${caseFetchedData.case_number}`
+    caseNumber.value = caseFetchedData.case_number || 'TAX-2026-001'
+    caseStatus.value = caseFetchedData.case_status_id || null
 
     // Load revisions
-    await loadRevisions()
+    try {
+      const revisionsRes = await listRevisions(caseId, 9)
+      revisions.value = revisionsRes || []
+    } catch (err) {
+      console.warn('Error loading revisions:', err)
+      revisions.value = []
+    }
 
-    // Load documents
-    await loadDocuments()
-
-    // Load current user
+    // Load current user and documents
     try {
       const userRes = await fetch('/api/user')
       if (userRes.ok) {
         const userData = await userRes.json()
-        if (userData.data) {
-          currentUser.value = userData.data
-        } else if (userData.id) {
-          currentUser.value = userData
-        }
+        currentUser.value = userData.data || userData
+      }
+
+      const docsRes = await fetch(`/api/tax-cases/${caseId}/documents?stage_code=9`)
+      if (docsRes.ok) {
+        const docsData = await docsRes.json()
+        currentDocuments.value = docsData.data || []
       }
     } catch (err) {
-      console.error('Failed to load user:', err)
+      console.warn('Error loading user or documents:', err)
     }
 
+    preFilledMessage.value = ''
+    isLoading.value = false
   } catch (error) {
-    preFilledMessage.value = '❌ Error loading case data'
-    console.error('Error:', error)
-  } finally {
+    console.error('Error loading case data:', error)
+    preFilledMessage.value = `Error: ${error.message}`
     isLoading.value = false
   }
 })
 
-const loadRevisions = async () => {
-  try {
-    const revisionsData = await listRevisions('tax-cases', caseId)
-    revisions.value = revisionsData
-  } catch (error) {
-    console.error('Failed to load revisions:', error)
-  }
-}
-
-const loadDocuments = async () => {
-  try {
-    const docsRes = await fetch(`/api/tax-cases/${caseId}/documents?stage_code=8`)
-    if (docsRes.ok) {
-      const docsData = await docsRes.json()
-      let allDocs = docsData.data || docsData
-      
-      allDocs = Array.isArray(allDocs) ? allDocs : []
-      console.log('📄 [APPEAL] All documents from API:', allDocs)
-      console.log('📄 [APPEAL] Total docs count:', allDocs.length)
-      
-      // Filter to stage 8 documents
-      const stageDocs = allDocs.filter(doc => doc.stage_code === '8' || doc.stage_code === 8)
-      currentDocuments.value = stageDocs
-      
-      console.log('📄 [APPEAL] Documents set to currentDocuments:', currentDocuments.value)
-    }
-  } catch (error) {
-    console.error('Failed to load documents:', error)
-  }
-}
-
 const refreshTaxCase = async () => {
   try {
-    const response = await fetch(`/api/tax-cases/${caseId}`)
-    if (response.ok) {
-      const caseResponse = await response.json()
+    isLoading.value = true
+    await new Promise(resolve => setTimeout(resolve, 500))
+    
+    const caseRes = await fetch(`/api/tax-cases/${caseId}`)
+    if (caseRes.ok) {
+      const caseResponse = await caseRes.json()
       const caseFetchedData = caseResponse.data ? caseResponse.data : caseResponse
       caseData.value = caseFetchedData
-      
-      // Refresh prefill data dari appeal_submission terbaru
-      const appealRecord = caseFetchedData.appeal_submission
-      if (appealRecord) {
+
+      const explanationRequest = caseFetchedData.appeal_explanation_request
+      if (explanationRequest) {
         prefillData.value = {
-          appeal_letter_number: appealRecord.appeal_letter_number || '',
-          submission_date: formatDateForInput(appealRecord.submission_date),
-          appeal_amount: appealRecord.appeal_amount || 0,
-          dispute_number: appealRecord.dispute_number || '',
+          request_number: explanationRequest.request_number ?? null,
+          request_issue_date: formatDateForInput(explanationRequest.request_issue_date),
+          request_receipt_date: formatDateForInput(explanationRequest.request_receipt_date),
+          explanation_letter_number: explanationRequest.explanation_letter_number ?? null,
+          explanation_submission_date: formatDateForInput(explanationRequest.explanation_submission_date),
           workflowHistories: caseFetchedData.workflow_histories || []
         }
       }
-      
-      await loadRevisions()
-      await loadDocuments()
+
+      try {
+        const revisionsRes = await listRevisions(caseId, 9)
+        revisions.value = revisionsRes || []
+      } catch (err) {
+        console.warn('Error reloading revisions:', err)
+      }
     }
   } catch (error) {
-    console.error('Failed to refresh case:', error)
+    console.error('Error refreshing case data:', error)
+  } finally {
+    isLoading.value = false
   }
 }
 </script>

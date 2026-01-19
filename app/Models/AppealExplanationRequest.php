@@ -14,27 +14,21 @@ class AppealExplanationRequest extends Model
 
     protected $fillable = [
         'tax_case_id',
+        // Phase 1: Explanation Request Receipt
         'request_number',
-        'request_date',
-        'explanation_required_items',
-        'explanation_provided',
-        'explanation_date',
-        'response_notes',
-        'submitted_by',
-        'submitted_at',
-        'approved_by',
-        'approved_at',
+        'request_issue_date',
+        'request_receipt_date',
+        // Phase 2: Explanation Submission (filled later by user)
+        'explanation_letter_number',
+        'explanation_submission_date',
         'status',
         'notes',
     ];
 
     protected $casts = [
-        'explanation_required_items' => 'json',
-        'explanation_provided' => 'boolean',
-        'request_date' => 'date',
-        'explanation_date' => 'date',
-        'submitted_at' => 'datetime',
-        'approved_at' => 'datetime',
+        'request_issue_date' => 'date',
+        'request_receipt_date' => 'date',
+        'explanation_submission_date' => 'date',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',
@@ -44,15 +38,5 @@ class AppealExplanationRequest extends Model
     public function taxCase(): BelongsTo
     {
         return $this->belongsTo(TaxCase::class);
-    }
-
-    public function submittedBy(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'submitted_by');
-    }
-
-    public function approvedBy(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'approved_by');
     }
 }

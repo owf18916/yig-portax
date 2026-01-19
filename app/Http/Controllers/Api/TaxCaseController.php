@@ -152,6 +152,7 @@ class TaxCaseController extends ApiController
             'objectionSubmission',
             'objectionDecision',
             'appealSubmission',
+            'appealExplanationRequest',
             'appealDecision',
             'supremeCourtDecision',
             'refundProcess',

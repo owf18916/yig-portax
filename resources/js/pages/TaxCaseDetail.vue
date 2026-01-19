@@ -72,7 +72,7 @@
                 <div v-for="stage in getStagesByBranch('main')" :key="stage.id" class="flex items-center space-x-3 p-3 rounded-lg bg-white border border-gray-200 hover:border-blue-300 transition">
                   <div
                     :class="[
-                      'w-8 h-8 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0',
+                      'w-8 h-8 rounded-full flex items-center justify-center text-white font-bold shrink-0',
                       stage.completed ? 'bg-green-500' : stage.accessible ? 'bg-blue-500' : 'bg-gray-300'
                     ]"
                   >
@@ -129,7 +129,7 @@
                 <div v-for="stage in getStagesByBranch('refund')" :key="stage.id" class="flex items-center space-x-3 p-3 rounded-lg bg-white border border-green-200 hover:border-green-400 transition">
                   <div
                     :class="[
-                      'w-8 h-8 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0',
+                      'w-8 h-8 rounded-full flex items-center justify-center text-white font-bold shrink-0',
                       stage.completed ? 'bg-green-500' : stage.accessible ? 'bg-green-500' : 'bg-gray-300'
                     ]"
                   >
@@ -181,7 +181,7 @@
                 <div v-for="stage in getStagesByBranch('kian')" :key="stage.id" class="flex items-center space-x-3 p-3 rounded-lg bg-white border border-amber-200 hover:border-amber-400 transition">
                   <div
                     :class="[
-                      'w-8 h-8 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0',
+                      'w-8 h-8 rounded-full flex items-center justify-center text-white font-bold shrink-0',
                       stage.completed ? 'bg-amber-500' : stage.accessible ? 'bg-amber-500' : 'bg-gray-300'
                     ]"
                   >
@@ -293,6 +293,26 @@ const getStage7Decision = () => {
   }
   
   console.log('[getStage7Decision] ❌ No Stage 7 decision found anywhere!')
+  return null
+}
+
+// Helper function: Get Stage 12 decision type (Final decision point)
+const getStage12Decision = () => {
+  // Try both camelCase and snake_case for compatibility
+  const pkDecision = caseData.value.supremeCourtDecisionRecord || caseData.value.supreme_court_decision_record
+  if (pkDecision && pkDecision.next_action) {
+    console.log('[getStage12Decision] ✓ Found next_action in supremeCourtDecisionRecord:', pkDecision.next_action)
+    return pkDecision.next_action
+  }
+  
+  // FALLBACK: Check workflow history for Stage 12
+  const stage12History = workflowHistory.value.find(h => h.stage_id === 12 && h.status === 'submitted')
+  if (stage12History && stage12History.decision_value) {
+    console.log('[getStage12Decision] ⚠️ Using Stage 12 decision from workflow history (fallback):', stage12History.decision_value)
+    return stage12History.decision_value
+  }
+  
+  console.log('[getStage12Decision] ❌ No Stage 12 decision found anywhere!')
   return null
 }
 
@@ -481,9 +501,38 @@ const updateStageAccessibility = () => {
       }
     } else if (stage.branch === 'kian') {
       // KIAN BRANCH: Accessible jika final rejection atau objection process complete
-      // Untuk sekarang, simple logic: accessible setelah refund branch selesai
-      if (isStageCompleted(15)) {
-        stage.accessible = true
+      // Stage 12 (Supreme Court Decision) is the decision point for refund vs KIAN
+      // If Stage 12 completed with 'kian' choice → Stages 16+ accessible
+      // If Stage 12 completed with 'refund' choice → Stages 13-15 accessible instead
+      
+      const stage12Decision = getStage12Decision()
+      const stage12Completed = isStageCompleted(12)
+      
+      console.log(`[Accessibility DEBUG] KIAN branch - stage=${stage.id}, stage12Completed=${stage12Completed}, stage12Decision='${stage12Decision}'`)
+      
+      if (stage.id === 16) {
+        // Stage 16 (KIAN Report) - accessible if Stage 12 completed with 'kian' choice
+        if (!stage12Completed) {
+          stage.accessible = false
+          console.log('[Accessibility] Stage 16 LOCKED - Stage 12 not completed')
+        } else if (stage12Decision === 'kian') {
+          stage.accessible = true
+          console.log('[Accessibility] ✓ Stage 16 ACCESSIBLE - Stage 12 decision: KIAN')
+        } else {
+          stage.accessible = false
+          console.log('[Accessibility] Stage 16 LOCKED - Stage 12 decision: REFUND (goes to Stage 13 instead)')
+        }
+      } else if (stage.id > 16) {
+        // Stages setelah 16 (e.g., 17, 18)
+        if (stage12Decision === 'kian') {
+          // KIAN path active: sequential logic from Stage 16
+          const previousStage = stage.id - 1
+          stage.accessible = isStageCompleted(previousStage)
+          console.log(`[Accessibility] Stage ${stage.id} - KIAN path sequential (prev completed: ${stage.accessible})`)
+        } else {
+          stage.accessible = false
+          console.log(`[Accessibility] Stage ${stage.id} LOCKED - KIAN path not active (stage12Decision='${stage12Decision}')`)
+        }
       }
     }
   })

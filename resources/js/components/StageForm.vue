@@ -297,6 +297,90 @@
               </label>
             </div>
 
+            <!-- ⭐ DECISION OPTIONS - Show when keputusan_banding is selected (Stage 10 Appeal Decision) -->
+            <div v-if="showAppealDecisionOptions && formData.keputusan_banding" class="bg-purple-50 border-2 border-purple-200 rounded-lg p-4 space-y-3 mt-4">
+              <h3 class="font-semibold text-purple-900">⭐ Select Next Action</h3>
+              <p class="text-sm text-purple-700">
+                Keputusan Banding: <strong>{{ getAppealDecisionLabel(formData.keputusan_banding) }}</strong>
+              </p>
+
+              <!-- Option 1: Supreme Court (Peninjauan Kembali) -->
+              <label class="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-white transition"
+                :class="formData.user_routing_choice === 'supreme_court' ? 'bg-white border-purple-500 ring-2 ring-purple-300' : 'bg-white'">
+                <input
+                  type="radio"
+                  value="supreme_court"
+                  v-model="formData.user_routing_choice"
+                  :disabled="submissionComplete || fieldsDisabled"
+                  class="w-4 h-4 text-purple-600"
+                />
+                <div class="ml-3 flex-1">
+                  <p class="font-medium text-gray-900">⚖️ Proceed to Supreme Court (Stage 11)</p>
+                  <p class="text-xs text-gray-600">Ajukan Peninjauan Kembali</p>
+                </div>
+                <span v-if="formData.user_routing_choice === 'supreme_court'" class="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded">✓ Selected</span>
+              </label>
+
+              <!-- Option 2: Refund -->
+              <label class="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-white transition"
+                :class="formData.user_routing_choice === 'refund' ? 'bg-white border-green-500 ring-2 ring-green-300' : 'bg-white'">
+                <input
+                  type="radio"
+                  value="refund"
+                  v-model="formData.user_routing_choice"
+                  :disabled="submissionComplete || fieldsDisabled"
+                  class="w-4 h-4 text-green-600"
+                />
+                <div class="ml-3 flex-1">
+                  <p class="font-medium text-gray-900">💰 Proceed to Refund (Stage 13)</p>
+                  <p class="text-xs text-gray-600">Proses Permintaan Transfer Bank</p>
+                </div>
+                <span v-if="formData.user_routing_choice === 'refund'" class="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded">✓ Selected</span>
+              </label>
+            </div>
+
+            <!-- ⭐ DECISION OPTIONS - Show when keputusan_pk is selected (Stage 12 Supreme Court Decision) -->
+            <div v-if="showSupremeCourtDecisionOptions && formData.keputusan_pk" class="bg-red-50 border-2 border-red-200 rounded-lg p-4 space-y-3 mt-4">
+              <h3 class="font-semibold text-red-900">⭐ Select Next Action (Final Decision)</h3>
+              <p class="text-sm text-red-700">
+                Keputusan: <strong>{{ getSupremeCourtDecisionLabel(formData.keputusan_pk) }}</strong>
+              </p>
+
+              <!-- Option 1: Refund (Favorable Outcome) -->
+              <label class="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-white transition"
+                :class="formData.next_action === 'refund' ? 'bg-white border-green-500 ring-2 ring-green-300' : 'bg-white'">
+                <input
+                  type="radio"
+                  value="refund"
+                  v-model="formData.next_action"
+                  :disabled="submissionComplete || fieldsDisabled"
+                  class="w-4 h-4 text-green-600"
+                />
+                <div class="ml-3 flex-1">
+                  <p class="font-medium text-gray-900">💰 Proceed to Refund (Stage 13)</p>
+                  <p class="text-xs text-gray-600">Request Bank Transfer - Favorable Outcome</p>
+                </div>
+                <span v-if="formData.next_action === 'refund'" class="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded">✓ Selected</span>
+              </label>
+
+              <!-- Option 2: KIAN (Loss Recognition) -->
+              <label class="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-white transition"
+                :class="formData.next_action === 'kian' ? 'bg-white border-red-500 ring-2 ring-red-300' : 'bg-white'">
+                <input
+                  type="radio"
+                  value="kian"
+                  v-model="formData.next_action"
+                  :disabled="submissionComplete || fieldsDisabled"
+                  class="w-4 h-4 text-red-600"
+                />
+                <div class="ml-3 flex-1">
+                  <p class="font-medium text-gray-900">📋 Proceed to KIAN (Stage 16)</p>
+                  <p class="text-xs text-gray-600">File KIAN Report - Loss Recognition</p>
+                </div>
+                <span v-if="formData.next_action === 'kian'" class="px-2 py-1 bg-red-100 text-red-800 text-xs font-semibold rounded">✓ Selected</span>
+              </label>
+            </div>
+
             <!-- Document Upload Section -->
             <div class="border-t pt-2 mt-2">
               <h3 class="text-sm font-medium text-gray-900 mb-1">📎 Supporting Documents</h3>
@@ -579,6 +663,24 @@ const showObjectionDecisionOptions = computed(() => {
   return shouldShow
 })
 
+// ⭐ Compute whether to show Appeal Decision options (Stage 10)
+const showAppealDecisionOptions = computed(() => {
+  const shouldShow = props.showDecisionOptions && props.stageId === 10
+  if (props.stageId === 10) {
+    console.log(`[StageForm DEBUG] Stage 10 - showDecisionOptions=${props.showDecisionOptions}, stageId=${props.stageId}, formData.keputusan_banding=${formData.keputusan_banding}, result=${shouldShow}`)
+  }
+  return shouldShow
+})
+
+// ⭐ Compute whether to show Supreme Court Decision options (Stage 12)
+const showSupremeCourtDecisionOptions = computed(() => {
+  const shouldShow = props.showDecisionOptions && props.stageId === 12
+  if (props.stageId === 12) {
+    console.log(`[StageForm DEBUG] Stage 12 - showDecisionOptions=${props.showDecisionOptions}, stageId=${props.stageId}, formData.keputusan_pk=${formData.keputusan_pk}, result=${shouldShow}`)
+  }
+  return shouldShow
+})
+
 // ⭐ Helper function to format currency
 const formattedDecisionAmount = (amount) => {
   if (!amount) return '0'
@@ -593,6 +695,35 @@ const getSkpTypeLabel = (type) => {
     'KB': 'SKP KB (Kurang Bayar - Underpayment)'
   }
   return labels[type] || type
+}
+
+// ⭐ Helper function to get Appeal Decision label
+const getAppealDecisionLabel = (decision) => {
+  const labels = {
+    'dikabulkan': 'Dikabulkan (Granted)',
+    'dikabulkan_sebagian': 'Dikabulkan Sebagian (Partially Granted)',
+    'ditolak': 'Ditolak (Rejected)'
+  }
+  return labels[decision] || decision
+}
+
+// ⭐ Helper function to get Supreme Court Decision label
+const getSupremeCourtDecisionLabel = (decision) => {
+  const labels = {
+    'dikabulkan': 'Dikabulkan (Granted)',
+    'dikabulkan_sebagian': 'Dikabulkan Sebagian (Partially Granted)',
+    'ditolak': 'Ditolak (Rejected)'
+  }
+  return labels[decision] || decision
+}
+
+// ⭐ Helper function to get Next Action label (Stage 12)
+const getNextActionLabel = (action) => {
+  const labels = {
+    'refund': 'Proceed to Refund (Stage 13)',
+    'kian': 'Proceed to KIAN (Stage 16)'
+  }
+  return labels[action] || action
 }
 
 // Initialize form data from fields
@@ -616,10 +747,17 @@ onMounted(() => {
     }
   })
 
-  // ⭐ Also initialize user_routing_choice from prefillData if it exists but not in fields
+  // ⭐ Also initialize decision-related fields that are NOT in props.fields
+  // Stage 4: user_routing_choice
   if (props.prefillData?.user_routing_choice) {
     formData['user_routing_choice'] = props.prefillData.user_routing_choice
     console.log('[StageForm DEBUG] user_routing_choice prefilled:', formData['user_routing_choice'])
+  }
+  
+  // Stage 12: next_action
+  if (props.prefillData?.next_action) {
+    formData['next_action'] = props.prefillData.next_action
+    console.log('[StageForm DEBUG] next_action prefilled:', formData['next_action'])
   }
 
   // Show pre-filled notification as toast
@@ -641,10 +779,17 @@ watch(() => [props.fields, props.prefillData], ([newFields, newPrefillData]) => 
     }
   })
   
-  // ⭐ Also sync user_routing_choice from prefillData if it exists but not in fields
+  // ⭐ Also sync decision-related fields from prefillData if they exist but not in fields
+  // Stage 4: user_routing_choice
   if (newPrefillData?.user_routing_choice) {
     formData['user_routing_choice'] = newPrefillData.user_routing_choice
     console.log('[StageForm WATCH] user_routing_choice updated:', formData['user_routing_choice'])
+  }
+  
+  // Stage 12: next_action
+  if (newPrefillData?.next_action) {
+    formData['next_action'] = newPrefillData.next_action
+    console.log('[StageForm WATCH] next_action updated:', formData['next_action'])
   }
 }, { deep: true })
 

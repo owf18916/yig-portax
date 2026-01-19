@@ -89,14 +89,14 @@ const FIELD_CONFIGURATIONS = {
   },
   'appeal-submissions': {
     labels: {
-      'appeal_letter_number': 'Appeal Letter Number',
+      'appeal_number': 'Appeal Letter Number',
       'submission_date': 'Submission Date',
       'appeal_amount': 'Appeal Amount',
       'dispute_number': 'Dispute Number',
       'supporting_docs': 'Supporting Documents'
     },
     availableFields: [
-      'appeal_letter_number',
+      'appeal_number',
       'submission_date',
       'appeal_amount',
       'dispute_number',

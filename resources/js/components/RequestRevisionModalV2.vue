@@ -459,7 +459,14 @@ const fieldLabel = (field) => {
     'decision_number': 'Nomor Surat Keputusan Keberatan (Decision Number)',
     'decision_date': 'Tanggal Keputusan (Decision Date)',
     'decision_type': 'Keputusan (Decision Type)',
-    'decision_amount': 'Nilai Keputusan (Decision Amount)'
+    'decision_amount': 'Nilai Keputusan (Decision Amount)',
+    'request_number': 'Nomor Surat Permintaan Penjelasan Banding (Request Number)',
+    'request_issue_date': 'Tanggal Diterbitkan (Issue Date)',
+    'request_receipt_date': 'Tanggal Diterima (Receipt Date)',
+    'explanation_letter_number': 'Nomor Surat Penjelasan (Explanation Letter Number)',
+    'explanation_submission_date': 'Tanggal Dilaporkan (Submission Date)',
+    'supreme_court_letter_number': 'Nomor Surat Peninjauan Kembali (Supreme Court Letter Number)',
+    'review_amount': 'Nilai (Review Amount)'
   }
   return labels[field] || field
 }
@@ -509,7 +516,14 @@ const getFieldType = (field) => {
     'decision_number': 'text',
     'decision_date': 'date',
     'decision_type': 'select',
-    'decision_amount': 'number'
+    'decision_amount': 'number',
+    'request_number': 'text',
+    'request_issue_date': 'date',
+    'request_receipt_date': 'date',
+    'explanation_letter_number': 'text',
+    'explanation_submission_date': 'date',
+    'supreme_court_letter_number': 'text',
+    'review_amount': 'number'
   }
   return types[field] || 'text'
 }

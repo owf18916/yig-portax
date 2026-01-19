@@ -14,22 +14,16 @@ class SupremeCourtSubmission extends Model
 
     protected $fillable = [
         'tax_case_id',
-        'submission_number',
+        'supreme_court_letter_number',
         'submission_date',
-        'submission_type',
-        'grounds',
-        'submitted_by',
-        'submitted_at',
-        'approved_by',
-        'approved_at',
+        'review_amount',
         'status',
         'notes',
     ];
 
     protected $casts = [
         'submission_date' => 'date',
-        'submitted_at' => 'datetime',
-        'approved_at' => 'datetime',
+        'review_amount' => 'integer',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',
@@ -39,15 +33,5 @@ class SupremeCourtSubmission extends Model
     public function taxCase(): BelongsTo
     {
         return $this->belongsTo(TaxCase::class);
-    }
-
-    public function submittedBy(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'submitted_by');
-    }
-
-    public function approvedBy(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'approved_by');
     }
 }

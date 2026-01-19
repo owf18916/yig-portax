@@ -124,6 +124,46 @@ class RevisionService
                         Log::info("RevisionService: Using appealSubmission as data source");
                     }
                 }
+                // For stage 9 (Appeal Explanation Request), fetch data from appealExplanationRequest
+                elseif ((int)$stageCode === 9) {
+                    if (!$revisable->relationLoaded('appealExplanationRequest')) {
+                        $revisable->load('appealExplanationRequest');
+                    }
+                    if ($revisable->appealExplanationRequest) {
+                        $dataSource = $revisable->appealExplanationRequest;
+                        Log::info("RevisionService: Using appealExplanationRequest as data source");
+                    }
+                }
+                // For stage 10 (Appeal Decision), fetch data from appealDecision
+                elseif ((int)$stageCode === 10) {
+                    if (!$revisable->relationLoaded('appealDecision')) {
+                        $revisable->load('appealDecision');
+                    }
+                    if ($revisable->appealDecision) {
+                        $dataSource = $revisable->appealDecision;
+                        Log::info("RevisionService: Using appealDecision as data source");
+                    }
+                }
+                // For stage 11 (Supreme Court Submission), fetch data from supremeCourtSubmission
+                elseif ((int)$stageCode === 11) {
+                    if (!$revisable->relationLoaded('supremeCourtSubmission')) {
+                        $revisable->load('supremeCourtSubmission');
+                    }
+                    if ($revisable->supremeCourtSubmission) {
+                        $dataSource = $revisable->supremeCourtSubmission;
+                        Log::info("RevisionService: Using supremeCourtSubmission as data source");
+                    }
+                }
+                // For stage 12 (Supreme Court Decision), fetch data from supremeCourtDecisionRecord
+                elseif ((int)$stageCode === 12) {
+                    if (!$revisable->relationLoaded('supremeCourtDecisionRecord')) {
+                        $revisable->load('supremeCourtDecisionRecord');
+                    }
+                    if ($revisable->supremeCourtDecisionRecord) {
+                        $dataSource = $revisable->supremeCourtDecisionRecord;
+                        Log::info("RevisionService: Using supremeCourtDecisionRecord as data source");
+                    }
+                }
             }
 
             // Prepare original data (only include fields being revised)
@@ -317,6 +357,51 @@ class RevisionService
                 if ($revisable->appealSubmission) {
                     $updateTarget = $revisable->appealSubmission;
                     Log::info('RevisionService: Using appealSubmission as update target');
+                }
+            }
+            elseif ($stageCode == 9) {
+                if (!$revisable->relationLoaded('appealExplanationRequest')) {
+                    $revisable->load('appealExplanationRequest');
+                }
+                if ($revisable->appealExplanationRequest) {
+                    $updateTarget = $revisable->appealExplanationRequest;
+                    Log::info('RevisionService: Using appealExplanationRequest as update target');
+                }
+            }
+            elseif ($stageCode == 10) {
+                if (!$revisable->relationLoaded('appealDecision')) {
+                    $revisable->load('appealDecision');
+                }
+                if ($revisable->appealDecision) {
+                    $updateTarget = $revisable->appealDecision;
+                    Log::info('RevisionService: Using appealDecision as update target');
+                }
+            }
+            elseif ($stageCode == 11) {
+                if (!$revisable->relationLoaded('supremeCourtSubmission')) {
+                    $revisable->load('supremeCourtSubmission');
+                }
+                if ($revisable->supremeCourtSubmission) {
+                    $updateTarget = $revisable->supremeCourtSubmission;
+                    Log::info('RevisionService: Using supremeCourtSubmission as update target');
+                }
+            }
+            elseif ($stageCode == 12) {
+                if (!$revisable->relationLoaded('supremeCourtDecisionRecord')) {
+                    $revisable->load('supremeCourtDecisionRecord');
+                }
+                if ($revisable->supremeCourtDecisionRecord) {
+                    $updateTarget = $revisable->supremeCourtDecisionRecord;
+                    Log::info('RevisionService: Using supremeCourtDecisionRecord as update target');
+                }
+            }
+            elseif ($stageCode == 12) {
+                if (!$revisable->relationLoaded('supremeCourtDecisionRecord')) {
+                    $revisable->load('supremeCourtDecisionRecord');
+                }
+                if ($revisable->supremeCourtDecisionRecord) {
+                    $updateTarget = $revisable->supremeCourtDecisionRecord;
+                    Log::info('RevisionService: Using supremeCourtDecisionRecord as update target');
                 }
             }
         }

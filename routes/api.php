@@ -311,7 +311,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                     Log::info('ObjectionDecision saved', ['decisionData' => $decisionData, 'nextStage' => $nextStage]);
                 } elseif ($stage == 8) {
                     $appealData = $request->only([
-                        'appeal_letter_number', 'submission_date', 'appeal_amount', 'dispute_number'
+                        'appeal_number', 'submission_date', 'appeal_amount', 'dispute_number'
                     ]);
                     $appealData['tax_case_id'] = $taxCase->id;
                     \App\Models\AppealSubmission::updateOrCreate(
@@ -319,6 +319,75 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                         $appealData
                     );
                     Log::info('AppealSubmission saved', ['appealData' => $appealData]);
+                } elseif ($stage == 9) {
+                    $explanationData = $request->only([
+                        'request_number', 'request_issue_date', 'request_receipt_date',
+                        'explanation_letter_number', 'explanation_submission_date'
+                    ]);
+                    $explanationData['tax_case_id'] = $taxCase->id;
+                    \App\Models\AppealExplanationRequest::updateOrCreate(
+                        ['tax_case_id' => $taxCase->id],
+                        $explanationData
+                    );
+                    Log::info('AppealExplanationRequest saved', ['explanationData' => $explanationData]);
+                } elseif ($stage == 10) {
+                    $appealDecisionData = $request->only([
+                        'keputusan_banding_number', 'keputusan_banding_date', 'keputusan_banding',
+                        'keputusan_banding_amount', 'keputusan_banding_notes', 'user_routing_choice'
+                    ]);
+                    $appealDecisionData['tax_case_id'] = $taxCase->id;
+                    \App\Models\AppealDecision::updateOrCreate(
+                        ['tax_case_id' => $taxCase->id],
+                        $appealDecisionData
+                    );
+                    Log::info('AppealDecision saved', ['appealDecisionData' => $appealDecisionData]);
+                } elseif ($stage == 11) {
+                    $supremeCourtSubmissionData = $request->only([
+                        'supreme_court_letter_number', 'submission_date', 'review_amount'
+                    ]);
+                    $supremeCourtSubmissionData['tax_case_id'] = $taxCase->id;
+                    \App\Models\SupremeCourtSubmission::updateOrCreate(
+                        ['tax_case_id' => $taxCase->id],
+                        $supremeCourtSubmissionData
+                    );
+                    Log::info('SupremeCourtSubmission saved', ['supremeCourtSubmissionData' => $supremeCourtSubmissionData]);
+                } elseif ($stage == 12) {
+                    $supremeCourtDecisionData = $request->only([
+                        'keputusan_pk_number', 'keputusan_pk_date', 'keputusan_pk',
+                        'keputusan_pk_amount', 'keputusan_pk_notes', 'next_action'
+                    ]);
+                    $supremeCourtDecisionData['tax_case_id'] = $taxCase->id;
+                    
+                    // ⭐ If next_action is provided, update tax_case next_stage_id based on decision
+                    if ($request->has('next_action')) {
+                        $nextAction = $request->input('next_action');
+                        $nextStageId = ($nextAction === 'refund') ? 13 : 16;  // 13=Refund, 16=KIAN
+                        $taxCase->update(['next_stage_id' => $nextStageId]);
+                        $decisionValue = $nextAction;
+                        
+                        // Also update case_status based on decision
+                        $keputusanPk = $request->input('keputusan_pk');
+                        $caseStatus = match($keputusanPk) {
+                            'dikabulkan' => 'GRANTED',
+                            'dikabulkan_sebagian' => 'GRANTED_PARTIAL',
+                            'ditolak' => 'NOT_GRANTED_PARTIAL',
+                            default => 'SUPREME_COURT_DECISION'
+                        };
+                        $taxCase->update(['case_status' => $caseStatus]);
+                        
+                        Log::info('Stage 12 Final Decision', [
+                            'keputusan_pk' => $keputusanPk,
+                            'next_action' => $nextAction,
+                            'next_stage' => $nextStageId,
+                            'case_status' => $caseStatus
+                        ]);
+                    }
+                    
+                    \App\Models\SupremeCourtDecisionRecord::updateOrCreate(
+                        ['tax_case_id' => $taxCase->id],
+                        $supremeCourtDecisionData
+                    );
+                    Log::info('SupremeCourtDecisionRecord saved', ['supremeCourtDecisionData' => $supremeCourtDecisionData]);
                 }
                 
                 if ($isDraft) {

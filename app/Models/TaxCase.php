@@ -165,6 +165,11 @@ class TaxCase extends Model
         return $this->hasOne(SupremeCourtDecision::class);
     }
 
+    public function supremeCourtDecisionRecord(): HasOne
+    {
+        return $this->hasOne(SupremeCourtDecisionRecord::class);
+    }
+
     public function kianSubmission(): HasOne
     {
         return $this->hasOne(KianSubmission::class);
