@@ -93,15 +93,19 @@ import { ref, watch } from 'vue'
 const props = defineProps({
   isOpen: {
     type: Boolean,
-    required: true
+    default: false
   },
-  taxCaseData: {
+  stage: {
     type: Object,
     default: () => ({})
+  },
+  initialData: {
+    type: Object,
+    default: null
   }
 })
 
-const emit = defineEmits(['save', 'cancel'])
+const emit = defineEmits(['save', 'close', 'cancel'])
 
 const formData = ref({
   next_action: '',
@@ -112,16 +116,23 @@ const formData = ref({
 const isSaving = ref(false)
 const errorMessage = ref('')
 
-// Watch for when modal opens to populate form data
+// Watch for when modal opens to populate form data from initialData
 watch(() => props.isOpen, (newVal) => {
-  if (newVal && props.taxCaseData) {
+  if (newVal && props.initialData) {
     formData.value = {
-      next_action: props.taxCaseData.next_action || '',
-      next_action_due_date: props.taxCaseData.next_action_due_date || '',
-      status_comment: props.taxCaseData.status_comment || ''
+      next_action: props.initialData.next_action || '',
+      next_action_due_date: props.initialData.next_action_due_date || '',
+      status_comment: props.initialData.status_comment || ''
     }
-    errorMessage.value = ''
+  } else if (newVal) {
+    // If no initialData, clear the form
+    formData.value = {
+      next_action: '',
+      next_action_due_date: '',
+      status_comment: ''
+    }
   }
+  errorMessage.value = ''
 })
 
 const save = async () => {
@@ -150,7 +161,7 @@ const cancel = () => {
     status_comment: ''
   }
   errorMessage.value = ''
-  emit('cancel')
+  emit('close')
 }
 </script>
 

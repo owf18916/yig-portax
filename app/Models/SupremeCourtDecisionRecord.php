@@ -19,12 +19,18 @@ class SupremeCourtDecisionRecord extends Model
         'keputusan_pk',
         'keputusan_pk_amount',
         'keputusan_pk_notes',
-        'next_action'
+        'next_action',
+        'next_action_due_date',
+        'status_comment',
     ];
 
     protected $casts = [
         'keputusan_pk_date' => 'date',
         'keputusan_pk_amount' => 'decimal:2',
+        'next_action_due_date' => 'date',
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
+        'deleted_at' => 'datetime',
     ];
 
     public function taxCase(): BelongsTo

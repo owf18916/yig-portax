@@ -19,10 +19,14 @@ class SupremeCourtSubmission extends Model
         'review_amount',
         'status',
         'notes',
+        'next_action',
+        'next_action_due_date',
+        'status_comment',
     ];
 
     protected $casts = [
         'submission_date' => 'date',
+        'next_action_due_date' => 'date',
         'review_amount' => 'integer',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',

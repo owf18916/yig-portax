@@ -20,11 +20,15 @@ class ObjectionDecision extends Model
         'decision_amount',
         'next_stage',
         'status',
+        'next_action',
+        'next_action_due_date',
+        'status_comment',
     ];
 
     protected $casts = [
         'decision_amount' => 'decimal:2',
         'decision_date' => 'date',
+        'next_action_due_date' => 'date',
         'next_stage' => 'integer',
         'submitted_at' => 'datetime',
         'approved_at' => 'datetime',

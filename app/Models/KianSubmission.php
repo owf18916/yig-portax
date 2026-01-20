@@ -25,12 +25,16 @@ class KianSubmission extends Model
         'approved_at',
         'status',
         'notes',
+        'next_action',
+        'next_action_due_date',
+        'status_comment',
     ];
 
     protected $casts = [
         'loss_amount' => 'decimal:2',
         'supporting_documents' => 'json',
         'submission_date' => 'date',
+        'next_action_due_date' => 'date',
         'submitted_at' => 'datetime',
         'approved_at' => 'datetime',
         'created_at' => 'datetime',

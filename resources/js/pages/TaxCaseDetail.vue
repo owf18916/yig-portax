@@ -87,15 +87,30 @@
                     </div>
                     <p class="text-sm text-gray-600">{{ stage.description }}</p>
                   </div>
-                  <Button
-                    v-if="canAccessStage(stage.id)"
-                    @click="$router.push(`/tax-cases/${$route.params.id}/workflow/${stage.id}`)"
-                    variant="primary"
-                    size="sm"
-                    :disabled="!stage.accessible"
-                  >
-                    Access
-                  </Button>
+                  <div class="flex items-center gap-2">
+                    <Button
+                      v-if="canAccessStage(stage.id)"
+                      @click="$router.push(`/tax-cases/${$route.params.id}/workflow/${stage.id}`)"
+                      variant="primary"
+                      size="sm"
+                      :disabled="!stage.accessible"
+                    >
+                      Access
+                    </Button>
+                    <button
+                      v-if="stage.accessible"
+                      @click="openNextActionModal(stage)"
+                      title="Edit next action for this stage"
+                      class="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-150 group relative"
+                    >
+                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                      <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-900 text-white text-xs py-1 px-2 rounded whitespace-nowrap z-10">
+                        Edit Next Action
+                      </div>
+                    </button>
+                  </div>
                 </div>
               </div>
             </transition>
@@ -139,15 +154,30 @@
                     <p class="font-medium text-gray-900">{{ stage.name }}</p>
                     <p class="text-sm text-gray-600">{{ stage.description }}</p>
                   </div>
-                  <Button
-                    v-if="canAccessStage(stage.id)"
-                    @click="$router.push(`/tax-cases/${$route.params.id}/workflow/${stage.id}`)"
-                    variant="primary"
-                    size="sm"
-                    :disabled="!stage.accessible"
-                  >
-                    Access
-                  </Button>
+                  <div class="flex items-center gap-2">
+                    <Button
+                      v-if="canAccessStage(stage.id)"
+                      @click="$router.push(`/tax-cases/${$route.params.id}/workflow/${stage.id}`)"
+                      variant="primary"
+                      size="sm"
+                      :disabled="!stage.accessible"
+                    >
+                      Access
+                    </Button>
+                    <button
+                      v-if="stage.accessible"
+                      @click="openNextActionModal(stage)"
+                      title="Edit next action for this stage"
+                      class="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-150 group relative"
+                    >
+                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                      <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-900 text-white text-xs py-1 px-2 rounded whitespace-nowrap z-10">
+                        Edit Next Action
+                      </div>
+                    </button>
+                  </div>
                 </div>
               </div>
             </transition>
@@ -191,15 +221,30 @@
                     <p class="font-medium text-gray-900">{{ stage.name }}</p>
                     <p class="text-sm text-gray-600">{{ stage.description }}</p>
                   </div>
-                  <Button
-                    v-if="canAccessStage(stage.id)"
-                    @click="$router.push(`/tax-cases/${$route.params.id}/workflow/${stage.id}`)"
-                    variant="primary"
-                    size="sm"
-                    :disabled="!stage.accessible"
-                  >
-                    Access
-                  </Button>
+                  <div class="flex items-center gap-2">
+                    <Button
+                      v-if="canAccessStage(stage.id)"
+                      @click="$router.push(`/tax-cases/${$route.params.id}/workflow/${stage.id}`)"
+                      variant="primary"
+                      size="sm"
+                      :disabled="!stage.accessible"
+                    >
+                      Access
+                    </Button>
+                    <button
+                      v-if="stage.accessible"
+                      @click="openNextActionModal(stage)"
+                      title="Edit next action for this stage"
+                      class="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-150 group relative"
+                    >
+                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                      <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-900 text-white text-xs py-1 px-2 rounded whitespace-nowrap z-10">
+                        Edit Next Action
+                      </div>
+                    </button>
+                  </div>
                 </div>
               </div>
             </transition>
@@ -208,6 +253,15 @@
       </Card>
 
       <!-- Documents section removed - documents uploaded per stage -->
+
+    <!-- Next Action Modal -->
+    <NextActionModal
+      :isOpen="isNextActionModalOpen"
+      :stage="selectedStage"
+      :initialData="nextActionInitialData"
+      @save="saveNextAction"
+      @close="closeNextActionModal"
+    />
     </div>
   </div>
 </template>
@@ -215,13 +269,16 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useToast } from '../composables/useToast'
 import Card from '../components/Card.vue'
 import Button from '../components/Button.vue'
 import Alert from '../components/Alert.vue'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
+import NextActionModal from '../components/NextActionModal.vue'
 
 const route = useRoute()
 const router = useRouter()
+const { showSuccess, showError } = useToast()
 
 const loading = ref(true)
 const apiError = ref('')
@@ -280,7 +337,6 @@ const getStage7Decision = () => {
   // Try both camelCase and snake_case for compatibility
   const objDecision = caseData.value.objectionDecision || caseData.value.objection_decision
   if (objDecision && objDecision.decision_type) {
-    console.log('[getStage7Decision] ✓ Found in objectionDecision/objection_decision:', objDecision.decision_type)
     return objDecision.decision_type
   }
   
@@ -288,11 +344,8 @@ const getStage7Decision = () => {
   // Sometimes the decision might be in workflow history before objectionDecision is fully loaded
   const stage7History = workflowHistory.value.find(h => h.stage_id === 7 && h.status === 'submitted')
   if (stage7History && stage7History.decision_value) {
-    console.log('[getStage7Decision] ⚠️ Using Stage 7 decision from workflow history (fallback):', stage7History.decision_value)
     return stage7History.decision_value
   }
-  
-  console.log('[getStage7Decision] ❌ No Stage 7 decision found anywhere!')
   return null
 }
 
@@ -301,18 +354,14 @@ const getStage12Decision = () => {
   // Try both camelCase and snake_case for compatibility
   const pkDecision = caseData.value.supremeCourtDecisionRecord || caseData.value.supreme_court_decision_record
   if (pkDecision && pkDecision.next_action) {
-    console.log('[getStage12Decision] ✓ Found next_action in supremeCourtDecisionRecord:', pkDecision.next_action)
     return pkDecision.next_action
   }
   
   // FALLBACK: Check workflow history for Stage 12
   const stage12History = workflowHistory.value.find(h => h.stage_id === 12 && h.status === 'submitted')
   if (stage12History && stage12History.decision_value) {
-    console.log('[getStage12Decision] ⚠️ Using Stage 12 decision from workflow history (fallback):', stage12History.decision_value)
     return stage12History.decision_value
   }
-  
-  console.log('[getStage12Decision] ❌ No Stage 12 decision found anywhere!')
   return null
 }
 
@@ -335,17 +384,11 @@ const getStagesByBranch = (branch) => {
 
 // Function untuk update accessibility berdasarkan workflow history
 const updateStageAccessibility = () => {
-  console.log('[updateStageAccessibility] 🔄 STARTING accessibility calculation...')
-  
   // Helper function: cek apakah stage tertentu sudah completed
   const isStageCompleted = (stageId) => {
-    const result = workflowHistory.value.some(
+    return workflowHistory.value.some(
       h => h.stage_id === stageId && (h.status === 'submitted' || h.status === 'completed')
     )
-    if (stageId === 7) {
-      console.log(`[isStageCompleted] Stage ${stageId}: ${result} (found ${workflowHistory.value.filter(h => h.stage_id === stageId).length} records)`)
-    }
-    return result
   }
   
   // Helper function: ambil decision dari decision point stages (4, 7, 10, 12)
@@ -377,13 +420,10 @@ const updateStageAccessibility = () => {
         const userChoice = getUserRoutingChoice()
         if (isStage4Completed() && userChoice === 'objection') {
           stage.accessible = true
-          console.log('[Accessibility] Stage 5 ACCESSIBLE - Objection path chosen')
         } else if (isStage4Completed() && userChoice === 'refund') {
           stage.accessible = false
-          console.log('[Accessibility] Stage 5 LOCKED - Refund path chosen')
         } else if (!isStage4Completed()) {
           stage.accessible = false
-          console.log('[Accessibility] Stage 5 LOCKED - Stage 4 not completed')
         }
       } else if (stage.id === 7) {
         // SPECIAL: Stage 7 (Objection Decision) - Auto-routing based on decision_type
@@ -394,10 +434,8 @@ const updateStageAccessibility = () => {
         if (isStageCompleted(6)) {
           // Stage 6 (SPUH) completed, so Stage 7 is now accessible
           stage.accessible = true
-          console.log('[Accessibility] Stage 7 ACCESSIBLE - Previous stage (Stage 6) completed')
         } else {
           stage.accessible = false
-          console.log('[Accessibility] Stage 7 LOCKED - Stage 6 not completed')
         }
       } else if (stage.id === 8) {
         // SPECIAL: Stage 8 (Appeal) - Accessible only if:
@@ -407,25 +445,20 @@ const updateStageAccessibility = () => {
         
         if (!stage7Completed) {
           stage.accessible = false
-          console.log('[Accessibility] Stage 8 LOCKED - Stage 7 not completed')
         } else if (stage7Decision === 'rejected') {
           // Auto-routed to Appeal
           stage.accessible = true
-          console.log('[Accessibility] Stage 8 ACCESSIBLE - Stage 7 decision: REJECTED')
         } else if (stage7Decision === 'partially_granted') {
           // Check if user made choice to go to Appeal (via workflow_histories stage_to)
           const stage7History = workflowHistory.value.find(h => h.stage_id === 7 && h.status === 'submitted')
           if (stage7History && stage7History.stage_to === 8) {
             stage.accessible = true
-            console.log('[Accessibility] Stage 8 ACCESSIBLE - Stage 7 partially granted, user chose Appeal')
           } else {
             stage.accessible = false
-            console.log('[Accessibility] Stage 8 LOCKED - Waiting for user choice at Stage 7')
           }
         } else {
           // granted → goes to Stage 13, not Stage 8
           stage.accessible = false
-          console.log('[Accessibility] Stage 8 LOCKED - Stage 7 decision: GRANTED (goes to Refund, not Appeal)')
         }
       } else if (stage.id > 5) {
         // Stages setelah 5 (except 7-8, those handled above) (6, 9-12)
@@ -433,12 +466,10 @@ const updateStageAccessibility = () => {
         const userChoice = getUserRoutingChoice()
         if (userChoice === 'refund' && isStage4Completed()) {
           stage.accessible = false
-          console.log(`[Accessibility] Stage ${stage.id} LOCKED - Refund path active`)
         } else if (userChoice === 'objection' || !isRefundBranchActive()) {
           // Normal sequential: accessible jika prev stage completed
           const previousStage = stage.id - 1
           stage.accessible = isStageCompleted(previousStage)
-          console.log(`[Accessibility] Stage ${stage.id} - Sequential logic (prev stage completed: ${stage.accessible})`)
         }
       } else {
         // Stages 2-4: sequential
@@ -479,25 +510,19 @@ const updateStageAccessibility = () => {
         }
       }
       
-      console.log(`[Accessibility DEBUG] Stage ${stage.id} (refund branch) - canAccessRefund=${canAccessRefund}, stage7Completed=${stage7Completed}, stage7Decision='${stage7Decision}', reason='${reason}'`)
-      
       if (canAccessRefund) {
         if (stage.id === 13) {
           stage.accessible = true
-          console.log(`[Accessibility] ✓ Stage 13 ACCESSIBLE - ${reason}`)
         } else {
           // Stage 14 accessible jika stage 13 completed, dst
           const previousStage = stage.id - 1
           stage.accessible = isStageCompleted(previousStage)
-          console.log(`[Accessibility] Stage ${stage.id} - Refund path sequential (prev completed: ${stage.accessible})`)
         }
       } else if (userChoice === 'objection') {
         stage.accessible = false
-        console.log(`[Accessibility] Stage ${stage.id} LOCKED - Objection path chosen`)
       } else {
         // userChoice is empty or null
         stage.accessible = false
-        console.log(`[Accessibility] Stage ${stage.id} LOCKED - No routing choice made yet (userChoice='${userChoice}')`)
       }
     } else if (stage.branch === 'kian') {
       // KIAN BRANCH: Accessible jika final rejection atau objection process complete
@@ -508,19 +533,14 @@ const updateStageAccessibility = () => {
       const stage12Decision = getStage12Decision()
       const stage12Completed = isStageCompleted(12)
       
-      console.log(`[Accessibility DEBUG] KIAN branch - stage=${stage.id}, stage12Completed=${stage12Completed}, stage12Decision='${stage12Decision}'`)
-      
       if (stage.id === 16) {
         // Stage 16 (KIAN Report) - accessible if Stage 12 completed with 'kian' choice
         if (!stage12Completed) {
           stage.accessible = false
-          console.log('[Accessibility] Stage 16 LOCKED - Stage 12 not completed')
         } else if (stage12Decision === 'kian') {
           stage.accessible = true
-          console.log('[Accessibility] ✓ Stage 16 ACCESSIBLE - Stage 12 decision: KIAN')
         } else {
           stage.accessible = false
-          console.log('[Accessibility] Stage 16 LOCKED - Stage 12 decision: REFUND (goes to Stage 13 instead)')
         }
       } else if (stage.id > 16) {
         // Stages setelah 16 (e.g., 17, 18)
@@ -528,10 +548,8 @@ const updateStageAccessibility = () => {
           // KIAN path active: sequential logic from Stage 16
           const previousStage = stage.id - 1
           stage.accessible = isStageCompleted(previousStage)
-          console.log(`[Accessibility] Stage ${stage.id} - KIAN path sequential (prev completed: ${stage.accessible})`)
         } else {
           stage.accessible = false
-          console.log(`[Accessibility] Stage ${stage.id} LOCKED - KIAN path not active (stage12Decision='${stage12Decision}')`)
         }
       }
     }
@@ -596,12 +614,6 @@ onMounted(async () => {
     updateStageAccessibility()
     
     caseNumber.value = caseData.value.case_number || 'TAX-2026-001'
-    console.log('✓ Case loaded, caseData:', caseData.value)
-    console.log('✓ skpRecord:', caseData.value.skpRecord)
-    console.log('✓ objectionDecision:', caseData.value.objectionDecision)
-    console.log('✓ objectionDecision?.decision_type:', caseData.value.objectionDecision?.decision_type)
-    console.log('✓ Stage 4 user choice:', getUserRoutingChoice())
-    console.log('✓ Stage 7 decision:', getStage7Decision())
   } catch (error) {
     apiError.value = error.message
     console.error('Failed to load case:', error)
@@ -612,7 +624,6 @@ onMounted(async () => {
 
 // ⭐ Reload function to refresh case data and recalculate accessibility
 const reloadCaseData = async () => {
-  console.log('[TaxCaseDetail] 🔄 RELOAD TRIGGERED - Fetching fresh case data...')
   loading.value = true
   try {
     const response = await fetch(`/api/tax-cases/${route.params.id}`, {
@@ -658,18 +669,8 @@ const reloadCaseData = async () => {
       }
     }
     
-    // ⭐ DEBUG: Log what we loaded
-    console.log('Full caseFetchedData loaded')
-    console.log('  skpRecord:', caseData.value.skpRecord)
-    console.log('  objectionDecision:', caseData.value.objectionDecision)
-    console.log('  objection_decision:', caseData.value.objection_decision)
-    console.log('  objectionDecision?.decision_type:', caseData.value.objectionDecision?.decision_type)
-    console.log('  objection_decision?.decision_type:', caseData.value.objection_decision?.decision_type)
-    console.log('  workflowHistory count:', workflowHistory.value.length)
-    
     // Recalculate accessibility
     updateStageAccessibility()
-    console.log('✓ Case data reloaded successfully')
   } catch (error) {
     console.error('Failed to reload case:', error)
     apiError.value = error.message
@@ -683,7 +684,6 @@ watch(
   () => route.params.id,
   (newId, oldId) => {
     if (newId && newId !== oldId) {
-      console.log(`[TaxCaseDetail] Route changed: ${oldId} → ${newId}, reloading data`)
       reloadCaseData()
     }
   }
@@ -696,7 +696,6 @@ watch(
     const newChoice = newRoutingChoice1 || newRoutingChoice2
     const oldChoice = oldRoutingChoice1 || oldRoutingChoice2
     if (newChoice !== oldChoice) {
-      console.log('[TaxCaseDetail] SKP routing choice changed:', oldChoice, '→', newChoice)
       updateStageAccessibility()
     }
   }
@@ -709,7 +708,6 @@ watch(
     if (newCaseData) {
       const newDecision = newCaseData.objectionDecision?.decision_type || newCaseData.objection_decision?.decision_type
       if (newDecision) {
-        console.log('[TaxCaseDetail] 🔔 Objection decision detected:', newDecision)
         updateStageAccessibility()
       }
     }
@@ -722,7 +720,6 @@ watch(
   () => workflowHistory.value.map(h => `${h.stage_id}-${h.stage_to}`).join(','),
   (newHistory, oldHistory) => {
     if (newHistory !== oldHistory) {
-      console.log('[TaxCaseDetail] Workflow history changed, recalculating accessibility')
       updateStageAccessibility()
     }
   }
@@ -754,5 +751,135 @@ const formatCurrency = (amount, currencyCode = 'IDR') => {
     currency: currencyConfig.code,
     minimumFractionDigits: 0
   }).format(amount)
+}
+
+// ============= NEXT ACTION MODAL LOGIC =============
+const isNextActionModalOpen = ref(false)
+const selectedStage = ref(null)
+const nextActionInitialData = ref(null)
+
+const openNextActionModal = (stage) => {
+  selectedStage.value = stage
+  
+  // Get the current data from the record to pre-fill the modal
+  let stageRecord = null
+  
+  if (stage.id === 1) {
+    // Stage 1 uses the tax_cases record itself
+    stageRecord = caseData.value
+  } else {
+    // Map stage ID to the property name in caseData
+    const propertyMap = {
+      2: 'sp2_record',
+      3: 'sphp_record',
+      4: 'skp_record',
+      5: 'objection_submission',
+      6: 'spuh_record',
+      7: 'objection_decision',
+      8: 'appeal_submission',
+      9: 'appeal_explanation_request',
+      10: 'appeal_decision',
+      11: 'supreme_court_submission',
+      12: 'supreme_court_decision_record',
+      13: 'refund_process',
+      16: 'kian_submission'
+    }
+    
+    const property = propertyMap[stage.id]
+    if (property) {
+      stageRecord = caseData.value[property]
+    }
+  }
+  
+  // Pass the record data for pre-filling
+  nextActionInitialData.value = stageRecord ? {
+    next_action: stageRecord.next_action || '',
+    next_action_due_date: stageRecord.next_action_due_date || '',
+    status_comment: stageRecord.status_comment || ''
+  } : null
+  
+  isNextActionModalOpen.value = true
+}
+
+const closeNextActionModal = () => {
+  isNextActionModalOpen.value = false
+  selectedStage.value = null
+}
+
+const saveNextAction = async (formData) => {
+  if (!selectedStage.value || !caseData.value) return
+  
+  try {
+    // Map stage ID to model type AND the property name in caseData (using snake_case as returned by API)
+    const stageMapping = {
+      1: { modelType: 'tax-cases', property: null, useMainCase: true }, // Stage 1 uses tax_cases table itself
+      2: { modelType: 'sp2-records', property: 'sp2_record' },
+      3: { modelType: 'sphp-records', property: 'sphp_record' },
+      4: { modelType: 'skp-records', property: 'skp_record' },
+      5: { modelType: 'objection-submissions', property: 'objection_submission' },
+      6: { modelType: 'spuh-records', property: 'spuh_record' },
+      7: { modelType: 'objection-decisions', property: 'objection_decision' },
+      8: { modelType: 'appeal-submissions', property: 'appeal_submission' },
+      9: { modelType: 'appeal-explanation-requests', property: 'appeal_explanation_request' },
+      10: { modelType: 'appeal-decisions', property: 'appeal_decision' },
+      11: { modelType: 'supreme-court-submissions', property: 'supreme_court_submission' },
+      12: { modelType: 'supreme-court-decisions', property: 'supreme_court_decision_record' },
+      13: { modelType: 'refund-processes', property: 'refund_process' },
+      16: { modelType: 'kian-submissions', property: 'kian_submission' }
+    }
+    
+    const mapping = stageMapping[selectedStage.value.id]
+    if (!mapping) {
+      throw new Error(`Unknown stage ID: ${selectedStage.value.id}`)
+    }
+    
+    // Get the record from caseData
+    let record, recordId
+    
+    if (mapping.useMainCase) {
+      // Stage 1 uses the tax_cases record itself
+      record = caseData.value
+      recordId = caseData.value.id
+    } else {
+      // Other stages use their specific record
+      record = caseData.value[mapping.property]
+      recordId = record?.id
+    }
+    
+    if (!recordId) {
+      throw new Error(`No record found for ${selectedStage.value.name}. Please save this stage first.`)
+    }
+    
+    const apiUrl = `/api/tax-cases/${caseData.value.id}/next-action/${mapping.modelType}/${recordId}`
+    
+    // Make API call to update next action
+    const response = await fetch(apiUrl, {
+      method: 'PUT',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content
+      },
+      body: JSON.stringify(formData)
+    })
+    
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message || error.error || `API Error: ${response.status}`)
+    }
+    
+    const result = await response.json()
+    
+    // Update the stage record in caseData with the response data
+    if (record && result.data) {
+      Object.assign(record, result.data)
+    }
+    
+    closeNextActionModal()
+    showSuccess('Success', 'Next action saved successfully!')
+  } catch (error) {
+    showError('Error', error.message)
+  }
 }
 </script>

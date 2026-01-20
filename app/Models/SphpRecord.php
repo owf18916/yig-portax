@@ -21,6 +21,9 @@ class SphpRecord extends Model
         'service_finding',
         'other_finding',
         'other_finding_notes',
+        'next_action',
+        'next_action_due_date',
+        'status_comment',
     ];
 
     protected $casts = [
@@ -29,6 +32,7 @@ class SphpRecord extends Model
         'other_finding' => 'decimal:2',
         'sphp_issue_date' => 'date',
         'sphp_receipt_date' => 'date',
+        'next_action_due_date' => 'date',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',

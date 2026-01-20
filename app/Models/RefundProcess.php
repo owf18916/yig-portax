@@ -27,12 +27,16 @@ class RefundProcess extends Model
         'approved_at',
         'status',
         'notes',
+        'next_action',
+        'next_action_due_date',
+        'status_comment',
     ];
 
     protected $casts = [
         'refund_amount' => 'decimal:2',
         'bank_details' => 'json',
         'refund_date' => 'date',
+        'next_action_due_date' => 'date',
         'submitted_at' => 'datetime',
         'approved_at' => 'datetime',
         'created_at' => 'datetime',

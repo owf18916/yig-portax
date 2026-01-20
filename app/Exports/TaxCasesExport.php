@@ -128,15 +128,18 @@ class TaxCaseSheet implements FromCollection, WithHeadings, ShouldAutoSize, With
             $fy = $taxCase->fiscalYear?->year ?? '';
             $refNumber = $taxCase->case_number;
             $inputDate = $taxCase->created_at?->format('d/m/Y');
-            $nextAction = $taxCase->next_action;
-            $nextActionDueDate = $taxCase->next_action_due_date?->format('d-M-y');
-            $statusComments = $taxCase->status_comment;
             $kianStatus = $taxCase->kianSubmission?->status ?? '';
             $currentStage = $taxCase->current_stage;
 
             // Get amount based on current stage
             $amountOriginal = $this->getAmountOriginal($taxCase, $currentStage);
             $amountUsd = $this->convertToUsd($taxCase, $amountOriginal);
+
+            // Get stage-specific next_action, next_action_due_date, status_comment
+            $stageSpecificData = $this->getStageSpecificData($taxCase, $currentStage);
+            $nextAction = $stageSpecificData['next_action'];
+            $nextActionDueDate = $stageSpecificData['next_action_due_date'];
+            $statusComments = $stageSpecificData['status_comment'];
 
             // Debug logging
             Log::info("Exporting tax case: {$refNumber}", [
@@ -146,6 +149,8 @@ class TaxCaseSheet implements FromCollection, WithHeadings, ShouldAutoSize, With
                 'amount_usd' => $amountUsd,
                 'currency_code' => $taxCase->currency?->code,
                 'currency_exchange_rate' => $taxCase->currency?->exchange_rate,
+                'next_action' => $nextAction,
+                'status_comment' => $statusComments,
             ]);
 
             // If no workflow histories, create a default row with basic info
@@ -179,6 +184,12 @@ class TaxCaseSheet implements FromCollection, WithHeadings, ShouldAutoSize, With
                 foreach ($historisByStage as $history) {
                     $stageId = $history->stage_id;
                     $stageName = $this->stageNames[$stageId] ?? "Stage {$stageId}";
+
+                    // Get stage-specific next_action, next_action_due_date, status_comment for this stage
+                    $stageData = $this->getStageSpecificData($taxCase, $stageId);
+                    $stageNextAction = $stageData['next_action'];
+                    $stageNextActionDueDate = $stageData['next_action_due_date'];
+                    $stageStatusComments = $stageData['status_comment'];
 
                     // Determine if this is Audit Status (stage 1-7) or Tax Appeal (stage 8-10)
                     $auditStatus = '';
@@ -214,15 +225,141 @@ class TaxCaseSheet implements FromCollection, WithHeadings, ShouldAutoSize, With
                         'Amount (USD)' => $amountUsd ? (float)$amountUsd : '',
                         'Tax Appeal #' => $taxAppealNumber,
                         'Tax Appeal' => $taxAppealName,
-                        'Next Action' => $nextAction,
-                        'Next Action Due Date' => $nextActionDueDate,
-                        'Status Comments' => $statusComments,
+                        'Next Action' => $stageNextAction,
+                        'Next Action Due Date' => $stageNextActionDueDate,
+                        'Status Comments' => $stageStatusComments,
                     ];
                 }
             }
         }
 
         return collect($rows);
+    }
+
+    /**
+     * Get stage-specific next_action, next_action_due_date, status_comment
+     * Stage mapping:
+     * 1 -> tax_cases
+     * 2 -> sp2_records
+     * 3 -> sphp_records
+     * 4 -> skp_records
+     * 5 -> objection_submissions
+     * 6 -> spuh_records
+     * 7 -> objection_decisions
+     * 8 -> appeal_submissions
+     * 9 -> appeal_explanation_requests
+     * 10 -> appeal_decisions
+     * 11 -> supreme_court_submissions
+     * 12 -> supreme_court_decisions
+     */
+    private function getStageSpecificData($taxCase, $stageId)
+    {
+        $nextAction = '';
+        $nextActionDueDate = '';
+        $statusComment = '';
+
+        switch ($stageId) {
+            case 1:
+                // From tax_cases table
+                $nextAction = $taxCase->next_action ?? '';
+                $nextActionDueDate = $taxCase->next_action_due_date?->format('d-M-y') ?? '';
+                $statusComment = $taxCase->status_comment ?? '';
+                break;
+            case 2:
+                // From sp2_records
+                if ($taxCase->sp2Record) {
+                    $nextAction = $taxCase->sp2Record->next_action ?? '';
+                    $nextActionDueDate = $taxCase->sp2Record->next_action_due_date?->format('d-M-y') ?? '';
+                    $statusComment = $taxCase->sp2Record->status_comment ?? '';
+                }
+                break;
+            case 3:
+                // From sphp_records
+                if ($taxCase->sphpRecord) {
+                    $nextAction = $taxCase->sphpRecord->next_action ?? '';
+                    $nextActionDueDate = $taxCase->sphpRecord->next_action_due_date?->format('d-M-y') ?? '';
+                    $statusComment = $taxCase->sphpRecord->status_comment ?? '';
+                }
+                break;
+            case 4:
+                // From skp_records
+                if ($taxCase->skpRecord) {
+                    $nextAction = $taxCase->skpRecord->next_action ?? '';
+                    $nextActionDueDate = $taxCase->skpRecord->next_action_due_date?->format('d-M-y') ?? '';
+                    $statusComment = $taxCase->skpRecord->status_comment ?? '';
+                }
+                break;
+            case 5:
+                // From objection_submissions
+                if ($taxCase->objectionSubmission) {
+                    $nextAction = $taxCase->objectionSubmission->next_action ?? '';
+                    $nextActionDueDate = $taxCase->objectionSubmission->next_action_due_date?->format('d-M-y') ?? '';
+                    $statusComment = $taxCase->objectionSubmission->status_comment ?? '';
+                }
+                break;
+            case 6:
+                // From spuh_records
+                if ($taxCase->spuhRecord) {
+                    $nextAction = $taxCase->spuhRecord->next_action ?? '';
+                    $nextActionDueDate = $taxCase->spuhRecord->next_action_due_date?->format('d-M-y') ?? '';
+                    $statusComment = $taxCase->spuhRecord->status_comment ?? '';
+                }
+                break;
+            case 7:
+                // From objection_decisions
+                if ($taxCase->objectionDecision) {
+                    $nextAction = $taxCase->objectionDecision->next_action ?? '';
+                    $nextActionDueDate = $taxCase->objectionDecision->next_action_due_date?->format('d-M-y') ?? '';
+                    $statusComment = $taxCase->objectionDecision->status_comment ?? '';
+                }
+                break;
+            case 8:
+                // From appeal_submissions
+                if ($taxCase->appealSubmission) {
+                    $nextAction = $taxCase->appealSubmission->next_action ?? '';
+                    $nextActionDueDate = $taxCase->appealSubmission->next_action_due_date?->format('d-M-y') ?? '';
+                    $statusComment = $taxCase->appealSubmission->status_comment ?? '';
+                }
+                break;
+            case 9:
+                // From appeal_explanation_requests
+                if ($taxCase->appealExplanationRequest) {
+                    $nextAction = $taxCase->appealExplanationRequest->next_action ?? '';
+                    $nextActionDueDate = $taxCase->appealExplanationRequest->next_action_due_date?->format('d-M-y') ?? '';
+                    $statusComment = $taxCase->appealExplanationRequest->status_comment ?? '';
+                }
+                break;
+            case 10:
+                // From appeal_decisions
+                if ($taxCase->appealDecision) {
+                    $nextAction = $taxCase->appealDecision->next_action ?? '';
+                    $nextActionDueDate = $taxCase->appealDecision->next_action_due_date?->format('d-M-y') ?? '';
+                    $statusComment = $taxCase->appealDecision->status_comment ?? '';
+                }
+                break;
+            case 11:
+                // From supreme_court_submissions
+                if ($taxCase->supremeCourtSubmission) {
+                    $nextAction = $taxCase->supremeCourtSubmission->next_action ?? '';
+                    $nextActionDueDate = $taxCase->supremeCourtSubmission->next_action_due_date?->format('d-M-y') ?? '';
+                    $statusComment = $taxCase->supremeCourtSubmission->status_comment ?? '';
+                }
+                break;
+            case 12:
+                // From supreme_court_decisions
+                if ($taxCase->supremeCourtDecision) {
+                    $nextAction = $taxCase->supremeCourtDecision->next_action ?? '';
+                    $nextActionDueDate = $taxCase->supremeCourtDecision->next_action_due_date?->format('d-M-y') ?? '';
+                    $statusComment = $taxCase->supremeCourtDecision->status_comment ?? '';
+                }
+                break;
+        }
+
+        return [
+            'next_action' => $nextAction,
+            'next_action_due_date' => $nextActionDueDate,
+            'status_comment' => $statusComment,
+        ];
     }
 
     /**

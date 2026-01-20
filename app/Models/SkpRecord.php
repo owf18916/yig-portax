@@ -25,6 +25,9 @@ class SkpRecord extends Model
         'other_correction',
         'correction_notes',
         'notes',
+        'next_action',
+        'next_action_due_date',
+        'status_comment',
     ];
 
     protected $casts = [
@@ -34,6 +37,7 @@ class SkpRecord extends Model
         'other_correction' => 'decimal:2',
         'issue_date' => 'date',
         'receipt_date' => 'date',
+        'next_action_due_date' => 'date',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',

@@ -82,13 +82,65 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
     Route::post('/', [TaxCaseController::class, 'store'])->name('tax-cases.store');
     Route::get('/export', [TaxCaseExportController::class, 'export'])->name('tax-cases.export');
     
+    // ============================================================================
+    // NEXT ACTION ROUTES - Update next_action fields for any stage record
+    // ============================================================================
+    Route::put('{taxCaseId}/next-action/{modelType}/{recordId}', function (Request $request, $taxCaseId, $modelType, $recordId) {
+        $modelMap = [
+            'tax-cases' => 'App\Models\TaxCase',
+            'sp2-records' => 'App\Models\Sp2Record',
+            'sphp-records' => 'App\Models\SphpRecord',
+            'skp-records' => 'App\Models\SkpRecord',
+            'objection-submissions' => 'App\Models\ObjectionSubmission',
+            'spuh-records' => 'App\Models\SpuhRecord',
+            'objection-decisions' => 'App\Models\ObjectionDecision',
+            'appeal-submissions' => 'App\Models\AppealSubmission',
+            'appeal-explanation-requests' => 'App\Models\AppealExplanationRequest',
+            'appeal-decisions' => 'App\Models\AppealDecision',
+            'supreme-court-submissions' => 'App\Models\SupremeCourtSubmission',
+            'supreme-court-decisions' => 'App\Models\SupremeCourtDecisionRecord',
+            'refund-processes' => 'App\Models\RefundProcess',
+            'kian-submissions' => 'App\Models\KianSubmission',
+        ];
+        
+        if (!isset($modelMap[$modelType])) {
+            return response()->json(['error' => 'Invalid model type: ' . $modelType], 400);
+        }
+        
+        $modelClass = $modelMap[$modelType];
+        
+        // For tax-cases model type, verify the record ID matches the taxCaseId
+        if ($modelType === 'tax-cases' && $recordId != $taxCaseId) {
+            return response()->json(['error' => 'Record ID does not match tax case ID'], 400);
+        }
+        
+        $record = $modelClass::find($recordId);
+        
+        if (!$record) {
+            return response()->json(['error' => 'Record not found'], 404);
+        }
+        
+        $validated = $request->validate([
+            'next_action' => 'nullable|string|max:1000',
+            'next_action_due_date' => 'nullable|date',
+            'status_comment' => 'nullable|string|max:1000',
+        ]);
+        
+        $record->update($validated);
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Next action updated successfully',
+            'data' => $record
+        ]);
+    })->name('next-action.update');
+    
     Route::prefix('{taxCase}')->group(function () {
         Route::get('/', [TaxCaseController::class, 'show'])->name('tax-cases.show');
         Route::put('/', [TaxCaseController::class, 'update'])->name('tax-cases.update');
         Route::get('/workflow-history', [TaxCaseController::class, 'workflowHistory'])->name('tax-cases.workflow-history');
         Route::get('/documents', [TaxCaseController::class, 'documents'])->name('tax-cases.documents');
         Route::post('/complete', [TaxCaseController::class, 'complete'])->name('tax-cases.complete');
-        Route::put('/next-action', [TaxCaseController::class, 'updateNextAction'])->name('tax-cases.update-next-action');
         
         // Workflow decision routing endpoint - locks workflow path via stage_to
         Route::post('/workflow-decision', function (Request $request, TaxCase $taxCase) {

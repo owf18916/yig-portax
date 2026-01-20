@@ -128,13 +128,14 @@ class TaxCaseController extends ApiController
 
         $taxCase = TaxCase::create($validated);
 
-        // Create initial workflow history entry for Stage 1 (SPT Filing) with 'submitted' status
+        // Create initial workflow history entry for Stage 1 (SPT Filing) with 'draft' status
+        // Status will be changed to 'submitted' when user clicks "Submit & Continue"
         $taxCase->workflowHistories()->create([
             'stage_id' => 1,
             'stage_from' => null,
             'stage_to' => 2,
             'action' => 'submitted',
-            'status' => 'submitted',
+            'status' => 'draft',
             'user_id' => $user->id,
             'notes' => 'Initial tax case submission at Stage 1 (SPT Filing)',
         ]);
@@ -168,8 +169,10 @@ class TaxCaseController extends ApiController
             'appealSubmission',
             'appealExplanationRequest',
             'appealDecision',
-            'supremeCourtDecision',
+            'supremeCourtSubmission',
+            'supremeCourtDecisionRecord',
             'refundProcess',
+            'kianSubmission',
             'workflowHistories',
             'documents'
         ]);
@@ -234,26 +237,6 @@ class TaxCaseController extends ApiController
         return $this->success(
             $taxCase->fresh(['entity', 'fiscalYear', 'status']),
             'Tax case updated successfully'
-        );
-    }
-
-    /**
-     * Update next action metadata for a tax case
-     * These are separate from workflow stages and used for case follow-up tracking
-     */
-    public function updateNextAction(Request $request, TaxCase $taxCase): JsonResponse
-    {
-        $validated = $request->validate([
-            'next_action' => 'nullable|string|max:1000',
-            'next_action_due_date' => 'nullable|date',
-            'status_comment' => 'nullable|string|max:1000',
-        ]);
-
-        $taxCase->update($validated);
-
-        return $this->success(
-            $taxCase->fresh(),
-            'Next action information updated successfully'
         );
     }
 

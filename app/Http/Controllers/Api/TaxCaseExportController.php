@@ -37,12 +37,17 @@ class TaxCaseExportController
                     'workflowHistories' => function ($q) {
                         $q->orderBy('stage_id')->orderBy('created_at', 'desc');
                     },
+                    'sp2Record',
+                    'sphpRecord',
                     'skpRecord',
                     'objectionSubmission',
+                    'spuhRecord',
                     'objectionDecision',
                     'appealSubmission',
                     'appealExplanationRequest',
                     'appealDecision',
+                    'supremeCourtSubmission',
+                    'supremeCourtDecision',
                     'kianSubmission'
                 ]);
 

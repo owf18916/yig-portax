@@ -25,11 +25,15 @@ class AppealSubmission extends Model
         'approved_at',
         'status',
         'notes',
+        'next_action',
+        'next_action_due_date',
+        'status_comment',
     ];
 
     protected $casts = [
         'appeal_amount' => 'decimal:2',
         'submission_date' => 'date',
+        'next_action_due_date' => 'date',
         'submitted_at' => 'datetime',
         'approved_at' => 'datetime',
         'created_at' => 'datetime',

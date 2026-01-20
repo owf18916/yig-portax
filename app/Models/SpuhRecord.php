@@ -21,12 +21,16 @@ class SpuhRecord extends Model
         'reply_date',
         'status',
         'notes',
+        'next_action',
+        'next_action_due_date',
+        'status_comment',
     ];
 
     protected $casts = [
         'issue_date' => 'date',
         'receipt_date' => 'date',
         'reply_date' => 'date',
+        'next_action_due_date' => 'date',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',

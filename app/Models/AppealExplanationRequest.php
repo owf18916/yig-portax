@@ -23,12 +23,16 @@ class AppealExplanationRequest extends Model
         'explanation_submission_date',
         'status',
         'notes',
+        'next_action',
+        'next_action_due_date',
+        'status_comment',
     ];
 
     protected $casts = [
         'request_issue_date' => 'date',
         'request_receipt_date' => 'date',
         'explanation_submission_date' => 'date',
+        'next_action_due_date' => 'date',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',
