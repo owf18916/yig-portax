@@ -11,6 +11,10 @@
             class="px-4 py-2 border border-gray-300 rounded-lg w-64 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <div class="flex space-x-2">
+            <Button @click="exportToExcel" :disabled="isExporting" variant="secondary">
+              <span v-if="!isExporting">📥 Export to Excel</span>
+              <span v-else>Exporting...</span>
+            </Button>
             <Button @click="$router.push('/tax-cases/create/cit')" variant="primary">
               + New CIT Case
             </Button>
@@ -460,6 +464,9 @@ const isNextActionModalOpen = ref(false)
 const selectedTaxCase = ref(null)
 const isSavingNextAction = ref(false)
 
+// ============= EXPORT LOGIC =============
+const isExporting = ref(false)
+
 const openNextActionModal = (taxCase) => {
   selectedTaxCase.value = taxCase
   isNextActionModalOpen.value = true
@@ -508,6 +515,95 @@ const saveNextAction = async (formData) => {
     alert('Error saving next action: ' + error.message)
   } finally {
     isSavingNextAction.value = false
+  }
+}
+
+// ============= EXPORT TO EXCEL =============
+const exportToExcel = async () => {
+  // Guard: prevent multiple exports
+  if (isExporting.value) {
+    console.warn('Export already in progress, ignoring duplicate request')
+    return
+  }
+  
+  try {
+    isExporting.value = true
+    
+    // Build query parameters from active filters
+    const params = new URLSearchParams()
+    
+    if (searchQuery.value) {
+      params.append('search', searchQuery.value)
+    }
+    if (filterCaseNumber.value) {
+      params.append('case_number', filterCaseNumber.value)
+    }
+    if (filterType.value) {
+      params.append('case_type', filterType.value)
+    }
+    if (filterEntity.value) {
+      params.append('entity_id', filterEntity.value)
+    }
+    if (filterStatus.value) {
+      params.append('case_status', filterStatus.value)
+    }
+    if (filterCurrentStage.value) {
+      params.append('current_stage', filterCurrentStage.value)
+    }
+    if (filterPeriod.value) {
+      params.append('period_id', filterPeriod.value)
+    }
+    if (filterStageStatus.value) {
+      params.append('stage_status', filterStageStatus.value)
+    }
+    
+    const url = `/api/tax-cases/export?${params.toString()}`
+    console.log('Export URL:', url)
+    console.log('Export params:', Object.fromEntries(params))
+    
+    const response = await fetch(url, {
+      credentials: 'include',
+      headers: {
+        'Accept': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      }
+    })
+    
+    console.log('Export response status:', response.status)
+    
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message || 'Failed to export tax cases')
+    }
+    
+    // Create blob and download
+    const blob = await response.blob()
+    const downloadUrl = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = downloadUrl
+    
+    // Extract filename from response header or use default
+    const contentDisposition = response.headers.get('content-disposition')
+    let filename = 'tax-cases-export.xlsx'
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/)
+      if (filenameMatch) {
+        filename = filenameMatch[1]
+      }
+    }
+    
+    link.setAttribute('download', filename)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(downloadUrl)
+    
+    console.log('Export successful:', filename)
+    
+  } catch (error) {
+    console.error('Export error:', error)
+    alert('Error exporting tax cases: ' + error.message)
+  } finally {
+    isExporting.value = false
   }
 }
 </script>

@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\Api\EntityController;
 use App\Http\Controllers\Api\TaxCaseController;
+use App\Http\Controllers\Api\TaxCaseExportController;
 use App\Http\Controllers\Api\RevisionController;
 use App\Http\Controllers\Api\SkpRecordController;
 use App\Http\Controllers\Api\Sp2RecordController;
@@ -26,6 +27,7 @@ use App\Http\Controllers\Api\ObjectionSubmissionController;
 use App\Http\Controllers\Api\SupremeCourtDecisionController;
 use App\Http\Controllers\Api\SupremeCourtSubmissionController;
 use App\Http\Controllers\Api\AppealExplanationRequestController;
+use App\Http\Controllers\Api\ExchangeRateController;
 
 // ============================================================================
 // AUTHENTICATION ROUTES - Public
@@ -78,6 +80,7 @@ Route::get('/test', function () {
 Route::middleware('auth')->prefix('tax-cases')->group(function () {
     Route::get('/', [TaxCaseController::class, 'index'])->name('tax-cases.index');
     Route::post('/', [TaxCaseController::class, 'store'])->name('tax-cases.store');
+    Route::get('/export', [TaxCaseExportController::class, 'export'])->name('tax-cases.export');
     
     Route::prefix('{taxCase}')->group(function () {
         Route::get('/', [TaxCaseController::class, 'show'])->name('tax-cases.show');
@@ -618,6 +621,15 @@ Route::middleware('auth')->group(function () {
     // ANNOUNCEMENTS ROUTES
     // ============================================================================
     Route::apiResource('announcements', AnnouncementController::class);
+
+    // ============================================================================
+    // EXCHANGE RATE ROUTES
+    // ============================================================================
+    Route::prefix('exchange-rates')->group(function () {
+        Route::get('/', [ExchangeRateController::class, 'index'])->name('exchange-rates.index');
+        Route::put('/', [ExchangeRateController::class, 'update'])->name('exchange-rates.update');
+        Route::get('/{currency}', [ExchangeRateController::class, 'show'])->name('exchange-rates.show');
+    });
 
     // ============================================================================
     // DASHBOARD ANALYTICS ROUTES

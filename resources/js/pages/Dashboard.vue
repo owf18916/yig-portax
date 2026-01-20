@@ -72,70 +72,76 @@
       </div>
     </Card>
 
-    <!-- Announcements Section -->
-    <Card title="Announcements" subtitle="Latest updates and notifications">
-      <div class="space-y-4">
-        <!-- Admin Create Button -->
-        <div v-if="isAdmin" class="mb-4">
-          <Button @click="openCreateAnnouncementModal" variant="primary" block>
-            <svg class="inline w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-            </svg>
-            Create Announcement
-          </Button>
-        </div>
-
-        <!-- Announcements List -->
-        <div class="space-y-3">
-          <div v-if="announcements.length === 0" class="text-center py-8">
-            <p class="text-gray-500">No announcements at the moment</p>
+    <!-- Announcements and Exchange Rates Section -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Announcements Card -->
+      <Card title="Announcements" subtitle="Latest updates and notifications">
+        <div class="space-y-4">
+          <!-- Admin Create Button -->
+          <div v-if="isAdmin" class="mb-4">
+            <Button @click="openCreateAnnouncementModal" variant="primary" block>
+              <svg class="inline w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+              Create Announcement
+            </Button>
           </div>
 
-          <div
-            v-for="announcement in announcements"
-            :key="announcement.id"
-            :class="getAnnouncementClass(announcement.type)"
-            class="p-4 rounded border-l-4 group relative"
-          >
-            <div class="flex items-start gap-3">
-              <svg
-                :class="getAnnouncementIconClass(announcement.type)"
-                class="h-5 w-5 flex-shrink-0 mt-0.5"
-                fill="currentColor"
-                viewBox="0 0 20 20"
-              >
-                <path v-if="announcement.type === 'info'" fill-rule="evenodd" d="M18 5v8a2 2 0 01-2 2h-5l-5 4v-4H4a2 2 0 01-2-2V5a2 2 0 012-2h12a2 2 0 012 2zm-11-1a1 1 0 11-2 0 1 1 0 012 0z" clip-rule="evenodd" />
-                <path v-else-if="announcement.type === 'success'" fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-                <path v-else-if="announcement.type === 'warning'" fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
-                <path v-else fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
-              </svg>
-              <div class="flex-1">
-                <p :class="getAnnouncementTitleClass(announcement.type)" class="font-semibold">{{ announcement.title }}</p>
-                <p :class="getAnnouncementTextClass(announcement.type)" class="text-sm mt-1">{{ announcement.content }}</p>
-                <p :class="getAnnouncementDateClass(announcement.type)" class="text-xs mt-1">{{ formatDate(announcement.published_at) }}</p>
-              </div>
-              <!-- Admin Action Buttons -->
-              <div v-if="isAdmin" class="flex-shrink-0 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
-                  @click="openEditAnnouncementModal(announcement)"
-                  :class="getAnnouncementTextClass(announcement.type)"
-                  class="hover:underline text-xs font-medium"
+          <!-- Announcements List -->
+          <div class="space-y-3">
+            <div v-if="announcements.length === 0" class="text-center py-8">
+              <p class="text-gray-500">No announcements at the moment</p>
+            </div>
+
+            <div
+              v-for="announcement in announcements"
+              :key="announcement.id"
+              :class="getAnnouncementClass(announcement.type)"
+              class="p-4 rounded border-l-4 group relative"
+            >
+              <div class="flex items-start gap-3">
+                <svg
+                  :class="getAnnouncementIconClass(announcement.type)"
+                  class="h-5 w-5 flex-shrink-0 mt-0.5"
+                  fill="currentColor"
+                  viewBox="0 0 20 20"
                 >
-                  Edit
-                </button>
-                <button
-                  @click="deleteAnnouncementQuick(announcement)"
-                  :class="getAnnouncementTextClass(announcement.type)"
-                  class="hover:underline text-xs font-medium text-red-600"
-                >
-                  Delete
-                </button>
+                  <path v-if="announcement.type === 'info'" fill-rule="evenodd" d="M18 5v8a2 2 0 01-2 2h-5l-5 4v-4H4a2 2 0 01-2-2V5a2 2 0 012-2h12a2 2 0 012 2zm-11-1a1 1 0 11-2 0 1 1 0 012 0z" clip-rule="evenodd" />
+                  <path v-else-if="announcement.type === 'success'" fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                  <path v-else-if="announcement.type === 'warning'" fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                  <path v-else fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                </svg>
+                <div class="flex-1">
+                  <p :class="getAnnouncementTitleClass(announcement.type)" class="font-semibold">{{ announcement.title }}</p>
+                  <p :class="getAnnouncementTextClass(announcement.type)" class="text-sm mt-1">{{ announcement.content }}</p>
+                  <p :class="getAnnouncementDateClass(announcement.type)" class="text-xs mt-1">{{ formatDate(announcement.published_at) }}</p>
+                </div>
+                <!-- Admin Action Buttons -->
+                <div v-if="isAdmin" class="flex-shrink-0 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    @click="openEditAnnouncementModal(announcement)"
+                    :class="getAnnouncementTextClass(announcement.type)"
+                    class="hover:underline text-xs font-medium"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    @click="deleteAnnouncementQuick(announcement)"
+                    :class="getAnnouncementTextClass(announcement.type)"
+                    class="hover:underline text-xs font-medium text-red-600"
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-    </Card>
+      </Card>
+
+      <!-- Exchange Rates Card -->
+      <ExchangeRateTable :key="exchangeRateRefreshKey" />
+    </div>
 
     <!-- Announcement Modal -->
     <AnnouncementModal
@@ -143,6 +149,13 @@
       :editData="selectedAnnouncement"
       :onSubmit="handleAnnouncementSubmit"
       :onClose="closeAnnouncementModal"
+    />
+
+    <!-- Exchange Rate Setup Modal -->
+    <ExchangeRateModal
+      :isOpen="showExchangeRateModal"
+      @close="closeExchangeRateModal"
+      @success="handleExchangeRateSuccess"
     />
 
     <!-- Analytics Charts Section -->
@@ -221,6 +234,8 @@ import WorkflowStageDrawer from '../components/WorkflowStageDrawer.vue'
 import OpenCasesChart from '../components/charts/OpenCasesChart.vue'
 import DisputedAmountChart from '../components/charts/DisputedAmountChart.vue'
 import AnnouncementModal from '../components/AnnouncementModal.vue'
+import ExchangeRateModal from '../components/ExchangeRateModal.vue'
+import ExchangeRateTable from '../components/ExchangeRateTable.vue'
 
 const selectedStageId = ref(null)
 const allCases = ref([])
@@ -230,6 +245,8 @@ const announcements = ref([])
 const currentUser = ref(null)
 const showAnnouncementModal = ref(false)
 const selectedAnnouncement = ref(null)
+const showExchangeRateModal = ref(false)
+const exchangeRateRefreshKey = ref(0)
 
 // Dashboard stats
 const totalCases = ref(0)
@@ -693,6 +710,19 @@ const refreshData = async () => {
     loadChartData(),
     loadAnnouncements()
   ])
+}
+
+const openExchangeRateModal = () => {
+  showExchangeRateModal.value = true
+}
+
+const closeExchangeRateModal = () => {
+  showExchangeRateModal.value = false
+}
+
+const handleExchangeRateSuccess = () => {
+  // Refresh the exchange rate table by changing key
+  exchangeRateRefreshKey.value += 1
 }
 
 onMounted(async () => {
