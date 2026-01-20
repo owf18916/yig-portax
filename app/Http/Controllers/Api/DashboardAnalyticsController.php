@@ -25,9 +25,9 @@ class DashboardAnalyticsController extends ApiController
             $data = [];
 
             foreach ($entities as $entity) {
-                // Get count of open and draft cases by type
+                // Get count of incomplete cases by type (aggregate all currencies)
                 $openCases = TaxCase::where('entity_id', $entity->id)
-                    ->whereIn('case_status_id', $this->getOpenStatusIds())
+                    ->where('is_completed', false)
                     ->selectRaw('case_type, COUNT(*) as count')
                     ->groupBy('case_type')
                     ->get();
@@ -46,9 +46,15 @@ class DashboardAnalyticsController extends ApiController
                 $data[] = [
                     'entity' => $entity->name,
                     'entity_id' => $entity->id,
-                    'cit' => $citCount,
-                    'vat' => $vatCount,
-                    'total' => $citCount + $vatCount
+                    'currencies' => [
+                        [
+                            'code' => 'ALL',
+                            'name' => 'All Currencies',
+                            'symbol' => '',
+                            'cit' => $citCount,
+                            'vat' => $vatCount
+                        ]
+                    ]
                 ];
             }
 
@@ -66,7 +72,7 @@ class DashboardAnalyticsController extends ApiController
     }
 
     /**
-     * Get disputed amount data grouped by entity and case type
+     * Get disputed amount data grouped by entity, currency and case type
      * Returns data for stacked bar chart showing CIT vs VAT disputed amounts
      */
     public function disputedAmountPerEntity(Request $request)
@@ -80,30 +86,43 @@ class DashboardAnalyticsController extends ApiController
             $data = [];
 
             foreach ($entities as $entity) {
-                // Get sum of disputed amounts by type for open/draft cases
+                // Get sum of disputed amounts by type and currency for incomplete cases
                 $disputedAmounts = TaxCase::where('entity_id', $entity->id)
-                    ->whereIn('case_status_id', $this->getOpenStatusIds())
-                    ->selectRaw('case_type, SUM(disputed_amount) as total_amount')
-                    ->groupBy('case_type')
+                    ->where('is_completed', false)
+                    ->with('currency')
+                    ->selectRaw('currency_id, case_type, SUM(disputed_amount) as total_amount')
+                    ->groupBy('currency_id', 'case_type')
                     ->get();
 
-                $citAmount = 0;
-                $vatAmount = 0;
-
+                // Group by currency
+                $currenciesMap = [];
+                
                 foreach ($disputedAmounts as $case) {
+                    if (!$case->currency) continue;
+                    
+                    $currencyCode = $case->currency->code;
+                    
+                    if (!isset($currenciesMap[$currencyCode])) {
+                        $currenciesMap[$currencyCode] = [
+                            'code' => $case->currency->code,
+                            'name' => $case->currency->name,
+                            'symbol' => $case->currency->symbol,
+                            'cit' => 0,
+                            'vat' => 0
+                        ];
+                    }
+                    
                     if ($case->case_type === 'CIT') {
-                        $citAmount = (float) $case->total_amount;
+                        $currenciesMap[$currencyCode]['cit'] = (float) $case->total_amount;
                     } elseif ($case->case_type === 'VAT') {
-                        $vatAmount = (float) $case->total_amount;
+                        $currenciesMap[$currencyCode]['vat'] = (float) $case->total_amount;
                     }
                 }
 
                 $data[] = [
                     'entity' => $entity->name,
                     'entity_id' => $entity->id,
-                    'cit' => $citAmount,
-                    'vat' => $vatAmount,
-                    'total' => $citAmount + $vatAmount
+                    'currencies' => array_values($currenciesMap)
                 ];
             }
 
@@ -134,9 +153,9 @@ class DashboardAnalyticsController extends ApiController
             $disputedAmountData = [];
 
             foreach ($entities as $entity) {
-                // Open cases data
+                // Open cases data - simple count (no currency grouping)
                 $openCases = TaxCase::where('entity_id', $entity->id)
-                    ->whereIn('case_status_id', $this->getOpenStatusIds())
+                    ->where('is_completed', false)
                     ->selectRaw('case_type, COUNT(*) as count')
                     ->groupBy('case_type')
                     ->get();
@@ -155,35 +174,52 @@ class DashboardAnalyticsController extends ApiController
                 $openCasesData[] = [
                     'entity' => $entity->name,
                     'entity_id' => $entity->id,
-                    'cit' => $citCaseCount,
-                    'vat' => $vatCaseCount,
-                    'total' => $citCaseCount + $vatCaseCount
+                    'currencies' => [
+                        [
+                            'code' => 'ALL',
+                            'name' => 'All Currencies',
+                            'symbol' => '',
+                            'cit' => $citCaseCount,
+                            'vat' => $vatCaseCount
+                        ]
+                    ]
                 ];
 
-                // Disputed amount data
+                // Disputed amount data - group by currency
                 $disputedAmounts = TaxCase::where('entity_id', $entity->id)
-                    ->whereIn('case_status_id', $this->getOpenStatusIds())
-                    ->selectRaw('case_type, SUM(disputed_amount) as total_amount')
-                    ->groupBy('case_type')
+                    ->where('is_completed', false)
+                    ->with('currency')
+                    ->selectRaw('currency_id, case_type, SUM(disputed_amount) as total_amount')
+                    ->groupBy('currency_id', 'case_type')
                     ->get();
 
-                $citAmount = 0;
-                $vatAmount = 0;
-
+                $currenciesMapAmounts = [];
                 foreach ($disputedAmounts as $case) {
+                    if (!$case->currency) continue;
+                    
+                    $currencyCode = $case->currency->code;
+                    
+                    if (!isset($currenciesMapAmounts[$currencyCode])) {
+                        $currenciesMapAmounts[$currencyCode] = [
+                            'code' => $case->currency->code,
+                            'name' => $case->currency->name,
+                            'symbol' => $case->currency->symbol,
+                            'cit' => 0,
+                            'vat' => 0
+                        ];
+                    }
+                    
                     if ($case->case_type === 'CIT') {
-                        $citAmount = (float) $case->total_amount;
+                        $currenciesMapAmounts[$currencyCode]['cit'] = (float) $case->total_amount;
                     } elseif ($case->case_type === 'VAT') {
-                        $vatAmount = (float) $case->total_amount;
+                        $currenciesMapAmounts[$currencyCode]['vat'] = (float) $case->total_amount;
                     }
                 }
 
                 $disputedAmountData[] = [
                     'entity' => $entity->name,
                     'entity_id' => $entity->id,
-                    'cit' => $citAmount,
-                    'vat' => $vatAmount,
-                    'total' => $citAmount + $vatAmount
+                    'currencies' => array_values($currenciesMapAmounts)
                 ];
             }
 
@@ -199,19 +235,5 @@ class DashboardAnalyticsController extends ApiController
                 'error' => $e->getMessage()
             ], 500);
         }
-    }
-
-    /**
-     * Get IDs of open/draft statuses
-     * This should match your case status definitions
-     */
-    private function getOpenStatusIds()
-    {
-        // This gets status IDs where cases are considered "open" (draft, open, in progress)
-        // Adjust the codes based on your actual database values
-        return DB::table('case_statuses')
-            ->whereIn('code', ['draft', 'open', 'in_progress', 'pending_approval'])
-            ->pluck('id')
-            ->toArray();
     }
 }

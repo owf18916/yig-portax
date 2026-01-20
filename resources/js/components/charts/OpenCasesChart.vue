@@ -19,6 +19,31 @@ const props = defineProps({
 const chartRef = ref(null)
 let chartInstance = null
 
+// Get chart data - aggregate all currencies per entity
+const getChartData = () => {
+  const labels = []
+  const citData = []
+  const vatData = []
+
+  props.data.forEach(entity => {
+    if (!entity.currencies || !Array.isArray(entity.currencies)) return
+
+    // Aggregate all currencies
+    let citTotal = 0
+    let vatTotal = 0
+    entity.currencies.forEach(curr => {
+      citTotal += curr.cit || 0
+      vatTotal += curr.vat || 0
+    })
+    
+    labels.push(entity.entity)
+    citData.push(citTotal)
+    vatData.push(vatTotal)
+  })
+
+  return { labels, citData, vatData }
+}
+
 const createChart = () => {
   if (!chartRef.value || !props.data || props.data.length === 0) return
 
@@ -27,9 +52,11 @@ const createChart = () => {
     chartInstance.destroy()
   }
 
-  const labels = props.data.map(item => item.entity)
-  const citData = props.data.map(item => item.cit)
-  const vatData = props.data.map(item => item.vat)
+  const { labels, citData, vatData } = getChartData()
+
+  if (labels.length === 0) {
+    return
+  }
 
   const ctx = chartRef.value.getContext('2d')
   

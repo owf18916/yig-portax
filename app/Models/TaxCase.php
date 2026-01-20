@@ -207,4 +207,14 @@ class TaxCase extends Model
     {
         return $this->entity?->name ?? 'Unknown Entity';
     }
+
+    public function getStageStatusAttribute()
+    {
+        $latestHistory = $this->workflowHistories()
+            ->where('stage_id', $this->current_stage)
+            ->latest('created_at')
+            ->first();
+        
+        return $latestHistory?->status ?? 'draft';
+    }
 }

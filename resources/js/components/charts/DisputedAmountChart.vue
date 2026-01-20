@@ -1,11 +1,26 @@
 <template>
-  <div class="w-full">
+  <div class="w-full space-y-4">
+    <!-- Currency Selector -->
+    <div class="flex items-center gap-2">
+      <label class="text-sm font-medium text-gray-700">Currency:</label>
+      <select 
+        v-model="selectedCurrency" 
+        class="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      >
+        <option value="">All Currencies</option>
+        <option v-for="curr in availableCurrencies" :key="curr" :value="curr">
+          {{ curr }}
+        </option>
+      </select>
+    </div>
+    
+    <!-- Chart -->
     <canvas ref="chartRef"></canvas>
   </div>
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 import Chart from 'chart.js/auto'
 
 const props = defineProps({
@@ -18,6 +33,54 @@ const props = defineProps({
 
 const chartRef = ref(null)
 let chartInstance = null
+const selectedCurrency = ref('USD') // Default to USD
+
+// Get available currencies from data
+const availableCurrencies = computed(() => {
+  const currencies = new Set()
+  props.data.forEach(entity => {
+    if (entity.currencies && Array.isArray(entity.currencies)) {
+      entity.currencies.forEach(curr => {
+        currencies.add(curr.code)
+      })
+    }
+  })
+  return Array.from(currencies).sort()
+})
+
+// Get chart data for selected currency
+const getChartData = () => {
+  const labels = []
+  const citData = []
+  const vatData = []
+
+  props.data.forEach(entity => {
+    if (!entity.currencies || !Array.isArray(entity.currencies)) return
+
+    // If no currency selected, combine all
+    if (!selectedCurrency.value) {
+      let citTotal = 0
+      let vatTotal = 0
+      entity.currencies.forEach(curr => {
+        citTotal += curr.cit || 0
+        vatTotal += curr.vat || 0
+      })
+      labels.push(entity.entity)
+      citData.push(citTotal)
+      vatData.push(vatTotal)
+    } else {
+      // Find specific currency
+      const currencyData = entity.currencies.find(c => c.code === selectedCurrency.value)
+      if (currencyData) {
+        labels.push(`${entity.entity} (${currencyData.code})`)
+        citData.push(currencyData.cit || 0)
+        vatData.push(currencyData.vat || 0)
+      }
+    }
+  })
+
+  return { labels, citData, vatData }
+}
 
 const formatCurrency = (value) => {
   if (value >= 1000000) {
@@ -36,9 +99,11 @@ const createChart = () => {
     chartInstance.destroy()
   }
 
-  const labels = props.data.map(item => item.entity)
-  const citData = props.data.map(item => item.cit)
-  const vatData = props.data.map(item => item.vat)
+  const { labels, citData, vatData } = getChartData()
+
+  if (labels.length === 0) {
+    return
+  }
 
   const ctx = chartRef.value.getContext('2d')
   
@@ -151,6 +216,10 @@ const createChart = () => {
 watch(() => props.data, () => {
   createChart()
 }, { deep: true })
+
+watch(() => selectedCurrency.value, () => {
+  createChart()
+})
 
 onMounted(() => {
   createChart()

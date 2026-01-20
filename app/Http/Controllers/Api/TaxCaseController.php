@@ -23,7 +23,10 @@ class TaxCaseController extends ApiController
             'period',
             'status',
             'currency',
-            'user'
+            'user',
+            'workflowHistories' => function ($query) {
+                $query->latest('created_at');
+            }
         ]);
 
         // Filter by entity (multi-company support)
@@ -125,8 +128,19 @@ class TaxCaseController extends ApiController
 
         $taxCase = TaxCase::create($validated);
 
+        // Create initial workflow history entry for Stage 1 (SPT Filing) with 'submitted' status
+        $taxCase->workflowHistories()->create([
+            'stage_id' => 1,
+            'stage_from' => null,
+            'stage_to' => 2,
+            'action' => 'submitted',
+            'status' => 'submitted',
+            'user_id' => $user->id,
+            'notes' => 'Initial tax case submission at Stage 1 (SPT Filing)',
+        ]);
+
         return $this->success(
-            $taxCase->load(['entity', 'fiscalYear', 'period', 'status']),
+            $taxCase->load(['entity', 'fiscalYear', 'period', 'status', 'workflowHistories']),
             'Tax case created successfully',
             201
         );

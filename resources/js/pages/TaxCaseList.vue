@@ -1,9 +1,8 @@
 <template>
   <div class="space-y-6">
     <Card title="Tax Cases" subtitle="View and manage your tax cases">
-      <!-- Search and Filters -->
-      <div class="mb-6 space-y-4">
-        <!-- Search Bar -->
+      <!-- Search Bar -->
+      <div class="mb-6">
         <div class="flex justify-between items-center">
           <input
             v-model="searchQuery"
@@ -20,68 +19,118 @@
             </Button>
           </div>
         </div>
-
-        <!-- Filters -->
-        <div class="grid grid-cols-3 gap-4">
-          <!-- Type Filter -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Type</label>
-            <select
-              v-model="filterType"
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">All Types</option>
-              <option value="CIT">CIT</option>
-              <option value="VAT">VAT</option>
-            </select>
-          </div>
-
-          <!-- Entity Filter -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Entity</label>
-            <select
-              v-model="filterEntity"
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">All Entities</option>
-              <option v-for="entity in availableEntities" :key="entity.id" :value="entity.id">
-                {{ entity.name }}
-              </option>
-            </select>
-          </div>
-
-          <!-- Status Filter -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Status</label>
-            <select
-              v-model="filterStatus"
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">All Status</option>
-              <option value="DRAFT">Draft</option>
-              <option value="OPEN">Open</option>
-              <option value="COMPLETED">Completed</option>
-            </select>
-          </div>
-        </div>
       </div>
 
       <LoadingSpinner v-if="loading" message="Loading tax cases..." />
 
-      <div v-else-if="filteredCases.length === 0" class="text-center py-8 text-gray-500">
-        <p>No tax cases found</p>
-      </div>
-
       <div v-else class="overflow-x-auto">
         <table class="w-full text-sm">
-          <thead class="bg-gray-100 border-b">
-            <tr>
-              <th class="px-4 py-2 text-left">Case Number</th>
-              <th class="px-4 py-2 text-left">Type</th>
-              <th class="px-4 py-2 text-left">Entity Name</th>
-              <th class="px-4 py-2 text-left">Status</th>
-              <th class="px-4 py-2 text-right">Amount</th>
-              <th class="px-4 py-2 text-center">Actions</th>
+          <thead>
+            <tr class="bg-gray-100 border-b">
+              <!-- Case Number Column -->
+              <th class="px-4 py-3 text-left">
+                <div class="font-medium mb-2">Case Number</div>
+                <input
+                  v-model="filterCaseNumber"
+                  type="text"
+                  placeholder="Filter..."
+                  class="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </th>
+
+              <!-- Type Column -->
+              <th class="px-4 py-3 text-left">
+                <div class="font-medium mb-2">Type</div>
+                <select
+                  v-model="filterType"
+                  class="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="">All</option>
+                  <option value="CIT">CIT</option>
+                  <option value="VAT">VAT</option>
+                </select>
+              </th>
+
+              <!-- Entity Column -->
+              <th class="px-4 py-3 text-left">
+                <div class="font-medium mb-2">Entity</div>
+                <select
+                  v-model="filterEntity"
+                  class="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="">All</option>
+                  <option v-for="entity in availableEntities" :key="entity.id" :value="entity.id">
+                    {{ entity.name }}
+                  </option>
+                </select>
+              </th>
+
+              <!-- Case Status Column -->
+              <th class="px-4 py-3 text-left">
+                <div class="font-medium mb-2">Case Status</div>
+                <select
+                  v-model="filterStatus"
+                  class="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="">All</option>
+                  <option value="open">Open</option>
+                  <option value="closed">Closed</option>
+                </select>
+              </th>
+
+              <!-- Current Stage Column -->
+              <th class="px-4 py-3 text-left">
+                <div class="font-medium mb-2">Current Stage</div>
+                <select
+                  v-model="filterCurrentStage"
+                  class="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="">All</option>
+                  <option v-for="stage in availableStages" :key="stage" :value="stage">
+                    {{ getStageName(stage) }}
+                  </option>
+                </select>
+              </th>
+
+              <!-- Stage Status Column -->
+              <th class="px-4 py-3 text-left">
+                <div class="font-medium mb-2">Stage Status</div>
+                <select
+                  v-model="filterStageStatus"
+                  class="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="">All</option>
+                  <option value="draft">Draft</option>
+                  <option value="submitted">Submitted</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </th>
+
+              <!-- Period Column -->
+              <th class="px-4 py-3 text-left">
+                <div class="font-medium mb-2">Period</div>
+                <select
+                  v-model="filterPeriod"
+                  class="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="">All</option>
+                  <option v-for="period in availablePeriods" :key="period" :value="period">
+                    {{ period }}
+                  </option>
+                </select>
+              </th>
+
+              <!-- Amount Column -->
+              <th class="px-4 py-3 text-right">
+                <div class="font-medium">Amount</div>
+              </th>
+
+              <!-- Actions Column -->
+              <th class="px-4 py-3 text-center">
+                <div class="font-medium">Actions</div>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -94,9 +143,22 @@
               </td>
               <td class="px-4 py-2">{{ taxCase.entity_name }}</td>
               <td class="px-4 py-2">
-                <span :class="getStatusClass(taxCase.status?.code || 'DRAFT')">
-                  {{ formatStatus(taxCase.status?.name || 'Draft') }}
+                <span :class="getCaseStatusClass(taxCase.is_completed)">
+                  {{ getCaseStatusLabel(taxCase.is_completed) }}
                 </span>
+              </td>
+              <td class="px-4 py-2">
+                <span class="px-2 py-1 bg-indigo-100 text-indigo-800 rounded text-xs font-medium">
+                  {{ getStageName(taxCase.current_stage) }}
+                </span>
+              </td>
+              <td class="px-4 py-2">
+                <span :class="getStageStatusClass(getStageStatus(taxCase))">
+                  {{ formatStatus(getStageStatus(taxCase)) }}
+                </span>
+              </td>
+              <td class="px-4 py-2 text-sm">
+                {{ taxCase.period?.period_code || '-' }}
               </td>
               <td class="px-4 py-2 text-right">{{ formatCurrency(taxCase.disputed_amount || 0, taxCase.currency?.code) }}</td>
               <td class="px-4 py-2 text-center space-x-2">
@@ -110,6 +172,10 @@
             </tr>
           </tbody>
         </table>
+
+        <div v-if="filteredCases.length === 0" class="text-center py-8 text-gray-500">
+          <p>No tax cases found</p>
+        </div>
       </div>
     </Card>
   </div>
@@ -124,13 +190,55 @@ import LoadingSpinner from '../components/LoadingSpinner.vue'
 
 const router = useRouter()
 
+// Stage name mapping
+const stageNames = {
+  1: 'SPT Filing',
+  2: 'SP2',
+  3: 'SPHP',
+  4: 'SKP',
+  5: 'Objection Submission',
+  6: 'SPUH',
+  7: 'Objection Decision',
+  8: 'Appeal Submission',
+  9: 'Appeal Explanation',
+  10: 'Appeal Decision',
+  11: 'Supreme Court Submission',
+  12: 'Supreme Court Decision',
+  13: 'Bank Transfer Request',
+  14: 'Transfer Instruction',
+  15: 'Refund Received',
+  16: 'KIAN Report'
+}
+
+// Search & filter state
 const searchQuery = ref('')
+const filterCaseNumber = ref('')
 const filterType = ref('')
 const filterEntity = ref('')
 const filterStatus = ref('')
+const filterCurrentStage = ref('')
+const filterStageStatus = ref('')
+const filterPeriod = ref('')
+
+// Data state
 const loading = ref(true)
 const taxCases = ref([])
 const availableEntities = ref([])
+const availableStages = computed(() => {
+  const stages = new Set()
+  taxCases.value.forEach(tc => {
+    if (tc.current_stage) stages.add(tc.current_stage)
+  })
+  return Array.from(stages).sort((a, b) => a - b)
+})
+
+const availablePeriods = computed(() => {
+  const periods = new Set()
+  taxCases.value.forEach(tc => {
+    if (tc.period?.period_code) periods.add(tc.period.period_code)
+  })
+  return Array.from(periods).sort()
+})
 
 const filteredCases = computed(() => {
   return taxCases.value.filter(tc => {
@@ -139,16 +247,36 @@ const filteredCases = computed(() => {
       tc.case_number.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
       tc.entity_name.toLowerCase().includes(searchQuery.value.toLowerCase())
     
+    // Case number filter
+    const matchesCaseNumber = !filterCaseNumber.value || 
+      tc.case_number.toLowerCase().includes(filterCaseNumber.value.toLowerCase())
+    
     // Type filter
     const matchesType = !filterType.value || tc.case_type === filterType.value
     
     // Entity filter
     const matchesEntity = !filterEntity.value || tc.entity_id == filterEntity.value
     
-    // Status filter
-    const matchesStatus = !filterStatus.value || (tc.status?.code === filterStatus.value)
+    // Status filter (based on is_completed field: 0=open, 1=closed)
+    const matchesStatus = !filterStatus.value || (
+      (filterStatus.value === 'open' && !tc.is_completed) ||
+      (filterStatus.value === 'closed' && tc.is_completed)
+    )
     
-    return matchesSearch && matchesType && matchesEntity && matchesStatus
+    // Current stage filter
+    const matchesCurrentStage = !filterCurrentStage.value || 
+      tc.current_stage == filterCurrentStage.value
+    
+    // Stage status filter
+    const matchesStageStatus = !filterStageStatus.value || 
+      (tc.stage_status || 'draft') === filterStageStatus.value
+    
+    // Period filter
+    const matchesPeriod = !filterPeriod.value || 
+      tc.period?.period_code === filterPeriod.value
+    
+    return matchesSearch && matchesCaseNumber && matchesType && matchesEntity && 
+           matchesStatus && matchesCurrentStage && matchesStageStatus && matchesPeriod
   })
 })
 
@@ -217,23 +345,32 @@ onMounted(async () => {
   ])
 })
 
-const getStatusClass = (status) => {
-  const statusLower = (status || 'DRAFT').toLowerCase()
+const getStageStatusClass = (stageStatus) => {
+  const statusLower = (stageStatus || 'draft').toLowerCase()
   const classes = {
-    draft: 'bg-gray-100 text-gray-800 px-3 py-1 rounded-full text-xs font-medium',
-    open: 'bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-medium',
-    submitted: 'bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-medium',
-    approved: 'bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs font-medium',
-    rejected: 'bg-red-100 text-red-800 px-3 py-1 rounded-full text-xs font-medium',
-    completed: 'bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs font-medium',
-    closed: 'bg-gray-600 text-white px-3 py-1 rounded-full text-xs font-medium'
+    draft: 'bg-gray-100 text-gray-800 px-2 py-1 rounded text-xs font-medium',
+    submitted: 'bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-medium',
+    approved: 'bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium',
+    rejected: 'bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-medium',
+    completed: 'bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium'
   }
   return classes[statusLower] || classes.draft
 }
 
+const getCaseStatusClass = (isCompleted) => {
+  if (isCompleted) {
+    return 'bg-gray-600 text-white px-3 py-1 rounded-full text-xs font-medium'
+  }
+  return 'bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-medium'
+}
+
+const getCaseStatusLabel = (isCompleted) => {
+  return isCompleted ? 'Closed' : 'Open'
+}
+
 const formatStatus = (status) => {
   if (!status) return 'Draft'
-  return status.charAt(0).toUpperCase() + status.slice(1)
+  return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase()
 }
 
 const formatCurrency = (amount, currencyCode = 'IDR') => {
@@ -254,98 +391,27 @@ const formatCurrency = (amount, currencyCode = 'IDR') => {
   }).format(amount)
 }
 
-const createCase = async () => {
-  let validationError = false
-
-  if (!newCase.value.entity_name) {
-    alert('Please enter entity name')
-    return
-  }
-
-  if (!newCase.value.fiscal_year) {
-    alert('Please enter fiscal year')
-    return
-  }
-
-  // Validate period format
-  if (newCase.value.case_type === 'VAT') {
-    // VAT: YYYY-MM format
-    if (!newCase.value.period || !/^\d{4}-\d{2}$/.test(newCase.value.period)) {
-      alert('VAT period must be in YYYY-MM format (e.g., 2024-03)')
-      return
-    }
-  } else {
-    // CIT: Auto March
-    if (!newCase.value.fiscal_year) {
-      alert('Please enter fiscal year')
-      return
-    }
-    newCase.value.period = `${newCase.value.fiscal_year}-03` // Auto March for CIT
-  }
-
-  try {
-    // Generate case number: JA17MarV (or JA17MarC)
-    const entityCode = newCase.value.entity_name.substring(0, 2).toUpperCase()
-    const yearCode = String(newCase.value.fiscal_year).slice(-2)
-    
-    let monthCode = ''
-    if (newCase.value.case_type === 'CIT') {
-      monthCode = 'Mar' // Always March for CIT
-    } else {
-      // Extract month from YYYY-MM format
-      const [year, month] = newCase.value.period.split('-')
-      const monthNames = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-      monthCode = monthNames[parseInt(month)]
-    }
-    
-    const typeCode = newCase.value.case_type === 'VAT' ? 'V' : 'C'
-    const caseNumber = `${entityCode}${yearCode}${monthCode}${typeCode}`
-
-    const response = await fetch('/api/tax-cases', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        case_number: caseNumber,
-        case_type: newCase.value.case_type,
-        entity_name: newCase.value.entity_name,
-        fiscal_year: newCase.value.fiscal_year,
-        period: newCase.value.period
-      })
-    })
-
-    if (response.ok) {
-      closeCreateForm()
-      // Reload cases
-      const data = await fetch('/api/tax-cases').then(r => r.json())
-      taxCases.value = data.data || []
-    }
-  } catch (error) {
-    console.error('Failed to create case:', error)
-    alert('Failed to create case. Please try again.')
-  }
+const getStageName = (stageId) => {
+  return stageNames[stageId] || `Stage ${stageId}`
 }
 
-const fetchPeriodsForYear = async () => {
-  // TODO: In Phase 3, fetch periods from database
-  // For now, just validate year
-  if (newCase.value.fiscal_year) {
-    // Auto-set period to March for CIT
-    newCase.value.period = `${newCase.value.fiscal_year}-03`
+const getStageStatus = (taxCase) => {
+  // If workflow histories exist, get the latest status for current stage
+  if (taxCase.workflow_histories && taxCase.workflow_histories.length > 0) {
+    const currentStageHistories = taxCase.workflow_histories.filter(
+      wh => wh.stage_id === taxCase.current_stage
+    )
+    if (currentStageHistories.length > 0) {
+      // Get the most recent one (they should be sorted by created_at desc from API)
+      return currentStageHistories[0].status || 'draft'
+    }
   }
-}
-
-const openCreateForm = (caseType) => {
-  newCase.value.case_type = caseType
-  showCreateForm.value = true
-}
-
-const closeCreateForm = () => {
-  showCreateForm.value = false
-  newCase.value = {
-    case_type: 'CIT',
-    entity_name: '',
-    fiscal_year: new Date().getFullYear(),
-    period: ''
+  
+  // Default for Stage 1 when just created
+  if (taxCase.current_stage === 1 && (!taxCase.workflow_histories || taxCase.workflow_histories.length === 0)) {
+    return 'submitted'
   }
+  
+  return taxCase.stage_status || 'draft'
 }
 </script>

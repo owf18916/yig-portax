@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::table('tax_cases', function (Blueprint $table) {
             // Revision tracking fields
-            $table->enum('revision_status', ['CURRENT', 'IN_REVISION', 'REVISED'])->default('CURRENT')->after('submitted_at');
+            $table->enum('revision_status', ['CURRENT', 'IN_REVISION', 'REVISED'])->default('CURRENT')->after('case_status_id');
             $table->unsignedBigInteger('last_revision_id')->nullable()->after('revision_status');
             
             // Add index for revision queries
