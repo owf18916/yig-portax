@@ -36,6 +36,9 @@ class TaxCase extends Model
         'description',
         'refund_amount',
         'refund_date',
+        'next_action',
+        'next_action_due_date',
+        'status_comment',
     ];
 
     protected $casts = [
@@ -50,6 +53,7 @@ class TaxCase extends Model
         'received_date' => 'date',
         'completed_date' => 'date',
         'refund_date' => 'date',
+        'next_action_due_date' => 'date',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',

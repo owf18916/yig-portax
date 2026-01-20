@@ -238,6 +238,26 @@ class TaxCaseController extends ApiController
     }
 
     /**
+     * Update next action metadata for a tax case
+     * These are separate from workflow stages and used for case follow-up tracking
+     */
+    public function updateNextAction(Request $request, TaxCase $taxCase): JsonResponse
+    {
+        $validated = $request->validate([
+            'next_action' => 'nullable|string|max:1000',
+            'next_action_due_date' => 'nullable|date',
+            'status_comment' => 'nullable|string|max:1000',
+        ]);
+
+        $taxCase->update($validated);
+
+        return $this->success(
+            $taxCase->fresh(),
+            'Next action information updated successfully'
+        );
+    }
+
+    /**
      * Get tax case workflow history
      */
     public function workflowHistory(TaxCase $taxCase): JsonResponse

@@ -122,6 +122,11 @@
                 </select>
               </th>
 
+              <!-- Next Action Column -->
+              <th class="px-4 py-3 text-left">
+                <div class="font-medium">Next Action</div>
+              </th>
+
               <!-- Amount Column -->
               <th class="px-4 py-3 text-right">
                 <div class="font-medium">Amount</div>
@@ -160,14 +165,40 @@
               <td class="px-4 py-2 text-sm">
                 {{ taxCase.period?.period_code || '-' }}
               </td>
+              <td class="px-4 py-2 text-sm">
+                <div class="flex flex-col gap-1">
+                  <span v-if="taxCase.next_action" class="text-gray-700">
+                    {{ taxCase.next_action.length > 50 ? taxCase.next_action.substring(0, 50) + '...' : taxCase.next_action }}
+                  </span>
+                  <span v-else class="text-gray-400 italic">-</span>
+                  <span v-if="taxCase.next_action_due_date" class="text-xs text-orange-600 font-medium">
+                    Due: {{ new Date(taxCase.next_action_due_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) }}
+                  </span>
+                </div>
+              </td>
               <td class="px-4 py-2 text-right">{{ formatCurrency(taxCase.disputed_amount || 0, taxCase.currency?.code) }}</td>
-              <td class="px-4 py-2 text-center space-x-2">
+              <td class="px-4 py-2 text-center space-x-2 flex justify-center items-center">
                 <Button
                   @click="$router.push(`/tax-cases/${taxCase.id}`)"
                   variant="secondary"
                 >
                   View
                 </Button>
+                <button
+                  v-if="!taxCase.is_completed"
+                  @click="openNextActionModal(taxCase)"
+                  :title="`Edit Next Action${taxCase.next_action ? '' : ' - No action set'}`"
+                  class="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-150 group relative"
+                >
+                  <!-- Edit Icon (Pencil) -->
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  <!-- Tooltip -->
+                  <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-900 text-white text-xs py-1 px-2 rounded whitespace-nowrap z-10">
+                    Edit Next Action
+                  </div>
+                </button>
               </td>
             </tr>
           </tbody>
@@ -178,6 +209,14 @@
         </div>
       </div>
     </Card>
+
+    <!-- Next Action Modal -->
+    <NextActionModal
+      :is-open="isNextActionModalOpen"
+      :tax-case-data="selectedTaxCase"
+      @save="saveNextAction"
+      @cancel="closeNextActionModal"
+    />
   </div>
 </template>
 
@@ -187,6 +226,7 @@ import { useRouter } from 'vue-router'
 import Card from '../components/Card.vue'
 import Button from '../components/Button.vue'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
+import NextActionModal from '../components/NextActionModal.vue'
 
 const router = useRouter()
 
@@ -413,5 +453,61 @@ const getStageStatus = (taxCase) => {
   }
   
   return taxCase.stage_status || 'draft'
+}
+
+// ============= NEXT ACTION MODAL LOGIC =============
+const isNextActionModalOpen = ref(false)
+const selectedTaxCase = ref(null)
+const isSavingNextAction = ref(false)
+
+const openNextActionModal = (taxCase) => {
+  selectedTaxCase.value = taxCase
+  isNextActionModalOpen.value = true
+}
+
+const closeNextActionModal = () => {
+  isNextActionModalOpen.value = false
+  selectedTaxCase.value = null
+}
+
+const saveNextAction = async (formData) => {
+  if (!selectedTaxCase.value) return
+  
+  try {
+    isSavingNextAction.value = true
+    
+    const response = await fetch(`/api/tax-cases/${selectedTaxCase.value.id}/next-action`, {
+      method: 'PUT',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+      },
+      body: JSON.stringify(formData)
+    })
+    
+    const result = await response.json()
+    
+    if (!response.ok) {
+      throw new Error(result.message || 'Failed to save next action')
+    }
+    
+    // Update the tax case in the list with new data
+    const index = taxCases.value.findIndex(tc => tc.id === selectedTaxCase.value.id)
+    if (index !== -1) {
+      taxCases.value[index] = {
+        ...taxCases.value[index],
+        ...formData
+      }
+    }
+    
+    closeNextActionModal()
+  } catch (error) {
+    console.error('Error saving next action:', error)
+    alert('Error saving next action: ' + error.message)
+  } finally {
+    isSavingNextAction.value = false
+  }
 }
 </script>

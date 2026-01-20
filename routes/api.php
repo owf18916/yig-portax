@@ -85,6 +85,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         Route::get('/workflow-history', [TaxCaseController::class, 'workflowHistory'])->name('tax-cases.workflow-history');
         Route::get('/documents', [TaxCaseController::class, 'documents'])->name('tax-cases.documents');
         Route::post('/complete', [TaxCaseController::class, 'complete'])->name('tax-cases.complete');
+        Route::put('/next-action', [TaxCaseController::class, 'updateNextAction'])->name('tax-cases.update-next-action');
         
         // Workflow decision routing endpoint - locks workflow path via stage_to
         Route::post('/workflow-decision', function (Request $request, TaxCase $taxCase) {
