@@ -154,14 +154,14 @@ class RevisionService
                         Log::info("RevisionService: Using supremeCourtSubmission as data source");
                     }
                 }
-                // For stage 12 (Supreme Court Decision), fetch data from supremeCourtDecisionRecord
+                // For stage 12 (Supreme Court Decision), fetch data from supremeCourtDecision
                 elseif ((int)$stageCode === 12) {
-                    if (!$revisable->relationLoaded('supremeCourtDecisionRecord')) {
-                        $revisable->load('supremeCourtDecisionRecord');
+                    if (!$revisable->relationLoaded('supremeCourtDecision')) {
+                        $revisable->load('supremeCourtDecision');
                     }
-                    if ($revisable->supremeCourtDecisionRecord) {
-                        $dataSource = $revisable->supremeCourtDecisionRecord;
-                        Log::info("RevisionService: Using supremeCourtDecisionRecord as data source");
+                    if ($revisable->supremeCourtDecision) {
+                        $dataSource = $revisable->supremeCourtDecision;
+                        Log::info("RevisionService: Using supremeCourtDecision as data source");
                     }
                 }
             }
@@ -387,21 +387,12 @@ class RevisionService
                 }
             }
             elseif ($stageCode == 12) {
-                if (!$revisable->relationLoaded('supremeCourtDecisionRecord')) {
-                    $revisable->load('supremeCourtDecisionRecord');
+                if (!$revisable->relationLoaded('supremeCourtDecision')) {
+                    $revisable->load('supremeCourtDecision');
                 }
-                if ($revisable->supremeCourtDecisionRecord) {
-                    $updateTarget = $revisable->supremeCourtDecisionRecord;
-                    Log::info('RevisionService: Using supremeCourtDecisionRecord as update target');
-                }
-            }
-            elseif ($stageCode == 12) {
-                if (!$revisable->relationLoaded('supremeCourtDecisionRecord')) {
-                    $revisable->load('supremeCourtDecisionRecord');
-                }
-                if ($revisable->supremeCourtDecisionRecord) {
-                    $updateTarget = $revisable->supremeCourtDecisionRecord;
-                    Log::info('RevisionService: Using supremeCourtDecisionRecord as update target');
+                if ($revisable->supremeCourtDecision) {
+                    $updateTarget = $revisable->supremeCourtDecision;
+                    Log::info('RevisionService: Using supremeCourtDecision as update target');
                 }
             }
         }

@@ -131,38 +131,37 @@ class TaxCaseSheet implements FromCollection, WithHeadings, ShouldAutoSize, With
             $kianStatus = $taxCase->kianSubmission?->status ?? '';
             $currentStage = $taxCase->current_stage;
 
-            // Get amount based on current stage
-            $amountOriginal = $this->getAmountOriginal($taxCase, $currentStage);
-            $amountUsd = $this->convertToUsd($taxCase, $amountOriginal);
-
-            // Get stage-specific next_action, next_action_due_date, status_comment
+            // Get stage-specific next_action, next_action_due_date, status_comment for current stage
             $stageSpecificData = $this->getStageSpecificData($taxCase, $currentStage);
             $nextAction = $stageSpecificData['next_action'];
             $nextActionDueDate = $stageSpecificData['next_action_due_date'];
             $statusComments = $stageSpecificData['status_comment'];
 
-            // Debug logging
-            Log::info("Exporting tax case: {$refNumber}", [
-                'workflow_histories_count' => $taxCase->workflowHistories?->count() ?? 0,
-                'current_stage' => $currentStage,
-                'amount_original' => $amountOriginal,
-                'amount_usd' => $amountUsd,
-                'currency_code' => $taxCase->currency?->code,
-                'currency_exchange_rate' => $taxCase->currency?->exchange_rate,
-                'next_action' => $nextAction,
-                'status_comment' => $statusComments,
-            ]);
-
             // If no workflow histories, create a default row with basic info
             if (!$taxCase->workflowHistories || $taxCase->workflowHistories->count() === 0) {
+                // Get amount based on current stage
+                $amountOriginal = $this->getAmountOriginal($taxCase, $currentStage);
+                $amountUsd = $this->convertToUsd($taxCase, $amountOriginal);
+
+                // Debug logging
+                Log::info("Exporting tax case (no histories): {$refNumber}", [
+                    'current_stage' => $currentStage,
+                    'amount_original' => $amountOriginal,
+                    'amount_usd' => $amountUsd,
+                    'currency_code' => $taxCase->currency?->code,
+                    'currency_exchange_rate' => $taxCase->currency?->exchange_rate,
+                    'next_action' => $nextAction,
+                    'status_comment' => $statusComments,
+                ]);
+
                 $rows[] = [
                     'FY' => $fy,
                     'Ref #' => $refNumber,
                     'Input Date' => $inputDate,
                     'Audit Status' => '',
                     'Kian' => $kianStatus,
-                    'Amount (Orig. Curr)' => $amountOriginal ? (float)$amountOriginal : '',
-                    'Amount (USD)' => $amountUsd ? (float)$amountUsd : '',
+                    'Amount (Orig. Curr)' => $amountOriginal !== null ? (float)$amountOriginal : '',
+                    'Amount (USD)' => $amountUsd !== null ? (float)$amountUsd : '',
                     'Tax Appeal #' => '',
                     'Tax Appeal' => '',
                     'Next Action' => $nextAction,
@@ -185,11 +184,26 @@ class TaxCaseSheet implements FromCollection, WithHeadings, ShouldAutoSize, With
                     $stageId = $history->stage_id;
                     $stageName = $this->stageNames[$stageId] ?? "Stage {$stageId}";
 
+                    // Get amount based on THIS STAGE (not current_stage!)
+                    $amountOriginal = $this->getAmountOriginal($taxCase, $stageId);
+                    $amountUsd = $this->convertToUsd($taxCase, $amountOriginal);
+
                     // Get stage-specific next_action, next_action_due_date, status_comment for this stage
                     $stageData = $this->getStageSpecificData($taxCase, $stageId);
                     $stageNextAction = $stageData['next_action'];
                     $stageNextActionDueDate = $stageData['next_action_due_date'];
                     $stageStatusComments = $stageData['status_comment'];
+
+                    // Debug logging
+                    Log::info("Exporting tax case stage: {$refNumber} - Stage {$stageId}", [
+                        'stage_id' => $stageId,
+                        'amount_original' => $amountOriginal,
+                        'amount_usd' => $amountUsd,
+                        'currency_code' => $taxCase->currency?->code,
+                        'currency_exchange_rate' => $taxCase->currency?->exchange_rate,
+                        'next_action' => $stageNextAction,
+                        'status_comment' => $stageStatusComments,
+                    ]);
 
                     // Determine if this is Audit Status (stage 1-7) or Tax Appeal (stage 8-10)
                     $auditStatus = '';
@@ -221,8 +235,8 @@ class TaxCaseSheet implements FromCollection, WithHeadings, ShouldAutoSize, With
                         'Input Date' => $inputDate,
                         'Audit Status' => $auditStatus,
                         'Kian' => $kianStatus,
-                        'Amount (Orig. Curr)' => $amountOriginal ? (float)$amountOriginal : '',
-                        'Amount (USD)' => $amountUsd ? (float)$amountUsd : '',
+                        'Amount (Orig. Curr)' => $amountOriginal !== null ? (float)$amountOriginal : '',
+                        'Amount (USD)' => $amountUsd !== null ? (float)$amountUsd : '',
                         'Tax Appeal #' => $taxAppealNumber,
                         'Tax Appeal' => $taxAppealName,
                         'Next Action' => $stageNextAction,

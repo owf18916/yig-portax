@@ -14,12 +14,12 @@ class SupremeCourtDecision extends Model
 
     protected $fillable = [
         'tax_case_id',
-        'decision_letter_number',
+        'decision_number',
         'decision_date',
         'decision_type',
         'decision_amount',
-        'reasoning',
-        'next_stage',
+        'decision_notes',
+        'next_action',
         'submitted_by',
         'submitted_at',
         'approved_by',
@@ -31,7 +31,6 @@ class SupremeCourtDecision extends Model
     protected $casts = [
         'decision_amount' => 'decimal:2',
         'decision_date' => 'date',
-        'next_stage' => 'integer',
         'submitted_at' => 'datetime',
         'approved_at' => 'datetime',
         'created_at' => 'datetime',

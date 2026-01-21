@@ -98,7 +98,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
             'appeal-explanation-requests' => 'App\Models\AppealExplanationRequest',
             'appeal-decisions' => 'App\Models\AppealDecision',
             'supreme-court-submissions' => 'App\Models\SupremeCourtSubmission',
-            'supreme-court-decisions' => 'App\Models\SupremeCourtDecisionRecord',
+            'supreme-court-decisions' => 'App\Models\SupremeCourtDecision',
             'refund-processes' => 'App\Models\RefundProcess',
             'kian-submissions' => 'App\Models\KianSubmission',
         ];
@@ -141,6 +141,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         Route::get('/workflow-history', [TaxCaseController::class, 'workflowHistory'])->name('tax-cases.workflow-history');
         Route::get('/documents', [TaxCaseController::class, 'documents'])->name('tax-cases.documents');
         Route::post('/complete', [TaxCaseController::class, 'complete'])->name('tax-cases.complete');
+        Route::post('/close', [TaxCaseController::class, 'close'])->name('tax-cases.close');
         
         // Workflow decision routing endpoint - locks workflow path via stage_to
         Route::post('/workflow-decision', function (Request $request, TaxCase $taxCase) {
@@ -432,18 +433,17 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                         $taxCase->update(['case_status' => $caseStatus]);
                         
                         Log::info('Stage 12 Final Decision', [
-                            'keputusan_pk' => $keputusanPk,
-                            'next_action' => $nextAction,
-                            'next_stage' => $nextStageId,
+                            'decision_type' => $supremeCourtDecisionData['decision_type'] ?? null,
+                            'next_action' => $supremeCourtDecisionData['next_action'] ?? null,
                             'case_status' => $caseStatus
                         ]);
                     }
                     
-                    \App\Models\SupremeCourtDecisionRecord::updateOrCreate(
+                    \App\Models\SupremeCourtDecision::updateOrCreate(
                         ['tax_case_id' => $taxCase->id],
                         $supremeCourtDecisionData
                     );
-                    Log::info('SupremeCourtDecisionRecord saved', ['supremeCourtDecisionData' => $supremeCourtDecisionData]);
+                    Log::info('SupremeCourtDecision saved', ['supremeCourtDecisionData' => $supremeCourtDecisionData]);
                 }
                 
                 if ($isDraft) {

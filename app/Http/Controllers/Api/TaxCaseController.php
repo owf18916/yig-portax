@@ -2,13 +2,14 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Models\TaxCase;
 use App\Models\Entity;
+use App\Models\TaxCase;
 use App\Models\CaseStatus;
+use Illuminate\Support\Str;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class TaxCaseController extends ApiController
 {
@@ -170,7 +171,7 @@ class TaxCaseController extends ApiController
             'appealExplanationRequest',
             'appealDecision',
             'supremeCourtSubmission',
-            'supremeCourtDecisionRecord',
+            'supremeCourtDecision',
             'refundProcess',
             'kianSubmission',
             'workflowHistories',
@@ -337,5 +338,74 @@ class TaxCaseController extends ApiController
             $year,
             $count
         );
+    }
+
+    /**
+     * Close/Complete a tax case
+     */
+    public function close(Request $request, TaxCase $taxCase): JsonResponse
+    {
+        $user = auth()->user();
+        
+        Log::info('Close case attempt', [
+            'user' => $user,
+            'user_id' => $user?->id,
+            'role_id' => $user?->role_id,
+            'case_id' => $taxCase->id,
+        ]);
+        
+        if (!$user) {
+            return $this->error('Unauthorized', 401);
+        }
+
+        // Only Admin (role_id = 1) can close tax cases
+        if ($user->role_id !== 1) {
+            Log::warning('Non-admin user attempted to close case', [
+                'user_id' => $user->id,
+                'role_id' => $user->role_id,
+                'case_id' => $taxCase->id,
+            ]);
+            return $this->error('Only administrators can close tax cases', 403);
+        }
+
+        // Check if case is already completed
+        if ($taxCase->is_completed) {
+            return $this->error('Tax case is already closed', 422);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            // Update tax case to completed
+            $taxCase->update([
+                'is_completed' => true,
+                'current_stage' => 17,
+            ]);
+
+            // Create workflow history entry for closure
+            $taxCase->workflowHistories()->create([
+                'stage_id' => 17,
+                'stage_from' => $taxCase->current_stage,
+                'action' => 'submitted',
+                'status' => 'completed',
+                'user_id' => $user->id,
+                'notes' => 'Tax case closed by ' . $user->name,
+            ]);
+
+            DB::commit();
+
+            return $this->success(
+                $taxCase->fresh(['entity', 'status', 'workflowHistories']),
+                'Tax case closed successfully',
+                200
+            );
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error closing tax case', [
+                'case_id' => $taxCase->id,
+                'error' => $e->getMessage(),
+            ]);
+            return $this->error('Failed to close tax case: ' . $e->getMessage(), 500);
+        }
     }
 }

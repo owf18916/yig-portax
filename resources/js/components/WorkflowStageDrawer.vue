@@ -89,7 +89,6 @@
                   <th class="text-left px-4 py-3 font-semibold text-gray-700">Case Number</th>
                   <th class="text-left px-4 py-3 font-semibold text-gray-700">Entity Name</th>
                   <th class="text-left px-4 py-3 font-semibold text-gray-700">Case Type</th>
-                  <th class="text-right px-4 py-3 font-semibold text-gray-700">Amount</th>
                 </tr>
               </thead>
               <tbody>
@@ -118,9 +117,6 @@
                     >
                       {{ caseItem.case_type }}
                     </span>
-                  </td>
-                  <td class="px-4 py-3 text-right text-gray-900">
-                    {{ formatCurrency(caseItem.amount) }}
                   </td>
                 </tr>
               </tbody>

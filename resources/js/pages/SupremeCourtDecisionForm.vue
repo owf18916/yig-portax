@@ -78,11 +78,11 @@ const currentDocuments = ref([])
 
 // Available fields untuk revisi
 const availableFields = [
-  'keputusan_pk_number',
-  'keputusan_pk_date',
-  'keputusan_pk',
-  'keputusan_pk_amount',
-  'keputusan_pk_notes',
+  'decision_number',
+  'decision_date',
+  'decision_type',
+  'decision_amount',
+  'decision_notes',
   'next_action',
   'supporting_docs'
 ]
@@ -91,8 +91,8 @@ const fields = ref([
   {
     id: 1,
     type: 'text',
-    key: 'keputusan_pk_number',
-    label: 'Nomor Surat Keputusan Peninjauan Kembali (Supreme Court Decision Number)',
+    key: 'decision_number',
+    label: 'Decision Number (Nomor Surat Keputusan Peninjauan Kembali)',
     required: true,
     readonly: false,
     placeholder: 'e.g., SK/PK/2024/0001'
@@ -100,29 +100,29 @@ const fields = ref([
   {
     id: 2,
     type: 'date',
-    key: 'keputusan_pk_date',
-    label: 'Tanggal Keputusan (Decision Date)',
+    key: 'decision_date',
+    label: 'Decision Date (Tanggal Keputusan)',
     required: true,
     readonly: false
   },
   {
     id: 3,
     type: 'select',
-    key: 'keputusan_pk',
-    label: 'Keputusan (Decision)',
+    key: 'decision_type',
+    label: 'Decision Type (Keputusan)',
     required: true,
     readonly: false,
     options: [
-      { value: 'dikabulkan', label: 'Dikabulkan (Granted)' },
-      { value: 'dikabulkan_sebagian', label: 'Dikabulkan Sebagian (Partially Granted)' },
-      { value: 'ditolak', label: 'Ditolak (Rejected)' }
+      { value: 'granted', label: 'Granted (Dikabulkan)' },
+      { value: 'partially_granted', label: 'Partially Granted (Dikabulkan Sebagian)' },
+      { value: 'rejected', label: 'Rejected (Ditolak)' }
     ]
   },
   {
     id: 4,
     type: 'number',
-    key: 'keputusan_pk_amount',
-    label: 'Nilai Keputusan (Decision Amount)',
+    key: 'decision_amount',
+    label: 'Decision Amount (Nilai Keputusan)',
     required: true,
     readonly: false,
     placeholder: 'Enter decision amount'
@@ -130,8 +130,8 @@ const fields = ref([
   {
     id: 5,
     type: 'textarea',
-    key: 'keputusan_pk_notes',
-    label: 'Catatan Keputusan (Decision Notes)',
+    key: 'decision_notes',
+    label: 'Decision Notes (Catatan Keputusan)',
     required: false,
     readonly: false,
     placeholder: 'Enter any additional notes...'
@@ -139,11 +139,11 @@ const fields = ref([
 ])
 
 const prefillData = ref({
-  keputusan_pk_number: '',
-  keputusan_pk_date: null,
-  keputusan_pk: '',
-  keputusan_pk_amount: 0,
-  keputusan_pk_notes: '',
+  decision_number: '',
+  decision_date: null,
+  decision_type: '',
+  decision_amount: 0,
+  decision_notes: '',
   next_action: '',
   workflowHistories: []
 })
@@ -152,8 +152,8 @@ const prefillData = ref({
 const showDecisionOptions = ref(false)
 const selectedNextAction = ref('')
 
-// ⭐ WATCHER: Show decision options INSTANTLY when keputusan_pk is selected
-watch(() => prefillData.value.keputusan_pk, (newType) => {
+// ⭐ WATCHER: Show decision options INSTANTLY when decision_type is selected
+watch(() => prefillData.value.decision_type, (newType) => {
   if (newType) {
     showDecisionOptions.value = true
   }
@@ -181,9 +181,9 @@ const syncFormDataToParent = (formDataUpdate) => {
 // ⭐ HELPER: Get decision label
 const getDecisionLabel = (type) => {
   const labels = {
-    'dikabulkan': 'Dikabulkan (Granted)',
-    'dikabulkan_sebagian': 'Dikabulkan Sebagian (Partially Granted)',
-    'ditolak': 'Ditolak (Rejected)'
+    'granted': 'Granted (Dikabulkan)',
+    'partially_granted': 'Partially Granted (Dikabulkan Sebagian)',
+    'rejected': 'Rejected (Ditolak)'
   }
   return labels[type] || type
 }
@@ -292,15 +292,15 @@ onMounted(async () => {
     caseData.value = caseFetchedData
 
     // Pre-fill dengan existing Supreme Court Decision record jika ada
-    const supremeCourtDecisionRecord = caseFetchedData.supreme_court_decision_record || caseFetchedData.supremeCourtDecisionRecord
-    if (supremeCourtDecisionRecord) {
+    const supremeCourtDecision = caseFetchedData.supreme_court_decision || caseFetchedData.supremeCourtDecision
+    if (supremeCourtDecision) {
       prefillData.value = {
-        keputusan_pk_number: supremeCourtDecisionRecord.keputusan_pk_number || '',
-        keputusan_pk_date: formatDateForInput(supremeCourtDecisionRecord.keputusan_pk_date),
-        keputusan_pk: supremeCourtDecisionRecord.keputusan_pk || '',
-        keputusan_pk_amount: supremeCourtDecisionRecord.keputusan_pk_amount || 0,
-        keputusan_pk_notes: supremeCourtDecisionRecord.keputusan_pk_notes || '',
-        next_action: supremeCourtDecisionRecord.next_action || '',
+        decision_number: supremeCourtDecision.decision_number || '',
+        decision_date: formatDateForInput(supremeCourtDecision.decision_date),
+        decision_type: supremeCourtDecision.decision_type || '',
+        decision_amount: supremeCourtDecision.decision_amount || 0,
+        decision_notes: supremeCourtDecision.decision_notes || '',
+        next_action: supremeCourtDecision.next_action || '',
         workflowHistories: caseFetchedData.workflow_histories || []
       }
     } else {
@@ -379,16 +379,16 @@ const refreshTaxCase = async () => {
       const caseFetchedData = caseResponse.data ? caseResponse.data : caseResponse
       caseData.value = caseFetchedData
       
-      // Refresh prefill data dari supreme_court_decision_record terbaru
-      const supremeCourtDecisionRecord = caseFetchedData.supreme_court_decision_record || caseFetchedData.supremeCourtDecisionRecord
-      if (supremeCourtDecisionRecord) {
+      // Refresh prefill data dari supreme_court_decision terbaru
+      const supremeCourtDecision = caseFetchedData.supreme_court_decision || caseFetchedData.supremeCourtDecision
+      if (supremeCourtDecision) {
         prefillData.value = {
-          keputusan_pk_number: supremeCourtDecisionRecord.keputusan_pk_number || '',
-          keputusan_pk_date: formatDateForInput(supremeCourtDecisionRecord.keputusan_pk_date),
-          keputusan_pk: supremeCourtDecisionRecord.keputusan_pk || '',
-          keputusan_pk_amount: supremeCourtDecisionRecord.keputusan_pk_amount || 0,
-          keputusan_pk_notes: supremeCourtDecisionRecord.keputusan_pk_notes || '',
-          next_action: supremeCourtDecisionRecord.next_action || '',
+          decision_number: supremeCourtDecision.decision_number || '',
+          decision_date: formatDateForInput(supremeCourtDecision.decision_date),
+          decision_type: supremeCourtDecision.decision_type || '',
+          decision_amount: supremeCourtDecision.decision_amount || 0,
+          decision_notes: supremeCourtDecision.decision_notes || '',
+          next_action: supremeCourtDecision.next_action || '',
           workflowHistories: caseFetchedData.workflow_histories || []
         }
       }

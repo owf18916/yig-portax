@@ -129,14 +129,15 @@ return new class extends Migration
             $table->id();
             $table->unsignedBigInteger('tax_case_id')->unique();
             
-            $table->string('decision_number');
-            $table->date('decision_date');
-            $table->enum('decision_type', ['granted', 'rejected', 'partially_granted']);
+            // Stage 12: Supreme Court Decision fields
+            $table->string('decision_number')->nullable();
+            $table->date('decision_date')->nullable();
+            $table->enum('decision_type', ['granted', 'partially_granted', 'rejected'])->nullable();
             $table->decimal('decision_amount', 20, 2)->nullable();
             $table->text('decision_notes')->nullable();
             
-            // Always routes to Refund
-            $table->integer('next_stage')->default(12);
+            // Decision Routing: flexibile for refund or kian
+            $table->enum('next_action', ['refund', 'kian'])->nullable();
             
             // Workflow
             $table->unsignedBigInteger('submitted_by')->nullable();
@@ -145,6 +146,7 @@ return new class extends Migration
             $table->timestamp('approved_at')->nullable();
             $table->enum('status', ['draft', 'submitted', 'approved', 'rejected'])->default('draft');
             
+            $table->text('notes')->nullable();
             $table->timestamps();
             $table->softDeletes();
             

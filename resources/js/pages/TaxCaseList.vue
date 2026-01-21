@@ -1,28 +1,33 @@
 <template>
   <div class="space-y-6">
+    <!-- Toast Notifications -->
+    <Toast ref="toastRef" />
+
+    <!-- Close Confirmation Dialog -->
+    <ConfirmationDialog
+      :is-open="showCloseConfirmation"
+      title="Close Tax Case"
+      :message="`Are you sure you want to close tax case ${selectedCaseForClose?.case_number}? This action cannot be undone.`"
+      confirm-label="Close Case"
+      cancel-label="Cancel"
+      variant="warning"
+      @confirm="confirmCloseCase"
+      @cancel="cancelCloseCase"
+    />
+
     <Card title="Tax Cases" subtitle="View and manage your tax cases">
-      <!-- Search Bar -->
-      <div class="mb-6">
-        <div class="flex justify-between items-center">
-          <input
-            v-model="searchQuery"
-            type="text"
-            placeholder="Search by case number..."
-            class="px-4 py-2 border border-gray-300 rounded-lg w-64 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <div class="flex space-x-2">
-            <Button @click="exportToExcel" :disabled="isExporting" variant="secondary">
-              <span v-if="!isExporting">📥 Export to Excel</span>
-              <span v-else>Exporting...</span>
-            </Button>
-            <Button @click="$router.push('/tax-cases/create/cit')" variant="primary">
-              + New CIT Case
-            </Button>
-            <Button @click="$router.push('/tax-cases/create/vat')" variant="primary">
-              + New VAT Case
-            </Button>
-          </div>
-        </div>
+      <!-- Action Buttons -->
+      <div class="mb-6 flex justify-end space-x-2">
+        <Button @click="exportToExcel" :disabled="isExporting" variant="secondary">
+          <span v-if="!isExporting">📥 Export to Excel</span>
+          <span v-else>Exporting...</span>
+        </Button>
+        <Button @click="$router.push('/tax-cases/create/cit')" variant="primary">
+          + New CIT Case
+        </Button>
+        <Button @click="$router.push('/tax-cases/create/vat')" variant="primary">
+          + New VAT Case
+        </Button>
       </div>
 
       <LoadingSpinner v-if="loading" message="Loading tax cases..." />
@@ -30,78 +35,104 @@
       <div v-else class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
-            <tr class="bg-gray-100 border-b">
-              <!-- Case Number Column -->
-              <th class="px-4 py-3 text-left">
-                <div class="font-medium mb-2">Case Number</div>
+            <!-- Header Title Row -->
+            <tr class="bg-gradient-to-r from-blue-50 to-blue-100 border-b-2 border-blue-300">
+              <th class="px-4 py-3 text-left w-32">
+                <div class="font-semibold text-gray-700">Case Number</div>
+              </th>
+              <th class="px-4 py-3 text-left w-20">
+                <div class="font-semibold text-gray-700">Type</div>
+              </th>
+              <th class="px-4 py-3 text-left flex-1 min-w-max">
+                <div class="font-semibold text-gray-700">Entity</div>
+              </th>
+              <th class="px-4 py-3 text-left w-28">
+                <div class="font-semibold text-gray-700">Case Status</div>
+              </th>
+              <th class="px-4 py-3 text-left w-32">
+                <div class="font-semibold text-gray-700">Current Stage</div>
+              </th>
+              <th class="px-4 py-3 text-left w-28">
+                <div class="font-semibold text-gray-700">Stage Status</div>
+              </th>
+              <th class="px-4 py-3 text-left w-24">
+                <div class="font-semibold text-gray-700">Period</div>
+              </th>
+              <th class="px-4 py-3 text-right w-32">
+                <div class="font-semibold text-gray-700">Amount</div>
+              </th>
+              <th class="px-4 py-3 text-center w-24">
+                <div class="font-semibold text-gray-700">Actions</div>
+              </th>
+            </tr>
+
+            <!-- Filter Row -->
+            <tr class="bg-gray-50 border-b">
+              <!-- Case Number Filter -->
+              <td class="px-4 py-2.5 w-32">
                 <input
                   v-model="filterCaseNumber"
                   type="text"
                   placeholder="Filter..."
-                  class="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  class="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition"
                 />
-              </th>
+              </td>
 
-              <!-- Type Column -->
-              <th class="px-4 py-3 text-left">
-                <div class="font-medium mb-2">Type</div>
+              <!-- Type Filter -->
+              <td class="px-4 py-2.5 w-20">
                 <select
                   v-model="filterType"
-                  class="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  class="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition bg-white"
                 >
                   <option value="">All</option>
                   <option value="CIT">CIT</option>
                   <option value="VAT">VAT</option>
                 </select>
-              </th>
+              </td>
 
-              <!-- Entity Column -->
-              <th class="px-4 py-3 text-left">
-                <div class="font-medium mb-2">Entity</div>
+              <!-- Entity Filter -->
+              <td class="px-4 py-2.5 flex-1 min-w-max">
                 <select
                   v-model="filterEntity"
-                  class="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  class="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition bg-white"
                 >
                   <option value="">All</option>
                   <option v-for="entity in availableEntities" :key="entity.id" :value="entity.id">
                     {{ entity.name }}
                   </option>
                 </select>
-              </th>
+              </td>
 
-              <!-- Case Status Column -->
-              <th class="px-4 py-3 text-left">
-                <div class="font-medium mb-2">Case Status</div>
+              <!-- Case Status Filter -->
+              <td class="px-4 py-2.5 w-28">
                 <select
                   v-model="filterStatus"
-                  class="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  class="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition bg-white"
                 >
                   <option value="">All</option>
                   <option value="open">Open</option>
                   <option value="closed">Closed</option>
                 </select>
-              </th>
+              </td>
 
-              <!-- Current Stage Column -->
-              <th class="px-4 py-3 text-left">
-                <div class="font-medium mb-2">Current Stage</div>
+              <!-- Current Stage Filter -->
+              <td class="px-4 py-2.5 w-32">
                 <select
                   v-model="filterCurrentStage"
-                  class="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  class="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition bg-white"
                 >
                   <option value="">All</option>
                   <option v-for="stage in availableStages" :key="stage" :value="stage">
                     {{ getStageName(stage) }}
                   </option>
                 </select>
-              </th>
+              </td>
 
-              <!-- Stage Status Column -->
-              <th class="px-4 py-3 text-left">
-                <div class="font-medium mb-2">Stage Status</div>
+              <!-- Stage Status Filter -->
+              <td class="px-4 py-2.5 w-28">
                 <select
                   v-model="filterStageStatus"
-                  class="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  class="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition bg-white"
                 >
                   <option value="">All</option>
                   <option value="draft">Draft</option>
@@ -110,31 +141,26 @@
                   <option value="rejected">Rejected</option>
                   <option value="completed">Completed</option>
                 </select>
-              </th>
+              </td>
 
-              <!-- Period Column -->
-              <th class="px-4 py-3 text-left">
-                <div class="font-medium mb-2">Period</div>
+              <!-- Period Filter -->
+              <td class="px-4 py-2.5 w-24">
                 <select
                   v-model="filterPeriod"
-                  class="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  class="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition bg-white"
                 >
                   <option value="">All</option>
                   <option v-for="period in availablePeriods" :key="period" :value="period">
                     {{ period }}
                   </option>
                 </select>
-              </th>
+              </td>
 
-              <!-- Amount Column -->
-              <th class="px-4 py-3 text-right">
-                <div class="font-medium">Amount</div>
-              </th>
+              <!-- Amount Column (Empty) -->
+              <td class="px-4 py-2.5 w-32"></td>
 
-              <!-- Actions Column -->
-              <th class="px-4 py-3 text-center">
-                <div class="font-medium">Actions</div>
-              </th>
+              <!-- Actions Column (Empty) -->
+              <td class="px-4 py-2.5 w-24"></td>
             </tr>
           </thead>
           <tbody>
@@ -165,13 +191,26 @@
                 {{ taxCase.period?.period_code || '-' }}
               </td>
               <td class="px-4 py-2 text-right">{{ formatCurrency(taxCase.disputed_amount || 0, taxCase.currency?.code) }}</td>
-              <td class="px-4 py-2 text-center space-x-2">
-                <Button
-                  @click="$router.push(`/tax-cases/${taxCase.id}`)"
-                  variant="secondary"
-                >
-                  View
-                </Button>
+              <td class="px-4 py-2 text-center">
+                <div class="flex items-center justify-center gap-2">
+                  <Button
+                    @click="$router.push(`/tax-cases/${taxCase.id}`)"
+                    variant="secondary"
+                  >
+                    View
+                  </Button>
+                  <button
+                    v-if="!taxCase.is_completed"
+                    @click="openCloseConfirmation(taxCase)"
+                    class="px-3 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors duration-200"
+                    title="Close this tax case"
+                  >
+                    ✓
+                  </button>
+                  <span v-else class="text-xs px-3 py-2 text-gray-500">
+                    🔒
+                  </span>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -191,6 +230,8 @@ import { useRouter } from 'vue-router'
 import Card from '../components/Card.vue'
 import Button from '../components/Button.vue'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
+import ConfirmationDialog from '../components/ConfirmationDialog.vue'
+import Toast from '../components/Toast.vue'
 
 const router = useRouter()
 
@@ -223,6 +264,14 @@ const filterStatus = ref('')
 const filterCurrentStage = ref('')
 const filterStageStatus = ref('')
 const filterPeriod = ref('')
+
+// Toast reference
+const toastRef = ref(null)
+
+// Close case confirmation state
+const showCloseConfirmation = ref(false)
+const selectedCaseForClose = ref(null)
+const isClosing = ref(false)
 
 // Data state
 const loading = ref(true)
@@ -501,6 +550,79 @@ const exportToExcel = async () => {
     alert('Error exporting tax cases: ' + error.message)
   } finally {
     isExporting.value = false
+  }
+}
+
+// ============= CLOSE CASE LOGIC =============
+const openCloseConfirmation = (taxCase) => {
+  selectedCaseForClose.value = taxCase
+  showCloseConfirmation.value = true
+}
+
+const cancelCloseCase = () => {
+  showCloseConfirmation.value = false
+  selectedCaseForClose.value = null
+}
+
+const confirmCloseCase = async () => {
+  if (!selectedCaseForClose.value) return
+  
+  isClosing.value = true
+  const caseId = selectedCaseForClose.value.id
+  const caseNumber = selectedCaseForClose.value.case_number
+  
+  try {
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+    
+    const response = await fetch(`/api/tax-cases/${caseId}/close`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken })
+      },
+      credentials: 'include',
+      body: JSON.stringify({})
+    })
+    
+    const responseData = await response.json()
+    console.log('Close response:', { status: response.status, data: responseData })
+    
+    if (!response.ok) {
+      const errorMessage = responseData.message || responseData.error || 'Failed to close tax case'
+      throw new Error(errorMessage)
+    }
+    
+    const result = responseData
+    
+    // Update the case in the list
+    const index = taxCases.value.findIndex(tc => tc.id === caseId)
+    if (index !== -1) {
+      taxCases.value[index] = result.data
+    }
+    
+    // Show success message using toast
+    toastRef.value?.addToast(
+      'Success',
+      `Tax case ${caseNumber} has been closed successfully`,
+      'success',
+      3000
+    )
+    
+    // Reset state
+    showCloseConfirmation.value = false
+    selectedCaseForClose.value = null
+    
+  } catch (error) {
+    console.error('Error closing tax case:', error)
+    toastRef.value?.addToast(
+      'Error',
+      error.message || 'Failed to close tax case',
+      'error',
+      4000
+    )
+  } finally {
+    isClosing.value = false
   }
 }
 </script>
