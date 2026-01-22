@@ -78,11 +78,11 @@ const currentDocuments = ref([])
 
 // Available fields untuk revisi
 const availableFields = [
-  'keputusan_banding_number',
-  'keputusan_banding_date',
-  'keputusan_banding',
-  'keputusan_banding_amount',
-  'keputusan_banding_notes',
+  'decision_number',
+  'decision_date',
+  'decision_type',
+  'decision_amount',
+  'decision_notes',
   'user_routing_choice',
   'supporting_docs'
 ]
@@ -91,7 +91,7 @@ const fields = ref([
   {
     id: 1,
     type: 'text',
-    key: 'keputusan_banding_number',
+    key: 'decision_number',
     label: 'Nomor Surat Keputusan Banding (Appeal Decision Number)',
     required: true,
     readonly: false
@@ -99,7 +99,7 @@ const fields = ref([
   {
     id: 2,
     type: 'date',
-    key: 'keputusan_banding_date',
+    key: 'decision_date',
     label: 'Tanggal Keputusan (Decision Date)',
     required: true,
     readonly: false
@@ -107,20 +107,20 @@ const fields = ref([
   {
     id: 3,
     type: 'select',
-    key: 'keputusan_banding',
+    key: 'decision_type',
     label: 'Keputusan (Decision)',
     required: true,
     readonly: false,
     options: [
-      { value: 'dikabulkan', label: 'Dikabulkan (Granted)' },
-      { value: 'dikabulkan_sebagian', label: 'Dikabulkan Sebagian (Partially Granted)' },
-      { value: 'ditolak', label: 'Ditolak (Rejected)' }
+      { value: 'granted', label: 'Dikabulkan (Granted)' },
+      { value: 'partially_granted', label: 'Dikabulkan Sebagian (Partially Granted)' },
+      { value: 'rejected', label: 'Ditolak (Rejected)' }
     ]
   },
   {
     id: 4,
     type: 'number',
-    key: 'keputusan_banding_amount',
+    key: 'decision_amount',
     label: 'Nilai Keputusan (Decision Amount)',
     required: true,
     readonly: false
@@ -128,7 +128,7 @@ const fields = ref([
   {
     id: 5,
     type: 'textarea',
-    key: 'keputusan_banding_notes',
+    key: 'decision_notes',
     label: 'Catatan Keputusan (Decision Notes)',
     required: false,
     readonly: false
@@ -137,32 +137,15 @@ const fields = ref([
 
 // Pre-fill form data
 const prefillData = ref({
-  keputusan_banding_number: '',
-  keputusan_banding_date: null,
-  keputusan_banding: '',
-  keputusan_banding_amount: 0,
-  keputusan_banding_notes: '',
+  decision_number: '',
+  decision_date: null,
+  decision_type: '',
+  decision_amount: 0,
+  decision_notes: '',
+  next_stage: null,
   user_routing_choice: '',
   workflowHistories: []
 })
-
-// ⭐ REAL-TIME DECISION OPTIONS STATE
-const showDecisionOptions = ref(false)
-const selectedRoutingChoice = ref('')
-
-// ⭐ WATCHER: Show decision options INSTANTLY when keputusan_banding is selected
-watch(() => prefillData.value.keputusan_banding, (newDecision) => {
-  if (newDecision) {
-    showDecisionOptions.value = true
-  }
-})
-
-// ⭐ UPDATE ROUTING CHOICE: Store in prefillData
-const updateRoutingChoice = (choice) => {
-  selectedRoutingChoice.value = choice
-  prefillData.value.user_routing_choice = choice
-  console.log(`User selected routing choice: ${choice}`)
-}
 
 // ⭐ SYNC FORM DATA FROM STAGEFORM: Update prefillData in real-time
 const syncFormDataToParent = (formDataUpdate) => {
@@ -293,12 +276,12 @@ onMounted(async () => {
     const appealDecision = caseFetchedData.appeal_decision
     if (appealDecision) {
       prefillData.value = {
-        keputusan_banding_number: appealDecision.keputusan_banding_number || '',
-        keputusan_banding_date: formatDateForInput(appealDecision.keputusan_banding_date),
-        keputusan_banding: appealDecision.keputusan_banding || '',
-        keputusan_banding_amount: appealDecision.keputusan_banding_amount || 0,
-        keputusan_banding_notes: appealDecision.keputusan_banding_notes || '',
-        user_routing_choice: appealDecision.user_routing_choice || '',
+        decision_number: appealDecision.decision_number || '',
+        decision_date: formatDateForInput(appealDecision.decision_date),
+        decision_type: appealDecision.decision_type || '',
+        decision_amount: appealDecision.decision_amount || 0,
+        decision_notes: appealDecision.decision_notes || '',
+        next_stage: appealDecision.next_stage || null,
         workflowHistories: caseFetchedData.workflow_histories || []
       }
     } else {
@@ -381,12 +364,12 @@ const refreshTaxCase = async () => {
       const appealDecision = caseFetchedData.appeal_decision
       if (appealDecision) {
         prefillData.value = {
-          keputusan_banding_number: appealDecision.keputusan_banding_number || '',
-          keputusan_banding_date: formatDateForInput(appealDecision.keputusan_banding_date),
-          keputusan_banding: appealDecision.keputusan_banding || '',
-          keputusan_banding_amount: appealDecision.keputusan_banding_amount || 0,
-          keputusan_banding_notes: appealDecision.keputusan_banding_notes || '',
-          user_routing_choice: appealDecision.user_routing_choice || '',
+          decision_number: appealDecision.decision_number || '',
+          decision_date: formatDateForInput(appealDecision.decision_date),
+          decision_type: appealDecision.decision_type || '',
+          decision_amount: appealDecision.decision_amount || 0,
+          decision_notes: appealDecision.decision_notes || '',
+          next_stage: appealDecision.next_stage || null,
           workflowHistories: caseFetchedData.workflow_histories || []
         }
       }

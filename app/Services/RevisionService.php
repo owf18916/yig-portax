@@ -164,6 +164,16 @@ class RevisionService
                         Log::info("RevisionService: Using supremeCourtDecision as data source");
                     }
                 }
+                // For stage 16 (KIAN Submission), fetch data from kianSubmission
+                elseif ((int)$stageCode === 16) {
+                    if (!$revisable->relationLoaded('kianSubmission')) {
+                        $revisable->load('kianSubmission');
+                    }
+                    if ($revisable->kianSubmission) {
+                        $dataSource = $revisable->kianSubmission;
+                        Log::info("RevisionService: Using kianSubmission as data source");
+                    }
+                }
             }
 
             // Prepare original data (only include fields being revised)
@@ -393,6 +403,15 @@ class RevisionService
                 if ($revisable->supremeCourtDecision) {
                     $updateTarget = $revisable->supremeCourtDecision;
                     Log::info('RevisionService: Using supremeCourtDecision as update target');
+                }
+            }
+            elseif ($stageCode == 16) {
+                if (!$revisable->relationLoaded('kianSubmission')) {
+                    $revisable->load('kianSubmission');
+                }
+                if ($revisable->kianSubmission) {
+                    $updateTarget = $revisable->kianSubmission;
+                    Log::info('RevisionService: Using kianSubmission as update target');
                 }
             }
         }

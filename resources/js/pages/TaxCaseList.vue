@@ -203,7 +203,7 @@
                   {{ formatStatus(getStageStatus(taxCase)) }}
                 </span>
               </td>
-              <td class="px-4 py-2 text-sm whitespace-pre-wrap break-words leading-relaxed">
+              <td class="px-4 py-2 text-sm whitespace-pre-wrap wrap-break-word leading-relaxed">
                 {{ taxCase.period?.period_code || '-' }}
               </td>
               <td class="px-4 py-2 text-sm">

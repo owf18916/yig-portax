@@ -20,31 +20,36 @@ class AppealDecisionController extends ApiController
             return $this->error('Tax case is not at Appeal Decision stage', 422);
         }
 
+        // Accept both Indonesian and English field names for compatibility
         $validated = $request->validate([
-            'keputusan_banding_number' => 'required|string',
-            'keputusan_banding_date' => 'required|date',
-            'keputusan_banding' => 'required|in:dikabulkan,dikabulkan_sebagian,ditolak',
-            'keputusan_banding_amount' => 'required|numeric|min:0',
-            'keputusan_banding_notes' => 'nullable|string',
+            'decision_number' => 'required|string',
+            'decision_date' => 'required|date',
+            'decision_type' => 'required|in:granted,partially_granted,rejected,skp_kb',
+            'decision_amount' => 'required|numeric|min:0',
+            'decision_notes' => 'nullable|string',
             'user_routing_choice' => 'required|in:refund,supreme_court', // User explicit choice
-            'decision_letter_number' => 'nullable|string',
-            'decision_date' => 'nullable|date',
-            'decision_type' => 'nullable|in:granted,partially_granted,rejected,skp_kb',
-            'decision_amount' => 'nullable|numeric|min:0',
-            'reasoning' => 'nullable|string|min:20',
             'notes' => 'nullable|string',
         ]);
 
-        $validated['tax_case_id'] = $taxCase->id;
-        $validated['submitted_by'] = auth()->id();
-        $validated['submitted_at'] = now();
-        $validated['status'] = 'submitted';
+        // Map request fields to database field names
+        $dbData = [
+            'tax_case_id' => $taxCase->id,
+            'decision_number' => $validated['decision_number'],
+            'decision_date' => $validated['decision_date'],
+            'decision_type' => $validated['decision_type'],
+            'decision_amount' => $validated['decision_amount'],
+            'decision_notes' => $validated['decision_notes'] ?? null,
+            'submitted_by' => auth()->id(),
+            'submitted_at' => now(),
+            'status' => 'submitted',
+            'notes' => $validated['notes'] ?? null,
+        ];
 
         // Determine next stage based on USER'S EXPLICIT CHOICE (not decision type)
         $nextStage = $this->determineNextStageFromUserChoice($validated['user_routing_choice']);
-        $validated['next_stage'] = $nextStage;
+        $dbData['next_stage'] = $nextStage;
 
-        $decision = AppealDecision::create($validated);
+        $decision = AppealDecision::create($dbData);
 
         // Log workflow with decision routing
         $taxCase->update(['next_stage_id' => $nextStage]);
@@ -54,7 +59,7 @@ class AppealDecisionController extends ApiController
             'stage_to' => $nextStage,
             'action' => 'submitted',
             'decision_point' => 'appeal_decision',
-            'decision_value' => $validated['keputusan_banding'],
+            'decision_value' => $validated['decision_type'],
             'user_id' => auth()->id(),
             'created_at' => now(),
         ]);
@@ -72,17 +77,12 @@ class AppealDecisionController extends ApiController
     public function update(Request $request, TaxCase $taxCase, AppealDecision $decision): JsonResponse
     {
         $validated = $request->validate([
-            'keputusan_banding_number' => 'nullable|string',
-            'keputusan_banding_date' => 'nullable|date',
-            'keputusan_banding' => 'nullable|in:dikabulkan,dikabulkan_sebagian,ditolak',
-            'keputusan_banding_amount' => 'nullable|numeric|min:0',
-            'keputusan_banding_notes' => 'nullable|string',
-            'user_routing_choice' => 'nullable|in:refund,supreme_court',
-            'decision_letter_number' => 'nullable|string',
+            'decision_number' => 'nullable|string',
             'decision_date' => 'nullable|date',
             'decision_type' => 'nullable|in:granted,partially_granted,rejected,skp_kb',
             'decision_amount' => 'nullable|numeric|min:0',
-            'reasoning' => 'nullable|string|min:20',
+            'decision_notes' => 'nullable|string',
+            'user_routing_choice' => 'nullable|in:refund,supreme_court',
             'notes' => 'nullable|string',
         ]);
 
@@ -137,7 +137,7 @@ class AppealDecisionController extends ApiController
             'stage_to' => $nextStage,
             'action' => 'approved',
             'decision_point' => 'appeal_decision',
-            'decision_value' => $decision->keputusan_banding ?? $decision->decision_type,
+            'decision_value' => $decision->decision_type,
             'user_id' => auth()->id(),
             'created_at' => now(),
         ]);

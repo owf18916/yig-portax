@@ -17,6 +17,7 @@ import AppealSubmissionForm from '../pages/AppealSubmissionForm.vue'
 import AppealExplanationRequestForm from '../pages/AppealExplanationRequestForm.vue'
 import AppealDecisionForm from '../pages/AppealDecisionForm.vue'
 import SupremeCourtSubmissionForm from '../pages/SupremeCourtSubmissionForm.vue'
+import KianSubmissionForm from '../pages/KianSubmissionForm.vue'
 
 const routes = [
   {
@@ -113,6 +114,12 @@ const routes = [
     path: '/tax-cases/:id/workflow/11',
     name: 'SupremeCourtSubmissionForm',
     component: SupremeCourtSubmissionForm,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/tax-cases/:id/workflow/16',
+    name: 'KianSubmissionForm',
+    component: KianSubmissionForm,
     meta: { requiresAuth: true }
   },
   {
