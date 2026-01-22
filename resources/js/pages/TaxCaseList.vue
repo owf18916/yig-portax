@@ -36,7 +36,7 @@
         <table class="w-full text-sm">
           <thead>
             <!-- Header Title Row -->
-            <tr class="bg-gradient-to-r from-blue-50 to-blue-100 border-b-2 border-blue-300">
+            <tr class="bg-linear-to-r from-blue-50 to-blue-100 border-b-2 border-blue-300">
               <th class="px-4 py-3 text-left w-32">
                 <div class="font-semibold text-gray-700">Case Number</div>
               </th>
@@ -49,14 +49,17 @@
               <th class="px-4 py-3 text-left w-28">
                 <div class="font-semibold text-gray-700">Case Status</div>
               </th>
-              <th class="px-4 py-3 text-left w-32">
+              <th class="px-4 py-3 text-left w-40">
                 <div class="font-semibold text-gray-700">Current Stage</div>
               </th>
               <th class="px-4 py-3 text-left w-28">
                 <div class="font-semibold text-gray-700">Stage Status</div>
               </th>
-              <th class="px-4 py-3 text-left w-24">
+              <th class="px-4 py-3 text-left w-44">
                 <div class="font-semibold text-gray-700">Period</div>
+              </th>
+              <th class="px-4 py-3 text-left w-40">
+                <div class="font-semibold text-gray-700">Fiscal Year</div>
               </th>
               <th class="px-4 py-3 text-right w-32">
                 <div class="font-semibold text-gray-700">Amount</div>
@@ -116,7 +119,7 @@
               </td>
 
               <!-- Current Stage Filter -->
-              <td class="px-4 py-2.5 w-32">
+              <td class="px-4 py-2.5 w-40">
                 <select
                   v-model="filterCurrentStage"
                   class="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition bg-white"
@@ -144,7 +147,7 @@
               </td>
 
               <!-- Period Filter -->
-              <td class="px-4 py-2.5 w-24">
+              <td class="px-4 py-2.5 w-44">
                 <select
                   v-model="filterPeriod"
                   class="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition bg-white"
@@ -152,6 +155,19 @@
                   <option value="">All</option>
                   <option v-for="period in availablePeriods" :key="period" :value="period">
                     {{ period }}
+                  </option>
+                </select>
+              </td>
+
+              <!-- Fiscal Year Filter -->
+              <td class="px-4 py-2.5 w-40">
+                <select
+                  v-model="filterFiscalYear"
+                  class="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition bg-white"
+                >
+                  <option value="">All</option>
+                  <option v-for="year in availableFiscalYears" :key="year" :value="year">
+                    {{ year }}
                   </option>
                 </select>
               </td>
@@ -178,7 +194,7 @@
                 </span>
               </td>
               <td class="px-4 py-2">
-                <span class="px-2 py-1 bg-indigo-100 text-indigo-800 rounded text-xs font-medium">
+                <span class="inline-flex items-center px-3 py-1.5 bg-indigo-100 text-indigo-800 rounded-lg text-xs font-medium whitespace-nowrap">
                   {{ getStageName(taxCase.current_stage) }}
                 </span>
               </td>
@@ -187,8 +203,11 @@
                   {{ formatStatus(getStageStatus(taxCase)) }}
                 </span>
               </td>
-              <td class="px-4 py-2 text-sm">
+              <td class="px-4 py-2 text-sm whitespace-pre-wrap break-words leading-relaxed">
                 {{ taxCase.period?.period_code || '-' }}
+              </td>
+              <td class="px-4 py-2 text-sm">
+                {{ taxCase.fiscal_year?.year || '-' }}
               </td>
               <td class="px-4 py-2 text-right">{{ formatCurrency(taxCase.disputed_amount || 0, taxCase.currency?.code) }}</td>
               <td class="px-4 py-2 text-center">
@@ -264,6 +283,7 @@ const filterStatus = ref('')
 const filterCurrentStage = ref('')
 const filterStageStatus = ref('')
 const filterPeriod = ref('')
+const filterFiscalYear = ref('')
 
 // Toast reference
 const toastRef = ref(null)
@@ -291,6 +311,14 @@ const availablePeriods = computed(() => {
     if (tc.period?.period_code) periods.add(tc.period.period_code)
   })
   return Array.from(periods).sort()
+})
+
+const availableFiscalYears = computed(() => {
+  const years = new Set()
+  taxCases.value.forEach(tc => {
+    if (tc.fiscal_year?.year) years.add(tc.fiscal_year.year)
+  })
+  return Array.from(years).sort((a, b) => b - a)
 })
 
 const filteredCases = computed(() => {
@@ -328,8 +356,12 @@ const filteredCases = computed(() => {
     const matchesPeriod = !filterPeriod.value || 
       tc.period?.period_code === filterPeriod.value
     
+    // Fiscal year filter
+    const matchesFiscalYear = !filterFiscalYear.value || 
+      tc.fiscal_year?.year == filterFiscalYear.value
+    
     return matchesSearch && matchesCaseNumber && matchesType && matchesEntity && 
-           matchesStatus && matchesCurrentStage && matchesStageStatus && matchesPeriod
+           matchesStatus && matchesCurrentStage && matchesStageStatus && matchesPeriod && matchesFiscalYear
   })
 })
 
