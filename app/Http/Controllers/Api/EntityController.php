@@ -10,8 +10,8 @@ class EntityController extends ApiController
 {
     /**
      * Display a listing of entities for authenticated user
-     * - Admins see all entities
-     * - Other users see only their assigned entity
+     * - HOLDING users see all entities
+     * - AFFILIATE users see only their assigned entity
      */
     public function index(): JsonResponse
     {
@@ -21,17 +21,18 @@ class EntityController extends ApiController
             return $this->error('Unauthorized', 401);
         }
 
-        // Admins can see all entities
-        if ($user->role_id === 1) { // 1 = admin
-            $entities = Entity::select('id', 'name', 'code', 'entity_type', 'tax_id')
-                ->where('is_active', true)
-                ->orderBy('name')
-                ->get();
-        } else {
-            // Non-admins see only their assigned entity
+        // Get accessible entities based on user's entity_type
+        if ($user->entity && $user->entity->entity_type !== 'HOLDING') {
+            // AFFILIATE users: see only their own entity
             $entities = Entity::select('id', 'name', 'code', 'entity_type', 'tax_id')
                 ->where('is_active', true)
                 ->where('id', $user->entity_id)
+                ->orderBy('name')
+                ->get();
+        } else {
+            // HOLDING users or admin: see all active entities
+            $entities = Entity::select('id', 'name', 'code', 'entity_type', 'tax_id')
+                ->where('is_active', true)
                 ->orderBy('name')
                 ->get();
         }

@@ -13,14 +13,26 @@ class DashboardAnalyticsController extends ApiController
     /**
      * Get open cases data grouped by entity and case type
      * Returns data for stacked bar chart showing CIT vs VAT open cases
+     * HOLDING users see all entities, AFFILIATE users see only their own entity
      */
     public function openCasesPerEntity(Request $request)
     {
         try {
-            // Get all active entities
-            $entities = Entity::where('is_active', true)
-                ->orderBy('name')
-                ->get();
+            $user = auth()->user();
+            
+            // Get accessible entities based on user's entity_type
+            if ($user && $user->entity && $user->entity->entity_type !== 'HOLDING') {
+                // AFFILIATE users: only see their own entity
+                $entities = Entity::where('is_active', true)
+                    ->where('id', $user->entity_id)
+                    ->orderBy('name')
+                    ->get();
+            } else {
+                // HOLDING users or admin: see all active entities
+                $entities = Entity::where('is_active', true)
+                    ->orderBy('name')
+                    ->get();
+            }
 
             $data = [];
 
@@ -74,14 +86,26 @@ class DashboardAnalyticsController extends ApiController
     /**
      * Get disputed amount data grouped by entity, currency and case type
      * Returns data for stacked bar chart showing CIT vs VAT disputed amounts
+     * HOLDING users see all entities, AFFILIATE users see only their own entity
      */
     public function disputedAmountPerEntity(Request $request)
     {
         try {
-            // Get all active entities
-            $entities = Entity::where('is_active', true)
-                ->orderBy('name')
-                ->get();
+            $user = auth()->user();
+            
+            // Get accessible entities based on user's entity_type
+            if ($user && $user->entity && $user->entity->entity_type !== 'HOLDING') {
+                // AFFILIATE users: only see their own entity
+                $entities = Entity::where('is_active', true)
+                    ->where('id', $user->entity_id)
+                    ->orderBy('name')
+                    ->get();
+            } else {
+                // HOLDING users or admin: see all active entities
+                $entities = Entity::where('is_active', true)
+                    ->orderBy('name')
+                    ->get();
+            }
 
             $data = [];
 
@@ -141,13 +165,26 @@ class DashboardAnalyticsController extends ApiController
 
     /**
      * Get both charts data at once
+     * HOLDING users see all entities, AFFILIATE users see only their own entity
      */
     public function dashboardCharts(Request $request)
     {
         try {
-            $entities = Entity::where('is_active', true)
-                ->orderBy('name')
-                ->get();
+            $user = auth()->user();
+            
+            // Get accessible entities based on user's entity_type
+            if ($user && $user->entity && $user->entity->entity_type !== 'HOLDING') {
+                // AFFILIATE users: only see their own entity
+                $entities = Entity::where('is_active', true)
+                    ->where('id', $user->entity_id)
+                    ->orderBy('name')
+                    ->get();
+            } else {
+                // HOLDING users or admin: see all active entities
+                $entities = Entity::where('is_active', true)
+                    ->orderBy('name')
+                    ->get();
+            }
 
             $openCasesData = [];
             $disputedAmountData = [];

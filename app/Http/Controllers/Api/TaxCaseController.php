@@ -18,6 +18,8 @@ class TaxCaseController extends ApiController
      */
     public function index(Request $request): JsonResponse
     {
+        $user = auth()->user();
+        
         $query = TaxCase::with([
             'entity',
             'fiscalYear',
@@ -29,6 +31,17 @@ class TaxCaseController extends ApiController
                 $query->latest('created_at');
             }
         ]);
+
+        // Filter by entity_type and user permissions
+        // HOLDING users can see all tax cases
+        // AFFILIATE users can only see tax cases from their own entity
+        if ($user && $user->entity) {
+            if ($user->entity->entity_type !== 'HOLDING') {
+                // AFFILIATE users: only see their own entity's cases
+                $query->where('entity_id', $user->entity_id);
+            }
+            // HOLDING users: see all entities (no filter needed)
+        }
 
         // Filter by entity (multi-company support)
         if ($request->has('entity_id')) {

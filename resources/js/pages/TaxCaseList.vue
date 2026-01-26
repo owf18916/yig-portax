@@ -377,11 +377,11 @@ const fetchEntities = async () => {
     // Handle response wrapper
     if (responseData.data) {
       const data = responseData.data
-      // Filter only HOLDING type entities
+      // Use entities as returned by API (server-side filtering by entity_type)
       if (Array.isArray(data)) {
-        availableEntities.value = data.filter(e => e.entity_type === 'HOLDING')
+        availableEntities.value = data
       } else if (data.data && Array.isArray(data.data)) {
-        availableEntities.value = data.data.filter(e => e.entity_type === 'HOLDING')
+        availableEntities.value = data.data
       }
     }
   } catch (error) {
