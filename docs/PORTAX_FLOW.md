@@ -177,9 +177,9 @@ The case number is **automatically generated** by the system when creating a new
 #### Case Status:
 **Case Status: SKP RECEIVED**
 
-#### Decision Point 1: User Choice - Proceed to Refund or Objection?
+#### Decision Point 1: User Choice - Proceed to Refund, Objection, or KIAN?
 
-**Regardless of SKP Type** (LB, NIHIL, or KB), user can choose:
+**For SKP Type = SKP LB or NIHIL**, user can choose:
 
 **Option A: Proceed to Refund Procedure**
 - User decides to request refund directly
@@ -188,6 +188,16 @@ The case number is **automatically generated** by the system when creating a new
 **Option B: Proceed to Objection**
 - User decides to file objection/challenge to SKP
 - Next Stage: **Stage 5 (Surat Keberatan - Objection Submission)**
+
+**For SKP Type = SKP KB**, user can choose:
+
+**Option A: Proceed to Objection**
+- User decides to file objection/challenge to SKP KB
+- Next Stage: **Stage 5 (Surat Keberatan - Objection Submission)**
+
+**Option B: Proceed to KIAN Procedure**
+- User decides not to pursue further and recognize as company loss
+- Next Stage: **Stage 16 (KIAN Report Submission)**
 
 #### System Actions:
 - Input & Upload Supporting Docs (SKP)
@@ -257,15 +267,17 @@ The case number is **automatically generated** by the system when creating a new
 - Proceed to: **Refund Procedure**
 
 **Option B: Dikabulkan Sebagian (Partially Granted)**
-- Result: Accepted
-- Proceed to: **Refund Procedure** or **Submit Banding** (Appeal)
+- Result: Accepted (Partial)
+- User can choose:
+  - **Proceed to Refund Procedure** (Accept partial decision)
+  - **Submit Banding** (Appeal - Stage 8) (Reject partial decision)
+  - **Proceed to KIAN Procedure** (Recognize partial rejection as loss)
 
 **Option C: Ditolak (Rejected)**
 - Result: Rejected
-- Proceed to: **Submit Banding** (Appeal)
-
-**Option D: Dikabulkan Sebagian / Ditolak**
-- Proceed to : **Refund Procedure** or **Submit Banding** (Appeal)
+- User can choose:
+  - **Submit Banding** (Appeal - Stage 8) (Continue pursuit)
+  - **Proceed to KIAN Procedure** (Recognize as loss)
 
 #### System Actions:
 - Input & Upload Supporting Docs (Surat Keputusan Keberatan)
@@ -334,15 +346,16 @@ The case number is **automatically generated** by the system when creating a new
 
 **Option B: Dikabulkan Sebagian (Partially Granted)**
 - **Case Status: NOT GRANTED / PARTIALLY GRANTED**
-- Can proceed to: **Submit Peninjauan Kembali** (Supreme Court Review)
-- Or proceed to: **Refund Procedure**
+- User can choose:
+  - **Submit Peninjauan Kembali** (Supreme Court Review - Stage 11)
+  - **Proceed to Refund Procedure** (Accept partial decision)
+  - **Proceed to KIAN Procedure** (Recognize partial rejection as loss)
 
 **Option C: Ditolak (Rejected)**
 - **Case Status: NOT GRANTED / PARTIALLY GRANTED**
-- Proceed to: **Submit Peninjauan Kembali** (Supreme Court Review)
-
-**Option D: SKP KB**
-- Proceed to: **Submit Peninjauan Kembali** (Supreme Court Review)
+- User can choose:
+  - **Submit Peninjauan Kembali** (Supreme Court Review - Stage 11) (Continue pursuit)
+  - **Proceed to KIAN Procedure** (Recognize as loss)
 
 #### System Actions:
 - Input & Upload Supporting Docs (Surat Keputusan Banding)
@@ -381,22 +394,24 @@ The case number is **automatically generated** by the system when creating a new
   - **Ditolak** (Rejected)
 - **Nilai** (Amount)
 
-#### Decision Point 4: Jenis Keputusan?
+#### Decision Point 4: Jenis Keputusan? (Final Decision)
 
 **Option A: Dikabulkan (Granted)**
 - **Case Status: GRANTED**
 - Result: Accepted
-- Proceed to: **Refund Procedure**
+- Proceed to: **Refund Procedure** (Stage 13) [Terminal]
 
 **Option B: Dikabulkan Sebagian (Partially Granted)**
 - **Case Status: NOT GRANTED / PARTIALLY GRANTED**
 - Result: Accepted (Partial)
-- Proceed to: **Refund Procedure**
+- User can choose:
+  - **Proceed to Refund Procedure** (Accept partial decision - Stage 13) [Terminal]
+  - **Proceed to KIAN Procedure** (Recognize partial rejection as loss - Stage 16) [Terminal]
 
 **Option C: Ditolak (Rejected)**
 - **Case Status: NOT GRANTED / PARTIALLY GRANTED**
-- Result: Rejected
-- Proceed to: **KIAN Procedure**
+- Result: Rejected (Terminal)
+- Proceed to: **KIAN Procedure** (Stage 16) [Terminal]
 
 #### System Actions:
 - Input & Upload Supporting Docs (Surat Keputusan Peninjauan Kembali)
@@ -501,25 +516,28 @@ The system tracks the following case statuses throughout the workflow:
 ## 🎯 Decision Logic Summary
 
 ### Decision Point 1: Post-SKP User Choice
-- **All SKP Types** (LB, NIHIL, KB) allow user to choose:
-  - **Option A:** Proceed to Refund Procedure (Stage 13)
-  - **Option B:** Proceed to Objection Process (Stage 5)
+**For SKP LB or NIHIL:**
+- **Option A:** Proceed to Refund Procedure (Stage 13)
+- **Option B:** Proceed to Objection Process (Stage 5)
+
+**For SKP KB:**
+- **Option A:** Proceed to Objection Process (Stage 5)
+- **Option B:** Proceed to KIAN Procedure (Stage 16)
 
 ### Decision Point 2: Objection Decision
-- **Dikabulkan (Granted)** → Refund Procedure
-- **Dikabulkan Sebagian (Partially Granted)** → Refund Procedure OR Appeal
-- **Ditolak (Rejected)** → Appeal Process
+- **Dikabulkan (Granted)** → Refund Procedure (Stage 13)
+- **Dikabulkan Sebagian (Partially Granted)** → Refund Procedure (Stage 13) OR Appeal (Stage 8) OR KIAN Procedure (Stage 16)
+- **Ditolak (Rejected)** → Appeal Process (Stage 8) OR KIAN Procedure (Stage 16)
 
 ### Decision Point 3: Appeal Decision
-- **Dikabulkan (Granted)** → Refund Procedure
-- **Dikabulkan Sebagian (Partially Granted)** → Supreme Court OR Refund Procedure
-- **Ditolak (Rejected)** → Supreme Court Review
-- **SKP KB** → Supreme Court Review
+- **Dikabulkan (Granted)** → Refund Procedure (Stage 13)
+- **Dikabulkan Sebagian (Partially Granted)** → Supreme Court Review (Stage 11) OR Refund Procedure (Stage 13) OR KIAN Procedure (Stage 16)
+- **Ditolak (Rejected)** → Supreme Court Review (Stage 11) OR KIAN Procedure (Stage 16)
 
-### Decision Point 4: Supreme Court Decision
-- **Dikabulkan (Granted)** → Refund Procedure
-- **Dikabulkan Sebagian (Partially Granted)** → Refund Procedure
-- **Ditolak (Rejected)** → KIAN Procedure
+### Decision Point 4: Supreme Court Decision (Final)
+- **Dikabulkan (Granted)** → Refund Procedure (Stage 13) [Terminal]
+- **Dikabulkan Sebagian (Partially Granted)** → Refund Procedure (Stage 13) OR KIAN Procedure (Stage 16) [Terminal]
+- **Ditolak (Rejected)** → KIAN Procedure (Stage 16) [Terminal]
 
 ---
 

@@ -389,10 +389,17 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                     Log::info('AppealExplanationRequest saved', ['explanationData' => $explanationData]);
                 } elseif ($stage == 10) {
                     $appealDecisionData = $request->only([
-                        'keputusan_banding_number', 'keputusan_banding_date', 'keputusan_banding',
-                        'keputusan_banding_amount', 'keputusan_banding_notes', 'user_routing_choice'
+                        'decision_number', 'decision_date', 'decision_type',
+                        'decision_amount', 'decision_notes'
                     ]);
                     $appealDecisionData['tax_case_id'] = $taxCase->id;
+                    
+                    // Determine next stage based on user_routing_choice (refund=13, supreme_court=11)
+                    if ($request->has('user_routing_choice')) {
+                        $userChoice = $request->input('user_routing_choice');
+                        $appealDecisionData['next_stage'] = ($userChoice === 'refund') ? 13 : 11;
+                    }
+                    
                     \App\Models\AppealDecision::updateOrCreate(
                         ['tax_case_id' => $taxCase->id],
                         $appealDecisionData

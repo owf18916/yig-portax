@@ -298,15 +298,18 @@
             </div>
 
             <!-- ⭐ DECISION OPTIONS - Show when keputusan_banding is selected (Stage 10 Appeal Decision) -->
-            <div v-if="showAppealDecisionOptions && formData.keputusan_banding" class="bg-purple-50 border-2 border-purple-200 rounded-lg p-4 space-y-3 mt-4">
+            <div v-if="showAppealDecisionOptions && formData.decision_type" class="bg-purple-50 border-2 border-purple-200 rounded-lg p-4 space-y-3 mt-4">
               <h3 class="font-semibold text-purple-900">⭐ Select Next Action</h3>
               <p class="text-sm text-purple-700">
-                Keputusan Banding: <strong>{{ getAppealDecisionLabel(formData.keputusan_banding) }}</strong>
+                Keputusan Banding: <strong>{{ getAppealDecisionLabel(formData.decision_type) }}</strong>
               </p>
 
               <!-- Option 1: Supreme Court (Peninjauan Kembali) -->
-              <label class="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-white transition"
-                :class="formData.user_routing_choice === 'supreme_court' ? 'bg-white border-purple-500 ring-2 ring-purple-300' : 'bg-white'">
+              <label class="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer transition"
+                :class="[
+                  fieldsDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white',
+                  formData.user_routing_choice === 'supreme_court' ? 'bg-white border-purple-500 ring-2 ring-purple-300' : 'bg-white border-gray-300'
+                ]">
                 <input
                   type="radio"
                   value="supreme_court"
@@ -322,8 +325,11 @@
               </label>
 
               <!-- Option 2: Refund -->
-              <label class="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-white transition"
-                :class="formData.user_routing_choice === 'refund' ? 'bg-white border-green-500 ring-2 ring-green-300' : 'bg-white'">
+              <label class="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer transition"
+                :class="[
+                  fieldsDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white',
+                  formData.user_routing_choice === 'refund' ? 'bg-white border-green-500 ring-2 ring-green-300' : 'bg-white border-gray-300'
+                ]">
                 <input
                   type="radio"
                   value="refund"
@@ -667,7 +673,7 @@ const showObjectionDecisionOptions = computed(() => {
 const showAppealDecisionOptions = computed(() => {
   const shouldShow = props.showDecisionOptions && props.stageId === 10
   if (props.stageId === 10) {
-    console.log(`[StageForm DEBUG] Stage 10 - showDecisionOptions=${props.showDecisionOptions}, stageId=${props.stageId}, formData.keputusan_banding=${formData.keputusan_banding}, result=${shouldShow}`)
+    console.log(`[StageForm DEBUG] Stage 10 - showDecisionOptions=${props.showDecisionOptions}, stageId=${props.stageId}, formData.decision_type=${formData.decision_type}, result=${shouldShow}`)
   }
   return shouldShow
 })
@@ -700,6 +706,10 @@ const getSkpTypeLabel = (type) => {
 // ⭐ Helper function to get Appeal Decision label
 const getAppealDecisionLabel = (decision) => {
   const labels = {
+    'granted': 'Dikabulkan (Granted)',
+    'partially_granted': 'Dikabulkan Sebagian (Partially Granted)',
+    'rejected': 'Ditolak (Rejected)',
+    // Legacy support
     'dikabulkan': 'Dikabulkan (Granted)',
     'dikabulkan_sebagian': 'Dikabulkan Sebagian (Partially Granted)',
     'ditolak': 'Ditolak (Rejected)'
@@ -1141,6 +1151,13 @@ const executeSubmitForm = async () => {
         console.log('[Stage 7] Auto-set user_routing_choice=appeal for REJECTED decision')
       }
       // For partially_granted, user must have selected one (via radio buttons)
+    }
+
+    // ⭐ PASS user_routing_choice for Stage 10 (Appeal Decision)
+    if (props.stageId === 10) {
+      // user_routing_choice should already be in formData from parent component
+      // If not set, use the one from prefillData via emit or passed via prop
+      console.log('[Stage 10] Form data with routing choice:', { user_routing_choice: formData.user_routing_choice, decision_type: formData.decision_type })
     }
 
     const payload = {
