@@ -84,7 +84,9 @@ const availableFields = [
   'decision_amount',
   'decision_notes',
   'next_action',
-  'supporting_docs'
+  'supporting_docs',
+  'create_refund',
+  'continue_to_next_stage'
 ]
 
 const fields = ref([
@@ -301,6 +303,8 @@ onMounted(async () => {
         decision_amount: supremeCourtDecision.decision_amount || 0,
         decision_notes: supremeCourtDecision.decision_notes || '',
         next_action: supremeCourtDecision.next_action || '',
+        create_refund: supremeCourtDecision.create_refund ?? false,
+        continue_to_next_stage: supremeCourtDecision.continue_to_next_stage ?? false,
         workflowHistories: caseFetchedData.workflow_histories || []
       }
     } else {
@@ -389,6 +393,8 @@ const refreshTaxCase = async () => {
           decision_amount: supremeCourtDecision.decision_amount || 0,
           decision_notes: supremeCourtDecision.decision_notes || '',
           next_action: supremeCourtDecision.next_action || '',
+          create_refund: supremeCourtDecision.create_refund ?? false,
+          continue_to_next_stage: supremeCourtDecision.continue_to_next_stage ?? false,
           workflowHistories: caseFetchedData.workflow_histories || []
         }
       }

@@ -29,7 +29,24 @@ class AppealDecisionController extends ApiController
             'decision_notes' => 'nullable|string',
             'user_routing_choice' => 'required|in:refund,supreme_court', // User explicit choice
             'notes' => 'nullable|string',
+            'create_refund' => 'nullable|boolean',
+            'refund_amount' => 'nullable|numeric|min:0',
+            'continue_to_next_stage' => 'nullable|boolean',
         ]);
+
+        // ⭐ CHANGE 3: Validate independent actions
+        if ($validated['create_refund']) {
+            $validated['refund_amount'] = $request->input('refund_amount');
+            if (!$validated['refund_amount'] || $validated['refund_amount'] <= 0) {
+                return $this->error('Refund amount must be greater than 0 when creating refund', 422);
+            }
+            
+            // Validate refund amount doesn't exceed available amount
+            $availableAmount = max(0, $taxCase->disputed_amount - ($taxCase->getTotalRefundedAmount() ?? 0));
+            if ($validated['refund_amount'] > $availableAmount) {
+                return $this->error("Refund amount cannot exceed available amount (Rp {$availableAmount})", 422);
+            }
+        }
 
         // Map request fields to database field names
         $dbData = [
@@ -43,30 +60,52 @@ class AppealDecisionController extends ApiController
             'submitted_at' => now(),
             'status' => 'submitted',
             'notes' => $validated['notes'] ?? null,
+            'create_refund' => $validated['create_refund'] ?? false,
+            'refund_amount' => $validated['refund_amount'] ?? null,
+            'continue_to_next_stage' => $validated['continue_to_next_stage'] ?? false,
         ];
 
         // Determine next stage based on USER'S EXPLICIT CHOICE (not decision type)
         $nextStage = $this->determineNextStageFromUserChoice($validated['user_routing_choice']);
+        
+        // ⭐ CHANGE 3: Override next stage if continue_to_next_stage is false
+        if (!$validated['continue_to_next_stage']) {
+            $nextStage = null; // Case will end
+        }
+        
         $dbData['next_stage'] = $nextStage;
 
         $decision = AppealDecision::create($dbData);
 
-        // Log workflow with decision routing
-        $taxCase->update(['next_stage_id' => $nextStage]);
+        // ⭐ CHANGE 3: Create refund if requested
+        if ($validated['create_refund']) {
+            $decision->createRefundIfNeeded();
+        }
+
+        // Update tax case stage
+        if ($validated['continue_to_next_stage']) {
+            $taxCase->update(['current_stage' => $nextStage]);
+        }
         
         $taxCase->workflowHistories()->create([
+            'stage_id' => 10,
             'stage_from' => 10,
             'stage_to' => $nextStage,
             'action' => 'submitted',
-            'decision_point' => 'appeal_decision',
-            'decision_value' => $validated['decision_type'],
+            'decision_point' => 'independent_actions',
+            'decision_value' => json_encode([
+                'decision_type' => $validated['decision_type'],
+                'create_refund' => $validated['create_refund'],
+                'refund_amount' => $validated['refund_amount'],
+                'continue_to_next_stage' => $validated['continue_to_next_stage'],
+            ]),
             'user_id' => auth()->id(),
             'created_at' => now(),
         ]);
 
         return $this->success(
             $decision->load(['taxCase', 'submittedBy']),
-            "Appeal decision submitted. Case routed to Stage {$nextStage}",
+            "Appeal decision submitted successfully",
             201
         );
     }

@@ -84,7 +84,9 @@ const availableFields = [
   'decision_amount',
   'decision_notes',
   'user_routing_choice',
-  'supporting_docs'
+  'supporting_docs',
+  'create_refund',
+  'continue_to_next_stage'
 ]
 
 const fields = ref([
@@ -282,6 +284,8 @@ onMounted(async () => {
         decision_amount: appealDecision.decision_amount || 0,
         decision_notes: appealDecision.decision_notes || '',
         next_stage: appealDecision.next_stage || null,
+        create_refund: appealDecision.create_refund ?? false,
+        continue_to_next_stage: appealDecision.continue_to_next_stage ?? false,
         workflowHistories: caseFetchedData.workflow_histories || []
       }
     } else {
@@ -370,6 +374,8 @@ const refreshTaxCase = async () => {
           decision_amount: appealDecision.decision_amount || 0,
           decision_notes: appealDecision.decision_notes || '',
           next_stage: appealDecision.next_stage || null,
+          create_refund: appealDecision.create_refund ?? false,
+          continue_to_next_stage: appealDecision.continue_to_next_stage ?? false,
           workflowHistories: caseFetchedData.workflow_histories || []
         }
       }

@@ -26,7 +26,24 @@ class ObjectionDecisionController extends ApiController
             'decision_type' => 'required|in:granted,partially_granted,rejected',
             'decision_amount' => 'required|numeric|min:0',
             'notes' => 'nullable|string',
+            'create_refund' => 'nullable|boolean',
+            'refund_amount' => 'nullable|numeric|min:0',
+            'continue_to_next_stage' => 'nullable|boolean',
         ]);
+
+        // ⭐ CHANGE 3: Validate independent actions
+        if ($validated['create_refund']) {
+            $validated['refund_amount'] = $request->input('refund_amount');
+            if (!$validated['refund_amount'] || $validated['refund_amount'] <= 0) {
+                return $this->error('Refund amount must be greater than 0 when creating refund', 422);
+            }
+            
+            // Validate refund amount doesn't exceed available amount
+            $availableAmount = max(0, $taxCase->disputed_amount - ($taxCase->getTotalRefundedAmount() ?? 0));
+            if ($validated['refund_amount'] > $availableAmount) {
+                return $this->error("Refund amount cannot exceed available amount (Rp {$availableAmount})", 422);
+            }
+        }
 
         $validated['tax_case_id'] = $taxCase->id;
         $validated['submitted_by'] = auth()->id();
@@ -35,17 +52,41 @@ class ObjectionDecisionController extends ApiController
 
         // Determine next stage based on decision
         $nextStage = $this->determineNextStageFromDecision($validated['decision_type']);
+        
+        // ⭐ CHANGE 3: Override next stage if continue_to_next_stage is false
+        if (!$validated['continue_to_next_stage']) {
+            $nextStage = null; // Case will end
+        }
+        
         $validated['next_stage'] = $nextStage;
 
         $decision = ObjectionDecision::create($validated);
 
+        // ⭐ CHANGE 3: Create refund if requested
+        if ($validated['create_refund']) {
+            $decision->createRefundIfNeeded();
+        }
+
+        // Update tax case stage (or null if case ends)
+        if ($validated['continue_to_next_stage']) {
+            $taxCase->update([
+                'current_stage' => $nextStage,
+            ]);
+        }
+
         // Log workflow with decision
         $taxCase->workflowHistories()->create([
+            'stage_id' => 7,
             'stage_from' => 7,
-            'stage_to' => 7,
+            'stage_to' => $nextStage,
             'action' => 'submitted',
-            'decision_point' => 'objection_decision',
-            'decision_value' => $validated['decision_type'],
+            'decision_point' => 'independent_actions',
+            'decision_value' => json_encode([
+                'decision_type' => $validated['decision_type'],
+                'create_refund' => $validated['create_refund'],
+                'refund_amount' => $validated['refund_amount'],
+                'continue_to_next_stage' => $validated['continue_to_next_stage'],
+            ]),
             'user_id' => auth()->id(),
             'created_at' => now(),
         ]);

@@ -424,6 +424,50 @@ class RevisionService
                 'target_type' => class_basename($updateTarget),
                 'target_id' => $updateTarget->id
             ]);
+
+            // If decision checkboxes were updated, create a new workflow history entry
+            if (isset($updates['create_refund']) || isset($updates['continue_to_next_stage'])) {
+                // Get the tax case
+                $taxCase = $revisable instanceof \App\Models\TaxCase ? $revisable : $revisable->taxCase;
+                
+                // Build decision_value JSON with the updated decision data
+                $decisionValue = [];
+                
+                // Include all decision-related fields from the updated model
+                if ($updateTarget->hasAttribute('create_refund')) {
+                    $decisionValue['create_refund'] = $updateTarget->create_refund ?? false;
+                }
+                if ($updateTarget->hasAttribute('continue_to_next_stage')) {
+                    $decisionValue['continue_to_next_stage'] = $updateTarget->continue_to_next_stage ?? false;
+                }
+                
+                // Add other decision fields if they exist
+                $decisionFields = ['decision_type', 'decision_amount', 'decision_number', 'decision_date', 'decision_notes'];
+                foreach ($decisionFields as $field) {
+                    if ($updateTarget->hasAttribute($field)) {
+                        $decisionValue[$field] = $updateTarget->$field;
+                    }
+                }
+                
+                // Create workflow history entry for this decision revision
+                if (!empty($decisionValue)) {
+                    \App\Models\WorkflowHistory::create([
+                        'tax_case_id' => $taxCase->id,
+                        'stage_from' => $stageCode,
+                        'stage_to' => $stageCode,
+                        'stage_id' => $stageCode,
+                        'decision_value' => json_encode($decisionValue),
+                        'user_id' => $decidedBy->id,
+                        'notes' => "Decision revised via revision request #{$revision->id}",
+                    ]);
+                    
+                    Log::info('RevisionService: Created workflow history entry for decision revision', [
+                        'tax_case_id' => $taxCase->id,
+                        'stage_id' => $stageCode,
+                        'revision_id' => $revision->id
+                    ]);
+                }
+            }
         }
 
         event(new RevisionApproved($revision));

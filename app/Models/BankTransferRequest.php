@@ -14,13 +14,18 @@ class BankTransferRequest extends Model
 
     protected $fillable = [
         'refund_process_id',
+        'request_number',
         'transfer_number',
+        'instruction_number',
         'transfer_date',
+        'processed_date',
         'transfer_amount',
         'bank_code',
         'bank_name',
         'account_number',
+        'account_holder',
         'account_name',
+        'receipt_number',
         'transfer_status',
         'created_by',
         'rejection_reason',

@@ -24,7 +24,7 @@ export const useTaxCaseStore = defineStore('taxCase', () => {
     const appealDecisionData = ref(null)
     const supremeCourtSubmissionData = ref(null)
     const supremeCourtDecisionData = ref(null)
-    const refundProcessData = ref(null)
+    const refundProcessesData = ref([])  // Changed from refundProcessData to array
     const kianData = ref(null)
     
     // Supporting data
@@ -42,6 +42,25 @@ export const useTaxCaseStore = defineStore('taxCase', () => {
     const isLoading = computed(() => loading.value)
     const hasError = computed(() => error.value !== null)
     const hasSuccess = computed(() => success.value !== null)
+    
+    // Refund-related computed properties
+    const totalRefundedAmount = computed(() => {
+        return refundProcessesData.value.reduce((total, refund) => {
+            return total + (parseFloat(refund.refund_amount) || 0)
+        }, 0)
+    })
+
+    const availableRefundAmount = computed(() => {
+        const disputed = parseFloat(currentCase.value?.disputed_amount || 0)
+        return Math.max(0, disputed - totalRefundedAmount.value)
+    })
+
+    const latestRefund = computed(() => {
+        if (refundProcessesData.value.length === 0) return null
+        return refundProcessesData.value[refundProcessesData.value.length - 1]
+    })
+
+    const hasRefunds = computed(() => refundProcessesData.value.length > 0)
     
     // ============= ACTIONS =============
     
@@ -103,15 +122,29 @@ export const useTaxCaseStore = defineStore('taxCase', () => {
             const response = await api.getTaxCase(caseId)
             currentCase.value = response.data || response
             
-            // Load workflow history and documents
+            // Load workflow history, documents, and refund processes
             await Promise.all([
                 fetchWorkflowHistory(caseId),
                 fetchDocuments(caseId),
+                fetchRefundProcesses(caseId),
             ])
         } catch (err) {
             error.value = err.response?.data?.message || err.message
         } finally {
             loading.value = false
+        }
+    }
+
+    /**
+     * Fetch all refund processes for a tax case
+     */
+    const fetchRefundProcesses = async (caseId) => {
+        try {
+            const response = await api.getRefundProcesses(caseId)
+            refundProcessesData.value = response.data || []
+        } catch (err) {
+            console.error('Error fetching refund processes:', err)
+            refundProcessesData.value = []
         }
     }
     
@@ -497,7 +530,7 @@ export const useTaxCaseStore = defineStore('taxCase', () => {
         appealDecisionData,
         supremeCourtSubmissionData,
         supremeCourtDecisionData,
-        refundProcessData,
+        refundProcessesData,
         kianData,
         entities,
         fiscalYears,
@@ -513,12 +546,17 @@ export const useTaxCaseStore = defineStore('taxCase', () => {
         isLoading,
         hasError,
         hasSuccess,
+        totalRefundedAmount,
+        availableRefundAmount,
+        latestRefund,
+        hasRefunds,
         
         // Actions
         clearNotifications,
         loadReferenceData,
         fetchCases,
         fetchCase,
+        fetchRefundProcesses,
         createCase,
         updateCase,
         fetchWorkflowHistory,

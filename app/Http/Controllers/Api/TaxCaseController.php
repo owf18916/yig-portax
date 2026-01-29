@@ -185,8 +185,9 @@ class TaxCaseController extends ApiController
             'appealDecision',
             'supremeCourtSubmission',
             'supremeCourtDecision',
-            'refundProcess',
+            'refundProcesses',
             'kianSubmission',
+            'kianSubmissions',
             'workflowHistories',
             'documents'
         ]);
@@ -196,6 +197,10 @@ class TaxCaseController extends ApiController
         $accessibleStages = $this->getAccessibleStages($taxCase);
         
         $taxCase->accessible_stages = $accessibleStages;
+
+        // ⭐ ADD KIAN ELIGIBILITY INFO
+        $taxCase->can_create_kian = $taxCase->canCreateKian();
+        $taxCase->kian_eligibility_reason = $taxCase->getKianEligibilityReason();
 
         return $this->success($taxCase);
     }

@@ -5,7 +5,10 @@
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between h-16">
           <div class="flex items-center space-x-8">
-            <h1 class="text-2xl font-bold text-blue-600">PORTAX</h1>
+            <div class="flex items-center space-x-3 hover:opacity-80 transition cursor-pointer" @click="$router.push('/')">
+              <img :src="logoUrl" alt="PorTax Logo" class="h-8 w-8">
+              <span class="text-xl font-bold text-gray-900">PORTAX</span>
+            </div>
             <div class="hidden md:flex space-x-4">
               <router-link
                 to="/"
@@ -63,6 +66,8 @@ import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import Toast from './components/Toast.vue'
 import { setToastComponent } from './composables/useToast'
+
+const logoUrl = '/images/portax-logo.webp'
 
 const router = useRouter()
 const route = useRoute()

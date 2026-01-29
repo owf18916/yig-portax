@@ -1,23 +1,29 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Login from '../pages/Login.vue'
-import Dashboard from '../pages/Dashboard.vue'
-import TaxCaseList from '../pages/TaxCaseList.vue'
-import TaxCaseDetail from '../pages/TaxCaseDetail.vue'
-import WorkflowForm from '../pages/WorkflowForm.vue'
-import CreateCITCase from '../pages/CreateCITCase.vue'
-import CreateVATCase from '../pages/CreateVATCase.vue'
-import SptFilingForm from '../pages/SptFilingForm.vue'
-import Sp2FilingForm from '../pages/Sp2FilingForm.vue'
-import SphpFilingForm from '../pages/SphpFilingForm.vue'
-import SkpFilingForm from '../pages/SkpFilingForm.vue'
-import ObjectionSubmissionForm from '../pages/ObjectionSubmissionForm.vue'
-import SpuhRecordForm from '../pages/SpuhRecordForm.vue'
-import ObjectionDecisionForm from '../pages/ObjectionDecisionForm.vue'
-import AppealSubmissionForm from '../pages/AppealSubmissionForm.vue'
-import AppealExplanationRequestForm from '../pages/AppealExplanationRequestForm.vue'
-import AppealDecisionForm from '../pages/AppealDecisionForm.vue'
-import SupremeCourtSubmissionForm from '../pages/SupremeCourtSubmissionForm.vue'
-import KianSubmissionForm from '../pages/KianSubmissionForm.vue'
+import { defineAsyncComponent } from 'vue'
+
+// Lazy load all page components for better code splitting
+const Login = defineAsyncComponent(() => import('../pages/Login.vue'))
+const Dashboard = defineAsyncComponent(() => import('../pages/Dashboard.vue'))
+const TaxCaseList = defineAsyncComponent(() => import('../pages/TaxCaseList.vue'))
+const TaxCaseDetail = defineAsyncComponent(() => import('../pages/TaxCaseDetail.vue'))
+const WorkflowForm = defineAsyncComponent(() => import('../pages/WorkflowForm.vue'))
+const CreateCITCase = defineAsyncComponent(() => import('../pages/CreateCITCase.vue'))
+const CreateVATCase = defineAsyncComponent(() => import('../pages/CreateVATCase.vue'))
+const SptFilingForm = defineAsyncComponent(() => import('../pages/SptFilingForm.vue'))
+const Sp2FilingForm = defineAsyncComponent(() => import('../pages/Sp2FilingForm.vue'))
+const SphpFilingForm = defineAsyncComponent(() => import('../pages/SphpFilingForm.vue'))
+const SkpFilingForm = defineAsyncComponent(() => import('../pages/SkpFilingForm.vue'))
+const ObjectionSubmissionForm = defineAsyncComponent(() => import('../pages/ObjectionSubmissionForm.vue'))
+const SpuhRecordForm = defineAsyncComponent(() => import('../pages/SpuhRecordForm.vue'))
+const ObjectionDecisionForm = defineAsyncComponent(() => import('../pages/ObjectionDecisionForm.vue'))
+const AppealSubmissionForm = defineAsyncComponent(() => import('../pages/AppealSubmissionForm.vue'))
+const AppealExplanationRequestForm = defineAsyncComponent(() => import('../pages/AppealExplanationRequestForm.vue'))
+const AppealDecisionForm = defineAsyncComponent(() => import('../pages/AppealDecisionForm.vue'))
+const SupremeCourtSubmissionForm = defineAsyncComponent(() => import('../pages/SupremeCourtSubmissionForm.vue'))
+const BankTransferRequestForm = defineAsyncComponent(() => import('../pages/BankTransferRequestForm.vue'))
+const SuratInstruksiTransferForm = defineAsyncComponent(() => import('../pages/SuratInstruksiTransferForm.vue'))
+const RefundReceivedForm = defineAsyncComponent(() => import('../pages/RefundReceivedForm.vue'))
+const KianSubmissionForm = defineAsyncComponent(() => import('../pages/KianSubmissionForm.vue'))
 
 const routes = [
   {
@@ -114,6 +120,24 @@ const routes = [
     path: '/tax-cases/:id/workflow/11',
     name: 'SupremeCourtSubmissionForm',
     component: SupremeCourtSubmissionForm,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/tax-cases/:id/workflow/13',
+    name: 'BankTransferRequestForm',
+    component: BankTransferRequestForm,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/tax-cases/:id/workflow/14',
+    name: 'SuratInstruksiTransferForm',
+    component: SuratInstruksiTransferForm,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/tax-cases/:id/workflow/15',
+    name: 'RefundReceivedForm',
+    component: RefundReceivedForm,
     meta: { requiresAuth: true }
   },
   {

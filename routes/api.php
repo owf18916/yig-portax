@@ -18,6 +18,8 @@ use App\Http\Controllers\Api\SphpRecordController;
 use App\Http\Controllers\Api\SpuhRecordController;
 use App\Http\Controllers\Api\AnnouncementController;
 use App\Http\Controllers\Api\RefundProcessController;
+use App\Http\Controllers\Api\BankTransferRequestController;
+use App\Http\Controllers\Api\PreliminaryRefundRequestController;
 use App\Http\Controllers\Api\AppealDecisionController;
 use App\Http\Controllers\Api\KianSubmissionController;
 use App\Http\Controllers\Api\AppealSubmissionController;
@@ -294,23 +296,61 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                     );
                     Log::info('SphpRecord saved', ['sphpData' => $sphpData]);
                 } elseif ($stage == 4) {
+                    // ⭐ DEBUG: Check if decision fields exist in request
+                    Log::info('[Stage 4 DEBUG] Request has decision fields?', [
+                        'has_create_refund' => $request->has('create_refund'),
+                        'has_continue' => $request->has('continue_to_next_stage'),
+                        'raw_create_refund' => $request->input('create_refund'),
+                        'raw_continue' => $request->input('continue_to_next_stage'),
+                    ]);
+                    
                     $skpData = $request->only([
                         'skp_number', 'issue_date', 'receipt_date', 'skp_type',
                         'skp_amount', 'royalty_correction', 'service_correction', 'other_correction', 'notes',
-                        'correction_notes', 'user_routing_choice'
+                        'correction_notes', 'user_routing_choice', 'create_refund', 'refund_amount', 'continue_to_next_stage'
                     ]);
+                    
+                    Log::info('[Stage 4] After only() - skpData keys', [
+                        'keys' => array_keys($skpData),
+                        'full_data' => $skpData
+                    ]);
+                    
                     $skpData['tax_case_id'] = $taxCase->id;
+                    
+                    // ⭐ ENSURE BOOLEANS ARE ACTUAL BOOLEANS for decision checkboxes
+                    if (isset($skpData['create_refund'])) {
+                        $skpData['create_refund'] = filter_var($skpData['create_refund'] ?? false, FILTER_VALIDATE_BOOLEAN);
+                    }
+                    if (isset($skpData['continue_to_next_stage'])) {
+                        $skpData['continue_to_next_stage'] = filter_var($skpData['continue_to_next_stage'] ?? false, FILTER_VALIDATE_BOOLEAN);
+                    }
+                    
+                    Log::info('[Stage 4] Decision Checkboxes', [
+                        'create_refund' => $skpData['create_refund'] ?? null,
+                        'create_refund_type' => gettype($skpData['create_refund'] ?? null),
+                        'continue_to_next_stage' => $skpData['continue_to_next_stage'] ?? null,
+                        'continue_to_next_stage_type' => gettype($skpData['continue_to_next_stage'] ?? null),
+                    ]);
                     
                     // ⭐ If user_routing_choice is provided, update tax_case next_stage_id
                     if ($request->has('user_routing_choice')) {
                         $routingChoice = $request->input('user_routing_choice');
                         $nextStageId = ($routingChoice === 'refund') ? 13 : 5;
                         $taxCase->update(['next_stage_id' => $nextStageId]);
-                        $decisionValue = $routingChoice;
                         Log::info('Stage 4 Routing Choice', ['choice' => $routingChoice, 'next_stage' => $nextStageId]);
-                    } else {
-                        $decisionValue = $request->input('skp_type');
                     }
+                    
+                    // ⭐ SET decision_value: Store decision checkpoint values as JSON for workflow history
+                    $decisionValue = json_encode([
+                        'create_refund' => $skpData['create_refund'] ?? false,
+                        'refund_amount' => $skpData['refund_amount'] ?? 0,
+                        'continue_to_next_stage' => $skpData['continue_to_next_stage'] ?? false,
+                        'skp_type' => $request->input('skp_type')
+                    ]);
+                    
+                    Log::info('Stage 4 Decision Value Set', [
+                        'decisionValue' => $decisionValue
+                    ]);
                     
                     \App\Models\SkpRecord::updateOrCreate(
                         ['tax_case_id' => $taxCase->id],
@@ -340,13 +380,13 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                     Log::info('SpuhRecord saved', ['spuhData' => $spuhData]);
                 } elseif ($stage == 7) {
                     $decisionData = $request->only([
-                        'decision_number', 'decision_date', 'decision_type', 'decision_amount'
+                        'decision_number', 'decision_date', 'decision_type', 'decision_amount',
+                        'create_refund', 'refund_amount', 'continue_to_next_stage'
                     ]);
                     $decisionData['tax_case_id'] = $taxCase->id;
                     
                     // Determine next_stage based on decision_type (auto-routing logic)
                     $decisionType = $request->input('decision_type');
-                    $decisionValue = $decisionType; // Store for workflow history
                     $nextStage = null;
                     
                     if ($decisionType === 'granted') {
@@ -359,6 +399,14 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                         $nextStage = null;  // User must choose - no auto-routing
                         Log::info('Decision: PARTIALLY_GRANTED → User must choose between Appeal or Refund');
                     }
+                    
+                    // ⭐ Store decision checkpoints in decision_value as JSON
+                    $decisionValue = json_encode([
+                        'decision_type' => $decisionType,
+                        'create_refund' => $request->boolean('create_refund', false),
+                        'refund_amount' => $request->input('refund_amount', 0),
+                        'continue_to_next_stage' => $request->boolean('continue_to_next_stage', false)
+                    ]);
                     
                     $decisionData['next_stage'] = $nextStage;
                     \App\Models\ObjectionDecision::updateOrCreate(
@@ -390,7 +438,8 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                 } elseif ($stage == 10) {
                     $appealDecisionData = $request->only([
                         'decision_number', 'decision_date', 'decision_type',
-                        'decision_amount', 'decision_notes'
+                        'decision_amount', 'decision_notes',
+                        'create_refund', 'refund_amount', 'continue_to_next_stage'
                     ]);
                     $appealDecisionData['tax_case_id'] = $taxCase->id;
                     
@@ -399,6 +448,14 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                         $userChoice = $request->input('user_routing_choice');
                         $appealDecisionData['next_stage'] = ($userChoice === 'refund') ? 13 : 11;
                     }
+                    
+                    // ⭐ Store decision checkpoints in decision_value as JSON
+                    $decisionValue = json_encode([
+                        'decision_type' => $request->input('decision_type'),
+                        'create_refund' => $request->boolean('create_refund', false),
+                        'refund_amount' => $request->input('refund_amount', 0),
+                        'continue_to_next_stage' => $request->boolean('continue_to_next_stage', false)
+                    ]);
                     
                     \App\Models\AppealDecision::updateOrCreate(
                         ['tax_case_id' => $taxCase->id],
@@ -410,6 +467,12 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                         'supreme_court_letter_number', 'submission_date', 'review_amount'
                     ]);
                     $supremeCourtSubmissionData['tax_case_id'] = $taxCase->id;
+                    
+                    // Map supreme_court_letter_number to submission_number for database constraint
+                    if (isset($supremeCourtSubmissionData['supreme_court_letter_number'])) {
+                        $supremeCourtSubmissionData['submission_number'] = $supremeCourtSubmissionData['supreme_court_letter_number'];
+                    }
+                    
                     \App\Models\SupremeCourtSubmission::updateOrCreate(
                         ['tax_case_id' => $taxCase->id],
                         $supremeCourtSubmissionData
@@ -418,7 +481,8 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                 } elseif ($stage == 12) {
                     $supremeCourtDecisionData = $request->only([
                         'keputusan_pk_number', 'keputusan_pk_date', 'keputusan_pk',
-                        'keputusan_pk_amount', 'keputusan_pk_notes', 'next_action'
+                        'keputusan_pk_amount', 'keputusan_pk_notes', 'next_action',
+                        'create_refund', 'refund_amount', 'continue_to_next_stage'
                     ]);
                     $supremeCourtDecisionData['tax_case_id'] = $taxCase->id;
                     
@@ -427,7 +491,6 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                         $nextAction = $request->input('next_action');
                         $nextStageId = ($nextAction === 'refund') ? 13 : 16;  // 13=Refund, 16=KIAN
                         $taxCase->update(['next_stage_id' => $nextStageId]);
-                        $decisionValue = $nextAction;
                         
                         // Also update case_status based on decision
                         $keputusanPk = $request->input('keputusan_pk');
@@ -440,17 +503,120 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                         $taxCase->update(['case_status' => $caseStatus]);
                         
                         Log::info('Stage 12 Final Decision', [
-                            'decision_type' => $supremeCourtDecisionData['decision_type'] ?? null,
-                            'next_action' => $supremeCourtDecisionData['next_action'] ?? null,
+                            'keputusan_pk' => $keputusanPk,
+                            'next_action' => $nextAction,
                             'case_status' => $caseStatus
                         ]);
                     }
+                    
+                    // ⭐ Store decision checkpoints in decision_value as JSON
+                    $decisionValue = json_encode([
+                        'keputusan_pk' => $request->input('keputusan_pk'),
+                        'next_action' => $request->input('next_action'),
+                        'create_refund' => $request->boolean('create_refund', false),
+                        'continue_to_next_stage' => $request->boolean('continue_to_next_stage', false)
+                    ]);
                     
                     \App\Models\SupremeCourtDecision::updateOrCreate(
                         ['tax_case_id' => $taxCase->id],
                         $supremeCourtDecisionData
                     );
                     Log::info('SupremeCourtDecision saved', ['supremeCourtDecisionData' => $supremeCourtDecisionData]);
+                } elseif ($stage == 13) {
+                    // Stage 13: Bank Transfer Request - Initial refund request submission
+                    $bankTransferData = $request->only([
+                        'request_number', 'transfer_date', 'instruction_number', 'notes'
+                    ]);
+                    
+                    // Get or create refund process for this tax case
+                    $refundProcess = \App\Models\RefundProcess::firstOrCreate(
+                        ['tax_case_id' => $taxCase->id],
+                        [
+                            'refund_number' => sprintf('RFD-%s-%05d', $taxCase->fiscal_year ?? date('Y'), 
+                                \App\Models\RefundProcess::where('tax_case_id', $taxCase->id)->count() + 1),
+                            'refund_amount' => 0,
+                            'refund_method' => 'bank_transfer',
+                            'refund_status' => 'pending',
+                            'submitted_by' => auth()->id(),
+                            'submitted_at' => now(),
+                            'status' => 'draft',
+                        ]
+                    );
+                    
+                    // Create bank transfer request
+                    $bankTransferData['refund_process_id'] = $refundProcess->id;
+                    $bankTransferData['transfer_number'] = 'TRN-' . $refundProcess->id . '-' . time();
+                    $bankTransferData['transfer_status'] = 'pending';
+                    $bankTransferData['created_by'] = auth()->id();
+                    
+                    \App\Models\BankTransferRequest::updateOrCreate(
+                        ['refund_process_id' => $refundProcess->id],
+                        $bankTransferData
+                    );
+                    Log::info('BankTransferRequest saved (Stage 13)', ['bankTransferData' => $bankTransferData]);
+                } elseif ($stage == 14) {
+                    // Stage 14: Surat Instruksi Transfer - Transfer instruction with bank details
+                    $transferInstructionData = $request->only([
+                        'instruction_number', 'transfer_amount', 'bank_code', 'bank_name',
+                        'account_number', 'account_holder', 'notes'
+                    ]);
+                    
+                    // Get the latest refund process
+                    $refundProcess = \App\Models\RefundProcess::where('tax_case_id', $taxCase->id)
+                        ->latest()
+                        ->first();
+                    
+                    if ($refundProcess) {
+                        // Get the latest bank transfer request
+                        $bankTransfer = $refundProcess->bankTransferRequests()
+                            ->latest()
+                            ->first();
+                        
+                        if ($bankTransfer) {
+                            $transferInstructionData['transfer_status'] = 'processing';
+                            $bankTransfer->update($transferInstructionData);
+                            
+                            // Update refund process with the transfer amount
+                            $refundProcess->update([
+                                'refund_amount' => $transferInstructionData['transfer_amount'],
+                                'refund_status' => 'approved',
+                                'approved_by' => auth()->id(),
+                                'approved_at' => now(),
+                                'status' => 'approved',
+                            ]);
+                            Log::info('TransferInstruction saved (Stage 14)', ['transferInstructionData' => $transferInstructionData]);
+                        }
+                    }
+                } elseif ($stage == 15) {
+                    // Stage 15: Refund Received - Confirm receipt of refund
+                    $refundReceiptData = $request->only([
+                        'receipt_number', 'processed_date', 'receipt_date', 'transfer_amount', 'notes'
+                    ]);
+                    
+                    // Get the latest refund process
+                    $refundProcess = \App\Models\RefundProcess::where('tax_case_id', $taxCase->id)
+                        ->latest()
+                        ->first();
+                    
+                    if ($refundProcess) {
+                        // Get the latest bank transfer request
+                        $bankTransfer = $refundProcess->bankTransferRequests()
+                            ->latest()
+                            ->first();
+                        
+                        if ($bankTransfer) {
+                            $refundReceiptData['transfer_status'] = 'completed';
+                            $bankTransfer->update($refundReceiptData);
+                            
+                            // Mark refund process as completed
+                            $refundProcess->update([
+                                'refund_status' => 'completed',
+                                'refund_amount' => $refundReceiptData['transfer_amount'],
+                                'processed_date' => $refundReceiptData['processed_date'],
+                            ]);
+                            Log::info('RefundReceipt saved (Stage 15)', ['refundReceiptData' => $refundReceiptData]);
+                        }
+                    }
                 }
                 
                 if ($isDraft) {
@@ -635,14 +801,33 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         Route::get('/supreme-court-decisions', [SupremeCourtDecisionController::class, 'show'])->name('supreme-court-decisions.show');
         Route::post('/supreme-court-decisions/{supremeCourtDecision}/approve', [SupremeCourtDecisionController::class, 'approve'])->name('supreme-court-decisions.approve');
         
-        // Refund Processes - Stage 12
+        // Refund Stages - Workflow stages 13, 14, 15
+        // GET stage data
+        Route::get('/workflow/13', [BankTransferRequestController::class, 'show'])->name('workflow.stage-13.show');
+        Route::get('/workflow/14', [BankTransferRequestController::class, 'showTransferInstruction'])->name('workflow.stage-14.show');
+        Route::get('/workflow/15', [BankTransferRequestController::class, 'showRefundReceipt'])->name('workflow.stage-15.show');
+        
+        // POST stage data
+        Route::post('/workflow/13', [BankTransferRequestController::class, 'createTransferRequest'])->name('workflow.stage-13.store');
+        Route::post('/workflow/14', [BankTransferRequestController::class, 'updateTransferInstruction'])->name('workflow.stage-14.store');
+        Route::post('/workflow/15', [BankTransferRequestController::class, 'completeRefund'])->name('workflow.stage-15.store');
+        
+        Route::get('/refund-processes', [RefundProcessController::class, 'index'])->name('refund-processes.index');
         Route::post('/refund-processes', [RefundProcessController::class, 'store'])->name('refund-processes.store');
-        Route::get('/refund-processes', [RefundProcessController::class, 'show'])->name('refund-processes.show');
+        Route::get('/refund-processes/{refundProcess}', [RefundProcessController::class, 'show'])->name('refund-processes.show');
         Route::post('/refund-processes/{refundProcess}/approve', [RefundProcessController::class, 'approve'])->name('refund-processes.approve');
         Route::post('/refund-processes/{refundProcess}/bank-transfers', [RefundProcessController::class, 'addBankTransfer'])->name('bank-transfers.store');
         Route::get('/refund-processes/{refundProcess}/bank-transfers', [RefundProcessController::class, 'bankTransfers'])->name('bank-transfers.index');
         Route::post('/refund-processes/{refundProcess}/bank-transfers/{transfer}/process', [RefundProcessController::class, 'processBankTransfer'])->name('bank-transfers.process');
         Route::post('/refund-processes/{refundProcess}/bank-transfers/{transfer}/reject', [RefundProcessController::class, 'rejectBankTransfer'])->name('bank-transfers.reject');
+        
+        // Preliminary Refund Requests - For Pengembalian Pendahuluan cases
+        Route::get('/preliminary-refund-request', [PreliminaryRefundRequestController::class, 'show'])->name('preliminary-refund-requests.show');
+        Route::post('/preliminary-refund-request', [PreliminaryRefundRequestController::class, 'store'])->name('preliminary-refund-requests.store');
+        Route::put('/preliminary-refund-request', [PreliminaryRefundRequestController::class, 'update'])->name('preliminary-refund-requests.update');
+        Route::delete('/preliminary-refund-request', [PreliminaryRefundRequestController::class, 'destroy'])->name('preliminary-refund-requests.destroy');
+        Route::post('/preliminary-refund-request/approve', [PreliminaryRefundRequestController::class, 'approve'])->name('preliminary-refund-requests.approve');
+        Route::post('/preliminary-refund-request/reject', [PreliminaryRefundRequestController::class, 'reject'])->name('preliminary-refund-requests.reject');
         
         // KIAN Submissions - Stage 12
         Route::post('/kian-submissions', [KianSubmissionController::class, 'store'])->name('kian-submissions.store');

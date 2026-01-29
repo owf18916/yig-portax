@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\DB;
 class SupremeCourtDecisionController extends ApiController
 {
     /**
-     * Store supreme court decision (Stage 11b)
+     * Store supreme court decision (Stage 12)
      */
     public function store(Request $request, TaxCase $taxCase)
     {
@@ -20,10 +20,26 @@ class SupremeCourtDecisionController extends ApiController
                 'decision_number' => 'required|string|unique:supreme_court_decisions',
                 'decision_date' => 'required|date',
                 'decision_type' => 'required|in:GRANTED,REJECTED,PARTIALLY_GRANTED',
-                'approved_amount' => 'required|numeric|min:0',
-                'decision_reason' => 'required|string',
+                'decision_amount' => 'required|numeric|min:0',
+                'decision_notes' => 'nullable|string',
                 'notes' => 'nullable|string',
+                'create_refund' => 'nullable|boolean',
+                'refund_amount' => 'nullable|numeric|min:0',
             ]);
+
+            // ⭐ CHANGE 3: Validate independent actions
+            if ($validated['create_refund']) {
+                $validated['refund_amount'] = $request->input('refund_amount');
+                if (!$validated['refund_amount'] || $validated['refund_amount'] <= 0) {
+                    return $this->error('Refund amount must be greater than 0 when creating refund', 422);
+                }
+                
+                // Validate refund amount doesn't exceed available amount
+                $availableAmount = max(0, $taxCase->disputed_amount - ($taxCase->getTotalRefundedAmount() ?? 0));
+                if ($validated['refund_amount'] > $availableAmount) {
+                    return $this->error("Refund amount cannot exceed available amount (Rp {$availableAmount})", 422);
+                }
+            }
 
             DB::beginTransaction();
 
@@ -32,34 +48,49 @@ class SupremeCourtDecisionController extends ApiController
                 'decision_number' => $validated['decision_number'],
                 'decision_date' => $validated['decision_date'],
                 'decision_type' => $validated['decision_type'],
-                'approved_amount' => $validated['approved_amount'],
-                'decision_reason' => $validated['decision_reason'],
+                'decision_amount' => $validated['decision_amount'],
+                'decision_notes' => $validated['decision_notes'] ?? null,
                 'notes' => $validated['notes'] ?? null,
-                'status' => 'DRAFT',
-                'received_date' => now(),
+                'create_refund' => $validated['create_refund'] ?? false,
+                'refund_amount' => $validated['refund_amount'] ?? null,
+                'submitted_by' => auth()->id(),
+                'submitted_at' => now(),
+                'status' => 'submitted',
             ]);
+
+            // ⭐ CHANGE 3: Create refund if requested
+            if ($validated['create_refund']) {
+                $scDecision->createRefundIfNeeded();
+            }
 
             // Log workflow history
             WorkflowHistory::create([
                 'tax_case_id' => $taxCase->id,
-                'stage_number' => 11,
-                'action' => 'SUPREME_COURT_DECISION_RECEIVED',
-                'description' => 'Supreme court decision received',
+                'stage_id' => 12,
+                'stage_from' => 12,
+                'stage_number' => 12,
+                'action' => 'SUPREME_COURT_DECISION_SUBMITTED',
+                'description' => 'Supreme court decision submitted',
                 'performed_by' => auth()->id(),
                 'notes' => $validated['notes'] ?? null,
-                'decision_point' => 'supreme_court_decision',
-                'decision_value' => $validated['decision_type'],
+                'decision_point' => 'independent_actions',
+                'decision_value' => json_encode([
+                    'decision_type' => $validated['decision_type'],
+                    'create_refund' => $validated['create_refund'],
+                    'refund_amount' => $validated['refund_amount'],
+                ]),
             ]);
 
-            // Update tax case status
+            // Mark case as completed (Supreme Court is final stage)
             $taxCase->update([
-                'current_stage' => 11,
-                'status' => 'SUPREME_COURT_DECISION_RECEIVED'
+                'current_stage' => null,
+                'is_completed' => true,
+                'status' => 'COMPLETED'
             ]);
 
             DB::commit();
 
-            return $this->success($scDecision, 'Supreme court decision created', 201);
+            return $this->success($scDecision, 'Supreme court decision submitted', 201);
         } catch (\Exception $e) {
             DB::rollBack();
             return $this->error($e->getMessage(), 500);

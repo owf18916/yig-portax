@@ -6,6 +6,7 @@ use App\Models\TaxCase;
 use App\Models\SkpRecord;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
 
 class SkpRecordController extends ApiController
 {
@@ -32,7 +33,52 @@ class SkpRecordController extends ApiController
             'other_correction' => 'nullable|numeric|min:0',
             'correction_notes' => 'nullable|string',
             'user_routing_choice' => 'required|in:refund,objection',
+            'create_refund' => 'nullable|boolean',
+            'refund_amount' => 'nullable|numeric|min:0',
+            'continue_to_next_stage' => 'nullable|boolean',
         ]);
+
+        // ⭐ ENSURE BOOLEANS ARE ACTUAL BOOLEANS (not strings or numbers)
+        $validated['create_refund'] = filter_var($validated['create_refund'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $validated['continue_to_next_stage'] = filter_var($validated['continue_to_next_stage'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        
+        // ⭐ DEBUG: Log values BEFORE saving
+        Log::info('[SKP] VALUES BEFORE SAVE', [
+            'create_refund_value' => $validated['create_refund'],
+            'create_refund_type' => gettype($validated['create_refund']),
+            'continue_to_next_stage_value' => $validated['continue_to_next_stage'],
+            'continue_to_next_stage_type' => gettype($validated['continue_to_next_stage']),
+        ]);
+
+        // ⭐ ENSURE BOOLEANS ARE ACTUAL BOOLEANS (convert all to bool explicitly)
+        // PHP's filter_var is reliable, but let's also check raw input
+        $rawCreateRefund = $request->input('create_refund');
+        $rawContinueToNextStage = $request->input('continue_to_next_stage');
+        
+        Log::info('[SKP] RAW INPUT FROM REQUEST', [
+            'raw_create_refund' => $rawCreateRefund,
+            'raw_create_refund_type' => gettype($rawCreateRefund),
+            'raw_continue_to_next_stage' => $rawContinueToNextStage,
+            'raw_continue_to_next_stage_type' => gettype($rawContinueToNextStage),
+        ]);
+
+        // Explicit boolean conversion
+        $validated['create_refund'] = filter_var($validated['create_refund'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $validated['continue_to_next_stage'] = filter_var($validated['continue_to_next_stage'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        
+        // ⭐ CHANGE 3: Validate independent actions
+        if ($validated['create_refund']) {
+            $validated['refund_amount'] = $request->input('refund_amount');
+            if (!$validated['refund_amount'] || $validated['refund_amount'] <= 0) {
+                return $this->error('Refund amount must be greater than 0 when creating refund', 422);
+            }
+            
+            // Validate refund amount doesn't exceed available amount
+            $availableAmount = max(0, $taxCase->disputed_amount - $validated['skp_amount']);
+            if ($validated['refund_amount'] > $availableAmount) {
+                return $this->error("Refund amount cannot exceed available amount (Rp {$availableAmount})", 422);
+            }
+        }
 
         $validated['tax_case_id'] = $taxCase->id;
         $validated['submitted_by'] = auth()->id();
@@ -41,22 +87,52 @@ class SkpRecordController extends ApiController
 
         // Determine next stage based on USER'S CHOICE, NOT skp_type
         $nextStageId = $this->determineNextStageFromUserChoice($validated['user_routing_choice']);
+        
+        // ⭐ CHANGE 3: Override next stage if continue_to_next_stage is false
+        if (!$validated['continue_to_next_stage']) {
+            $nextStageId = null; // Case will end
+        }
+        
         $validated['next_stage_id'] = $nextStageId;
 
         $skpRecord = SkpRecord::create($validated);
 
-        // Update tax case with next stage
-        $taxCase->update([
-            'next_stage_id' => $nextStageId,
+        // ⭐ DEBUG: Log values AFTER saving
+        Log::info('[SKP] VALUES AFTER SAVE', [
+            'create_refund_db' => $skpRecord->create_refund,
+            'create_refund_type' => gettype($skpRecord->create_refund),
+            'continue_to_next_stage_db' => $skpRecord->continue_to_next_stage,
+            'continue_to_next_stage_type' => gettype($skpRecord->continue_to_next_stage),
+            'raw_attributes' => [
+                'create_refund' => $skpRecord->getAttributes()['create_refund'] ?? 'NOT SET',
+                'continue_to_next_stage' => $skpRecord->getAttributes()['continue_to_next_stage'] ?? 'NOT SET',
+            ]
         ]);
+
+        // ⭐ CHANGE 3: Create refund if requested
+        if ($validated['create_refund']) {
+            $skpRecord->createRefundIfNeeded();
+        }
+
+        // Update tax case with next stage (or null if case ends)
+        if ($validated['continue_to_next_stage']) {
+            $taxCase->update([
+                'current_stage' => $nextStageId,
+            ]);
+        }
 
         // Log workflow with user's decision
         $taxCase->workflowHistories()->create([
+            'stage_id' => 4,
             'stage_from' => 4,
-            'stage_to' => 4,
+            'stage_to' => $nextStageId,
             'action' => 'submitted',
-            'decision_point' => 'user_routing_choice',
-            'decision_value' => $validated['user_routing_choice'],
+            'decision_point' => 'independent_actions',
+            'decision_value' => json_encode([
+                'create_refund' => $validated['create_refund'],
+                'refund_amount' => $validated['refund_amount'],
+                'continue_to_next_stage' => $validated['continue_to_next_stage'],
+            ]),
             'user_id' => auth()->id(),
             'created_at' => now(),
         ]);

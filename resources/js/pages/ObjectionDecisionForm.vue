@@ -84,7 +84,9 @@ const availableFields = [
   'decision_number',
   'decision_date',
   'decision_type',
-  'decision_amount'
+  'decision_amount',
+  'create_refund',
+  'continue_to_next_stage'
 ]
 
 const fields = ref([
@@ -190,6 +192,8 @@ const loadTaxCase = async () => {
         decision_date: formatDateForInput(od.decision_date),
         decision_type: od.decision_type || '',
         decision_amount: od.decision_amount || 0,
+        create_refund: od.create_refund ?? false,
+        continue_to_next_stage: od.continue_to_next_stage ?? false,
         workflowHistories: caseFetchedData.workflow_histories || []
       }
       preFilledMessage.value = '✅ Stage 7 data loaded from previous submission'

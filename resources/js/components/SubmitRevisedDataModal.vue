@@ -176,6 +176,29 @@
               </select>
             </div>
 
+            <!-- Checkbox Fields -->
+            <div v-if="selectedFields.includes('create_refund')" class="form-group">
+              <label class="flex items-center">
+                <input 
+                  type="checkbox" 
+                  v-model="revisedData.create_refund"
+                  class="checkbox-input"
+                >
+                <span class="ml-2 form-label">{{ fieldLabel('create_refund') }}</span>
+              </label>
+            </div>
+
+            <div v-if="selectedFields.includes('continue_to_next_stage')" class="form-group">
+              <label class="flex items-center">
+                <input 
+                  type="checkbox" 
+                  v-model="revisedData.continue_to_next_stage"
+                  class="checkbox-input"
+                >
+                <span class="ml-2 form-label">{{ fieldLabel('continue_to_next_stage') }}</span>
+              </label>
+            </div>
+
             <!-- Document Changes -->
             <div v-if="revision?.proposed_document_changes" class="form-group mt-4">
               <label class="form-label">📎 Document Changes:</label>
@@ -270,6 +293,10 @@ const currencyOptions = computed(() => {
 
 // Helper function to get field label
 const fieldLabel = (field) => {
+  // Special labels for decision checkbox fields
+  if (field === 'create_refund') return 'Create Refund Process'
+  if (field === 'continue_to_next_stage') return 'Continue to Next Stage'
+  
   const fieldDef = props.fields.find(f => f.key === field)
   if (fieldDef && fieldDef.label) {
     return fieldDef.label
@@ -306,8 +333,15 @@ const submit = async () => {
 
     // Only include fields that are in the approved list
     selectedFields.value.forEach(field => {
-      if (revisedData.value[field] !== undefined && revisedData.value[field] !== '') {
-        payload.revised_data[field] = revisedData.value[field]
+      const value = revisedData.value[field]
+      // For checkbox fields, allow false values
+      if (field === 'create_refund' || field === 'continue_to_next_stage') {
+        // Always include checkbox fields if they're defined (even if false)
+        if (value !== undefined) {
+          payload.revised_data[field] = value === true ? true : false
+        }
+      } else if (value !== undefined && value !== '') {
+        payload.revised_data[field] = value
       }
     })
 

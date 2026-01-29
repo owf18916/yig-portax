@@ -3,7 +3,10 @@
     <div class="w-full max-w-md">
       <!-- Logo/Title -->
       <div class="text-center mb-8">
-        <h1 class="text-4xl font-bold text-white mb-2">PorTax</h1>
+        <div class="flex justify-center mb-4">
+          <img :src="logoUrl" alt="PorTax Logo" class="h-16 w-16 drop-shadow-lg">
+        </div>
+        <h1 class="text-3xl font-bold text-white mb-2">PorTax</h1>
         <p class="text-blue-100">Tax Case Management System</p>
       </div>
 
@@ -75,6 +78,8 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+
+const logoUrl = '/images/portax-logo.webp'
 
 const router = useRouter()
 

@@ -299,6 +299,14 @@ const formatDate = (date) => {
 }
 
 const fieldLabel = (field) => {
+  // Special labels for decision checkbox fields
+  if (field === 'create_refund') {
+    return 'Create Refund Process'
+  }
+  if (field === 'continue_to_next_stage') {
+    return 'Continue to Next Stage'
+  }
+  
   // Look for the field in the fields array first (highest priority)
   if (props.fields && props.fields.length > 0) {
     const fieldDef = props.fields.find(f => f.key === field)
@@ -363,6 +371,11 @@ const getDocFileName = (docId, revision) => {
 }
 
 const formatProposedValue = (field, value) => {
+  // For boolean fields, show as Yes/No
+  if (field === 'create_refund' || field === 'continue_to_next_stage') {
+    return value ? 'Yes' : 'No'
+  }
+  
   // For period_id, show the period_code instead of the ID
   if (field === 'period_id' && props.periodsList && props.periodsList.length > 0) {
     const period = props.periodsList.find(p => p.id === value)

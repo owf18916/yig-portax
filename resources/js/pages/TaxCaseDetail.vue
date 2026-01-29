@@ -45,6 +45,25 @@
         </div>
       </Card>
 
+      <!-- KIAN Eligibility Notice and Button -->
+      <Alert
+        v-if="caseData.can_create_kian"
+        type="warning"
+        title="KIAN Eligible"
+        :message="`You are eligible to submit KIAN: ${caseData.kian_eligibility_reason}`"
+      >
+        <template #actions>
+          <Button
+            @click="showKianModal = true"
+            variant="primary"
+            size="sm"
+            class="bg-red-600 hover:bg-red-700 text-white"
+          >
+            📄 Submit KIAN
+          </Button>
+        </template>
+      </Alert>
+
       <!-- Workflow Progress with Collapsible Sections -->
       <Card title="Workflow Progress" subtitle="Track the case through stages">
         <div class="space-y-4">
@@ -252,6 +271,15 @@
         </div>
       </Card>
 
+      <!-- Refund List Component -->
+      <RefundList
+        :refunds="taxCaseStore.refundProcessesData"
+        :totalRefunded="taxCaseStore.totalRefundedAmount"
+        :availableAmount="taxCaseStore.availableRefundAmount"
+        :currencyCode="caseData.currency?.code || 'IDR'"
+        :canCreateMore="taxCaseStore.canCreateRefund"
+      />
+
       <!-- Documents section removed - documents uploaded per stage -->
 
     <!-- Next Action Modal -->
@@ -262,6 +290,16 @@
       @save="saveNextAction"
       @close="closeNextActionModal"
     />
+
+    <!-- KIAN Modal -->
+    <KianModal
+      :is-open="showKianModal"
+      :tax-case="caseData"
+      :loss-amount="caseData.disputed_amount - (caseData.total_refunded_amount || 0)"
+      :reason="caseData.kian_eligibility_reason || ''"
+      @close="showKianModal = false"
+      @success="onKianSubmissionSuccess"
+    />
     </div>
   </div>
 </template>
@@ -270,14 +308,18 @@
 import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useToast } from '../composables/useToast'
+import { useTaxCaseStore } from '../stores/taxCaseStore'
 import Card from '../components/Card.vue'
 import Button from '../components/Button.vue'
 import Alert from '../components/Alert.vue'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
 import NextActionModal from '../components/NextActionModal.vue'
+import KianModal from '../components/KianModal.vue'
+import RefundList from './RefundList.vue'
 
 const route = useRoute()
 const router = useRouter()
+const taxCaseStore = useTaxCaseStore()
 const { showSuccess, showError } = useToast()
 
 const loading = ref(true)
@@ -292,6 +334,7 @@ const caseData = ref({
 })
 const documents = ref([])
 const workflowHistory = ref([])
+const showKianModal = ref(false)
 
 // State for collapsible sections
 const expandedSections = ref({
@@ -365,16 +408,49 @@ const getStage12Decision = () => {
   return null
 }
 
+// Helper function: Check if any decision point has create_refund = true
+const hasRefundTriggered = () => {
+  // Helper to get decision details from workflow history
+  const getDecisionDetails = (stageId) => {
+    const history = workflowHistory.value.find(
+      h => h.stage_id === stageId && (h.status === 'submitted' || h.status === 'completed')
+    )
+    if (!history || !history.decision_value) return null
+    try {
+      return typeof history.decision_value === 'string' 
+        ? JSON.parse(history.decision_value) 
+        : history.decision_value
+    } catch {
+      return null
+    }
+  }
+  
+  // Helper to check if stage completed
+  const isStageCompleted = (stageId) => {
+    return workflowHistory.value.some(
+      h => h.stage_id === stageId && (h.status === 'submitted' || h.status === 'completed')
+    )
+  }
+  
+  for (let stageId of [4, 7, 10, 12]) {
+    const details = getDecisionDetails(stageId)
+    if (details && details.create_refund === true && isStageCompleted(stageId)) {
+      console.log(`[Refund Check] Stage ${stageId} triggered refund:`, details)
+      return true
+    }
+  }
+  return false
+}
+
 // Helper function: Check apakah refund branch active
 const isRefundBranchActive = () => {
-  return getUserRoutingChoice() === 'refund'
+  return hasRefundTriggered()
 }
 
 // Helper function: Check apakah KIAN branch active (simple logic for now)
 const isKianBranchActive = () => {
-  // KIAN active jika sudah completed semua refund stages
-  // Untuk sekarang, return false (KIAN akan dikembangkan kemudian)
-  return false
+  // KIAN active jika can_create_kian flag dari API = true
+  return caseData.value.can_create_kian === true
 }
 
 // Helper function: Get stages by branch
@@ -391,14 +467,21 @@ const updateStageAccessibility = () => {
     )
   }
   
-  // Helper function: ambil decision dari decision point stages (4, 7, 10, 12)
-  const getDecisionForStage = (stageId) => {
+  // Helper function: Get decision details from workflow history (decision_value JSON)
+  const getDecisionDetails = (stageId) => {
     const history = workflowHistory.value.find(
-      h => h.stage_id === stageId && h.decision
+      h => h.stage_id === stageId && (h.status === 'submitted' || h.status === 'completed')
     )
-    return history ? history.decision : null
+    if (!history || !history.decision_value) return null
+    try {
+      return typeof history.decision_value === 'string' 
+        ? JSON.parse(history.decision_value) 
+        : history.decision_value
+    } catch {
+      return null
+    }
   }
-  
+
   // Helper function: Check apakah stage 4 completed
   const isStage4Completed = () => {
     return isStageCompleted(4)
@@ -414,15 +497,18 @@ const updateStageAccessibility = () => {
         // Stage 1 selalu accessible
         stage.accessible = true
       } else if (stage.id === 5) {
-        // SPECIAL: Stage 5 (Objection) - hanya accessible jika:
-        // 1. Stage 4 completed AND
-        // 2. User memilih "objection" (NOT refund branch active)
-        const userChoice = getUserRoutingChoice()
-        if (isStage4Completed() && userChoice === 'objection') {
-          stage.accessible = true
-        } else if (isStage4Completed() && userChoice === 'refund') {
-          stage.accessible = false
-        } else if (!isStage4Completed()) {
+        // SPECIAL: Stage 5 (Objection) - Accessible if:
+        // Stage 4 completed AND continue_to_next_stage = true (from decision_value)
+        // ⭐ UPDATED: Check continue_to_next_stage from Stage 4 decision_value, not user_routing_choice
+        if (isStage4Completed()) {
+          const stage4Details = getDecisionDetails(4)
+          // If continue_to_next_stage = true OR no decision value yet, stage 5 is accessible
+          // (backward compat: if no decision value, assume continue)
+          const shouldContinue = stage4Details ? stage4Details.continue_to_next_stage : true
+          console.log(`[Stage Accessibility] Stage 5: stage4Details=`, stage4Details, `shouldContinue=`, shouldContinue)
+          stage.accessible = shouldContinue
+        } else {
+          console.log(`[Stage Accessibility] Stage 5: Stage 4 not completed`)
           stage.accessible = false
         }
       } else if (stage.id === 7) {
@@ -462,11 +548,12 @@ const updateStageAccessibility = () => {
         }
       } else if (stage.id > 5) {
         // Stages setelah 5 (except 7-8, those handled above) (6, 9-12)
-        // Jika refund branch active, jangan bisa access stage 6-12
-        const userChoice = getUserRoutingChoice()
-        if (userChoice === 'refund' && isStage4Completed()) {
+        // ⭐ UPDATED: Only block if refund branch already triggered
+        // Otherwise sequential: accessible jika prev stage completed
+        if (hasRefundTriggered() && isStage4Completed()) {
+          // Refund branch active, block stages 6-12
           stage.accessible = false
-        } else if (userChoice === 'objection' || !isRefundBranchActive()) {
+        } else {
           // Normal sequential: accessible jika prev stage completed
           const previousStage = stage.id - 1
           stage.accessible = isStageCompleted(previousStage)
@@ -477,75 +564,28 @@ const updateStageAccessibility = () => {
         stage.accessible = isStageCompleted(previousStage)
       }
     } else if (stage.branch === 'refund') {
-      // REFUND BRANCH: Accessible if:
-      // 1. User chose "refund" path from Stage 4 AND Stage 4 completed, OR
-      // 2. Stage 7 decision is "granted" (auto-routed) OR "partially_granted" with user choice to refund
-      const userChoice = getUserRoutingChoice()
-      const stage7Decision = getStage7Decision()
-      const stage7Completed = isStageCompleted(7)
-      const stage4Completed = isStage4Completed()
-      
-      let canAccessRefund = false
-      let reason = ''
-      
-      // Check if Stage 4 refund path active
-      if (userChoice === 'refund' && stage4Completed) {
-        canAccessRefund = true
-        reason = 'Stage 4 refund path chosen'
-      }
-      // Check if Stage 7 granted (auto-routed to refund)
-      else if (stage7Completed && stage7Decision === 'granted') {
-        canAccessRefund = true
-        reason = 'Stage 7 decision: GRANTED'
-      }
-      // Check if Stage 7 rejected but user chose refund, OR partially_granted with refund choice
-      else if (stage7Completed && (stage7Decision === 'rejected' || stage7Decision === 'partially_granted')) {
-        // Check if Stage 7 workflow history has stage_to = 13 (user or auto chose refund)
-        const stage7History = workflowHistory.value.find(
-          h => h.stage_id === 7 && (h.status === 'submitted' || h.status === 'completed')
-        )
-        if (stage7History && stage7History.stage_to === 13) {
-          canAccessRefund = true
-          reason = `Stage 7 decision: ${stage7Decision} with stage_to=13`
-        }
-      }
-      
-      if (canAccessRefund) {
+      // REFUND BRANCH: Accessible if any decision point has create_refund = true
+      // ⭐ NEW LOGIC: Check create_refund flag from decision_value in workflow history
+      if (hasRefundTriggered()) {
         if (stage.id === 13) {
           stage.accessible = true
         } else {
-          // Stage 14 accessible jika stage 13 completed, dst
+          // Stage 14, 15 accessible jika prev stage completed
           const previousStage = stage.id - 1
           stage.accessible = isStageCompleted(previousStage)
         }
-      } else if (userChoice === 'objection') {
-        stage.accessible = false
       } else {
-        // userChoice is empty or null
         stage.accessible = false
       }
     } else if (stage.branch === 'kian') {
-      // KIAN BRANCH: Accessible jika final rejection atau objection process complete
-      // Stage 12 (Supreme Court Decision) is the decision point for refund vs KIAN
-      // If Stage 12 completed with 'kian' choice → Stages 16+ accessible
-      // If Stage 12 completed with 'refund' choice → Stages 13-15 accessible instead
-      
-      const stage12Decision = getStage12Decision()
-      const stage12Completed = isStageCompleted(12)
-      
+      // KIAN BRANCH: Accessible if can_create_kian flag is true
+      // ⭐ NEW LOGIC: Check can_create_kian flag from API response
       if (stage.id === 16) {
-        // Stage 16 (KIAN Report) - accessible if Stage 12 completed with 'kian' choice
-        if (!stage12Completed) {
-          stage.accessible = false
-        } else if (stage12Decision === 'kian') {
-          stage.accessible = true
-        } else {
-          stage.accessible = false
-        }
+        // Stage 16 (KIAN Submission) - accessible if can_create_kian = true
+        stage.accessible = caseData.value.can_create_kian === true
       } else if (stage.id > 16) {
-        // Stages setelah 16 (e.g., 17, 18)
-        if (stage12Decision === 'kian') {
-          // KIAN path active: sequential logic from Stage 16
+        // Stages setelah 16
+        if (caseData.value.can_create_kian === true) {
           const previousStage = stage.id - 1
           stage.accessible = isStageCompleted(previousStage)
         } else {
@@ -556,8 +596,13 @@ const updateStageAccessibility = () => {
   })
   
   // Auto-expand refund section jika active
-  if (isRefundBranchActive()) {
+  if (hasRefundTriggered()) {
     expandedSections.value.refund = true
+  }
+
+  // Auto-expand KIAN section jika active
+  if (caseData.value.can_create_kian === true) {
+    expandedSections.value.kian = true
   }
 }
 
@@ -881,5 +926,12 @@ const saveNextAction = async (formData) => {
   } catch (error) {
     showError('Error', error.message)
   }
+}
+
+const onKianSubmissionSuccess = () => {
+  showSuccess('Success', 'KIAN submitted successfully!')
+  showKianModal.value = false
+  // Reload case data to show updated KIAN status
+  loadCaseData()
 }
 </script>

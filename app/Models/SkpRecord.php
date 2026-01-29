@@ -28,6 +28,9 @@ class SkpRecord extends Model
         'next_action',
         'next_action_due_date',
         'status_comment',
+        'create_refund',
+        'refund_amount',
+        'continue_to_next_stage',
     ];
 
     protected $casts = [
@@ -35,6 +38,9 @@ class SkpRecord extends Model
         'royalty_correction' => 'decimal:2',
         'service_correction' => 'decimal:2',
         'other_correction' => 'decimal:2',
+        'refund_amount' => 'decimal:2',
+        'create_refund' => 'boolean',
+        'continue_to_next_stage' => 'boolean',
         'issue_date' => 'date',
         'receipt_date' => 'date',
         'next_action_due_date' => 'date',
@@ -57,5 +63,31 @@ class SkpRecord extends Model
     public function approvedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    /**
+     * Create a refund process if create_refund is true
+     * 
+     * @return RefundProcess|null
+     */
+    public function createRefundIfNeeded(): ?RefundProcess
+    {
+        if (!$this->create_refund || !$this->refund_amount) {
+            return null;
+        }
+
+        return RefundProcess::create([
+            'tax_case_id' => $this->tax_case_id,
+            'refund_number' => 'SKP-' . now()->format('YmdHis') . '-' . $this->id,
+            'refund_date' => now()->toDateString(),
+            'refund_amount' => $this->refund_amount,
+            'stage_source' => RefundProcess::STAGE_SOURCE_SKP,
+            'sequence_number' => RefundProcess::getNextSequenceNumber($this->tax_case_id),
+            'triggered_by_decision_id' => $this->id,
+            'triggered_by_decision_type' => 'SkpRecord',
+            'submitted_by' => $this->submitted_by,
+            'submitted_at' => now(),
+            'status' => 'submitted',
+        ]);
     }
 }

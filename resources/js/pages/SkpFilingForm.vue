@@ -53,6 +53,7 @@ import { useRevisionAPI } from '@/composables/useRevisionAPI'
 import { useToast } from '@/composables/useToast'
 import StageForm from '../components/StageForm.vue'
 import RevisionHistoryPanel from '../components/RevisionHistoryPanel.vue'
+import DecisionActions from '../components/DecisionActions.vue'
 
 const route = useRoute()
 const caseId = parseInt(route.params.id, 10)
@@ -75,6 +76,7 @@ const caseData = ref({})
 const revisions = ref([])
 const currentUser = ref(null)
 const currentDocuments = ref([])
+const showDecisionOptions = ref(false)
 
 // Available fields untuk revisi
 const availableFields = [
@@ -87,7 +89,9 @@ const availableFields = [
   'service_correction',
   'other_correction',
   'correction_notes',
-  'supporting_docs'
+  'supporting_docs',
+  'create_refund',
+  'continue_to_next_stage'
 ]
 
 const fields = ref([
@@ -182,12 +186,18 @@ const prefillData = ref({
   other_correction: 0,
   correction_notes: '',
   user_routing_choice: '',
+  create_refund: false,
+  refund_amount: 0,
+  continue_to_next_stage: false,
   workflowHistories: []
 })
 
-// ⭐ REAL-TIME DECISION OPTIONS STATE
-const showDecisionOptions = ref(false)
-const selectedRoutingChoice = ref('')
+// ⭐ DECISION ACTIONS STATE
+const decisionActions = ref({
+  createRefund: false,
+  refundAmount: 0,
+  continueToNextStage: false
+})
 
 // ⭐ WATCHER: Show decision options INSTANTLY when skp_type is selected
 watch(() => prefillData.value.skp_type, (newType) => {
@@ -196,12 +206,22 @@ watch(() => prefillData.value.skp_type, (newType) => {
   }
 })
 
-// ⭐ UPDATE ROUTING CHOICE: Store in prefillData
-const updateRoutingChoice = (choice) => {
-  selectedRoutingChoice.value = choice
-  prefillData.value.user_routing_choice = choice
-  console.log(`User selected routing choice: ${choice}`)
+// ⭐ HANDLE DECISION ACTIONS: Store in prefillData
+const handleDecisionActionsChange = (actions) => {
+  decisionActions.value = actions
+  prefillData.value.create_refund = actions.createRefund
+  prefillData.value.refund_amount = actions.refundAmount
+  prefillData.value.continue_to_next_stage = actions.continueToNextStage
+  console.log('[SkpFilingForm] Decision actions updated:', actions)
 }
+
+// ⭐ COMPUTED: Available refund amount (disputed - skp_amount)
+const availableRefundAmount = computed(() => {
+  if (!caseData.value) return 0
+  const disputed = caseData.value.disputed_amount || 0
+  const skpAmount = prefillData.value.skp_amount || 0
+  return Math.max(0, disputed - skpAmount)
+})
 
 // ⭐ SYNC FORM DATA FROM STAGEFORM: Update prefillData in real-time
 const syncFormDataToParent = (formDataUpdate) => {
@@ -353,7 +373,15 @@ onMounted(async () => {
         other_correction: skpRecord.other_correction || 0,
         correction_notes: skpRecord.correction_notes || '',
         user_routing_choice: skpRecord.user_routing_choice || '',
+        create_refund: skpRecord.create_refund ?? false,
+        continue_to_next_stage: skpRecord.continue_to_next_stage ?? false,
         workflowHistories: caseFetchedData.workflow_histories || []
+      }
+      // Also update decisionActions to reflect loaded data
+      decisionActions.value = {
+        createRefund: skpRecord.create_refund ?? false,
+        refundAmount: 0,
+        continueToNextStage: skpRecord.continue_to_next_stage ?? false
       }
     } else {
       prefillData.value.workflowHistories = caseFetchedData.workflow_histories || []
@@ -445,7 +473,15 @@ const refreshTaxCase = async () => {
           other_correction: skpRecord.other_correction || 0,
           correction_notes: skpRecord.correction_notes || '',
           user_routing_choice: skpRecord.user_routing_choice || '',
+          create_refund: skpRecord.create_refund ?? false,
+          continue_to_next_stage: skpRecord.continue_to_next_stage ?? false,
           workflowHistories: caseFetchedData.workflow_histories || []
+        }
+        // Also update decisionActions to reflect loaded data
+        decisionActions.value = {
+          createRefund: skpRecord.create_refund ?? false,
+          refundAmount: 0,
+          continueToNextStage: skpRecord.continue_to_next_stage ?? false
         }
       }
       

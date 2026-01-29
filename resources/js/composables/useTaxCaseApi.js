@@ -299,9 +299,72 @@ export const useTaxCaseApi = () => {
             return data
         },
         
+        // ============== REFUND PROCESSES ==============
+        getRefundProcesses: async (caseId, filters = {}) => {
+            const { data } = await api.get(`/tax-cases/${caseId}/refund-processes`, { params: filters })
+            return data
+        },
+        
+        getRefundProcess: async (caseId, refundId) => {
+            const { data } = await api.get(`/tax-cases/${caseId}/refund-processes/${refundId}`)
+            return data
+        },
+        
+        createRefundProcess: async (caseId, payload) => {
+            const { data } = await api.post(`/tax-cases/${caseId}/refund-processes`, payload)
+            return data
+        },
+        
+        approveRefundProcess: async (caseId, refundId, payload = {}) => {
+            const { data } = await api.post(`/tax-cases/${caseId}/refund-processes/${refundId}/approve`, payload)
+            return data
+        },
+        
+        // ============== PRELIMINARY REFUND REQUESTS ==============
+        getPreliminaryRefundRequest: async (caseId) => {
+            const { data } = await api.get(`/tax-cases/${caseId}/preliminary-refund-request`)
+            return data
+        },
+
+        createPreliminaryRefundRequest: async (caseId, payload) => {
+            const { data } = await api.post(`/tax-cases/${caseId}/preliminary-refund-request`, payload)
+            return data
+        },
+
+        updatePreliminaryRefundRequest: async (caseId, payload) => {
+            const { data } = await api.put(`/tax-cases/${caseId}/preliminary-refund-request`, payload)
+            return data
+        },
+
+        approvePreliminaryRefundRequest: async (caseId, payload) => {
+            const { data } = await api.post(`/tax-cases/${caseId}/preliminary-refund-request/approve`, payload)
+            return data
+        },
+
+        rejectPreliminaryRefundRequest: async (caseId, payload) => {
+            const { data } = await api.post(`/tax-cases/${caseId}/preliminary-refund-request/reject`, payload)
+            return data
+        },
+
+        deletePreliminaryRefundRequest: async (caseId) => {
+            const { data } = await api.delete(`/tax-cases/${caseId}/preliminary-refund-request`)
+            return data
+        },
+        
         // ============== KIAN SUBMISSIONS ==============
         createKian: async (caseId, payload) => {
             const { data } = await api.post(`/tax-cases/${caseId}/kian-submissions`, payload)
+            return data
+        },
+        
+        createKianSubmission: async (caseId, formData) => {
+            // Handle FormData with file uploads
+            const config = {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                }
+            }
+            const { data } = await api.post(`/tax-cases/${caseId}/kian-submissions`, formData, config)
             return data
         },
         

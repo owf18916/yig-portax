@@ -79,46 +79,6 @@
               </select>
             </div>
 
-            <!-- ⭐ DECISION OPTIONS - Show when skp_type is selected -->
-            <div v-if="proposedValues.skp_type" class="mb-4 bg-blue-50 border-2 border-blue-200 rounded-lg p-4 space-y-3">
-              <h3 class="font-semibold text-blue-900">⭐ Select Next Action</h3>
-              <p class="text-sm text-blue-700">
-                SKP Type: <strong>{{ getSkpTypeLabel(proposedValues.skp_type) }}</strong>
-              </p>
-
-              <!-- Option 1: Objection -->
-              <label class="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-white transition"
-                :class="proposedValues.user_routing_choice === 'objection' ? 'bg-white border-blue-500 ring-2 ring-blue-300' : 'bg-white'">
-                <input
-                  type="radio"
-                  value="objection"
-                  v-model="proposedValues.user_routing_choice"
-                  class="w-4 h-4 text-blue-600"
-                />
-                <div class="ml-3 flex-1">
-                  <p class="font-medium text-gray-900">→ Proceed to Objection (Stage 5)</p>
-                  <p class="text-xs text-gray-600">File Surat Keberatan</p>
-                </div>
-                <span v-if="proposedValues.user_routing_choice === 'objection'" class="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded">✓ Selected</span>
-              </label>
-
-              <!-- Option 2: Refund -->
-              <label class="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-white transition"
-                :class="proposedValues.user_routing_choice === 'refund' ? 'bg-white border-green-500 ring-2 ring-green-300' : 'bg-white'">
-                <input
-                  type="radio"
-                  value="refund"
-                  v-model="proposedValues.user_routing_choice"
-                  class="w-4 h-4 text-green-600"
-                />
-                <div class="ml-3 flex-1">
-                  <p class="font-medium text-gray-900">✓ Proceed to Refund (Stage 13)</p>
-                  <p class="text-xs text-gray-600">Request Bank Transfer</p>
-                </div>
-                <span v-if="proposedValues.user_routing_choice === 'refund'" class="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded">✓ Selected</span>
-              </label>
-            </div>
-
             <!-- User Routing Choice (hidden, only for form submission) -->
             <div v-if="selectedFields.includes('user_routing_choice')" style="display: none;">
               <select 
@@ -221,6 +181,18 @@
                   class="form-control textarea"
                   required
                 ></textarea>
+              </div>
+
+              <!-- Checkbox Fields -->
+              <div v-if="getFieldType(field) === 'checkbox'" class="mb-3">
+                <label class="flex items-center">
+                  <input 
+                    type="checkbox" 
+                    v-model="proposedValues[field]"
+                    class="checkbox-input"
+                  >
+                  <span class="ml-2 form-label text-sm">{{ fieldLabel(field) }}</span>
+                </label>
               </div>
             </div>
 
@@ -414,7 +386,9 @@ const canSubmit = computed(() => {
 })
 
 const fieldLabel = (field) => {
-  // Special cases
+  // Special cases for decision checkboxes
+  if (field === 'create_refund') return 'Create Refund Process'
+  if (field === 'continue_to_next_stage') return 'Continue to Next Stage'
   if (field === 'supporting_docs') return 'Supporting Documents'
   
   // Look for the field in the fields array
@@ -523,7 +497,9 @@ const getFieldType = (field) => {
     'explanation_letter_number': 'text',
     'explanation_submission_date': 'date',
     'supreme_court_letter_number': 'text',
-    'review_amount': 'number'
+    'review_amount': 'number',
+    'create_refund': 'checkbox',
+    'continue_to_next_stage': 'checkbox'
   }
   return types[field] || 'text'
 }
@@ -619,8 +595,14 @@ const submit = async () => {
 
   // Validate that at least one change is provided
   // Check if field values have actual changes (not null)
+  const checkboxFields = ['create_refund', 'continue_to_next_stage']
   const hasFieldValueChanges = selectedFields.value.some(field => {
     if (field === 'supporting_docs') return false // Skip doc field for this check
+    // For checkbox fields, allow false values (they are valid changes)
+    if (checkboxFields.includes(field)) {
+      return proposedValues.value[field] !== null && proposedValues.value[field] !== undefined
+    }
+    // For other fields, check for non-null and non-empty
     return proposedValues.value[field] !== null && proposedValues.value[field] !== ''
   })
 
@@ -654,9 +636,15 @@ const submit = async () => {
 
     // Prepare payload - DON'T include actual file objects
     // Filter out null values from proposed_values
+    const checkboxFields = ['create_refund', 'continue_to_next_stage']
     const filteredProposedValues = Object.keys(proposedValues.value).reduce((acc, key) => {
       if (proposedValues.value[key] !== null) {
-        acc[key] = proposedValues.value[key]
+        // For checkbox fields, ensure boolean values
+        if (checkboxFields.includes(key)) {
+          acc[key] = proposedValues.value[key] === true ? true : false
+        } else {
+          acc[key] = proposedValues.value[key]
+        }
       }
       return acc
     }, {})

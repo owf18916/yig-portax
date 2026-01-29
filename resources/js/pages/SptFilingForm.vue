@@ -94,6 +94,19 @@ const fields = ref([
   },
   {
     id: 4,
+    type: 'select',
+    key: 'spt_type',
+    label: 'SPT Type (Jenis Pengembalian)',
+    required: false,
+    options: [
+      { id: 'Pengembalian Pendahuluan', label: 'Pengembalian Pendahuluan (Preliminary Refund)' },
+      { id: 'Restitusi', label: 'Restitusi (Restitution)' },
+      { id: 'Kompensasi', label: 'Kompensasi (Compensation)' }
+    ],
+    description: 'Select "Pengembalian Pendahuluan" to skip audit stages (SP2, SPHP) and go directly to SKP'
+  },
+  {
+    id: 5,
     type: 'number',
     key: 'disputed_amount',
     label: 'Nilai Sengketa (Disputed Amount)',
@@ -106,6 +119,7 @@ const fields = ref([
 const availableFields = [
   'period_id',
   'currency_id',
+  'spt_type',
   'disputed_amount',
   'supporting_docs'
 ]
@@ -144,6 +158,7 @@ const prefillData = ref({
   entity_name: '',
   period_id: null,
   currency_id: null,
+  spt_type: null,
   disputed_amount: null,
   submitted_at: null
 })

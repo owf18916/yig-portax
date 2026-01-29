@@ -15,7 +15,7 @@ class EntitiesSeeder extends Seeder
         DB::table('entities')->insert([
             [
                 'code' => 'PASI',
-                'name' => 'PT. Autocomp System Indonesia',
+                'name' => 'PT. Autocomp Systems Indonesia',
                 'entity_type' => 'HOLDING',
                 'parent_entity_id' => null,
                 'tax_id' => '07.123.456.7-901.000', // Dummy NPWP format
