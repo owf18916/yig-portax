@@ -1,5 +1,6 @@
 <template>
-  <div class="space-y-6">
+  <!-- ⭐ REDIRECT: If stageId is 1-16, render specific form, not generic WorkflowForm -->
+  <div v-if="!specificFormComponent" class="space-y-6">
     <div class="flex items-center space-x-4">
       <Button @click="$router.back()" variant="secondary">← Back</Button>
       <h1 class="text-3xl font-bold text-gray-900">{{ currentStage.name }}</h1>
@@ -56,10 +57,13 @@
       </div>
     </Card>
   </div>
+  
+  <!-- ⭐ Render specific form component for stages 1-16 -->
+  <component v-else :is="specificFormComponent" />
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Card from '../components/Card.vue'
 import Button from '../components/Button.vue'
@@ -69,6 +73,54 @@ import Alert from '../components/Alert.vue'
 const route = useRoute()
 const router = useRouter()
 
+// ⭐ Import all specific form components
+const SptFilingForm = defineAsyncComponent(() => import('./SptFilingForm.vue'))
+const Sp2FilingForm = defineAsyncComponent(() => import('./Sp2FilingForm.vue'))
+const SphpFilingForm = defineAsyncComponent(() => import('./SphpFilingForm.vue'))
+const SkpFilingForm = defineAsyncComponent(() => import('./SkpFilingForm.vue'))
+const ObjectionSubmissionForm = defineAsyncComponent(() => import('./ObjectionSubmissionForm.vue'))
+const SpuhRecordForm = defineAsyncComponent(() => import('./SpuhRecordForm.vue'))
+const ObjectionDecisionForm = defineAsyncComponent(() => import('./ObjectionDecisionForm.vue'))
+const AppealSubmissionForm = defineAsyncComponent(() => import('./AppealSubmissionForm.vue'))
+const AppealExplanationRequestForm = defineAsyncComponent(() => import('./AppealExplanationRequestForm.vue'))
+const AppealDecisionForm = defineAsyncComponent(() => import('./AppealDecisionForm.vue'))
+const SupremeCourtSubmissionForm = defineAsyncComponent(() => import('./SupremeCourtSubmissionForm.vue'))
+const SupremeCourtDecisionForm = defineAsyncComponent(() => import('./SupremeCourtDecisionForm.vue'))
+const BankTransferRequestForm = defineAsyncComponent(() => import('./BankTransferRequestForm.vue'))
+const SuratInstruksiTransferForm = defineAsyncComponent(() => import('./SuratInstruksiTransferForm.vue'))
+const RefundReceivedForm = defineAsyncComponent(() => import('./RefundReceivedForm.vue'))
+const KianSubmissionForm = defineAsyncComponent(() => import('./KianSubmissionForm.vue'))
+
+// ⭐ Map stage IDs to their specific form components
+const stageFormMap = {
+  1: SptFilingForm,
+  2: Sp2FilingForm,
+  3: SphpFilingForm,
+  4: SkpFilingForm,
+  5: ObjectionSubmissionForm,
+  6: SpuhRecordForm,
+  7: ObjectionDecisionForm,
+  8: AppealSubmissionForm,
+  9: AppealExplanationRequestForm,
+  10: AppealDecisionForm,
+  11: SupremeCourtSubmissionForm,
+  12: SupremeCourtDecisionForm,
+  13: BankTransferRequestForm,
+  14: SuratInstruksiTransferForm,
+  15: RefundReceivedForm,
+  16: KianSubmissionForm
+}
+
+// ⭐ Determine which component to render
+const stageId = computed(() => parseInt(route.params.stageId, 10))
+const specificFormComponent = computed(() => {
+  const component = stageFormMap[stageId.value]
+  console.log(`[WorkflowForm] Stage ${stageId.value}: ${component ? 'Using specific form' : 'Using generic form'}`)
+  return component || null
+})
+
+
+// ⭐ Generic form variables (only used if no specific form is available)
 const submitting = ref(false)
 const apiError = ref('')
 const successMessage = ref('')

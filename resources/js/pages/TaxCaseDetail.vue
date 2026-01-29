@@ -550,9 +550,14 @@ const updateStageAccessibility = () => {
         // Stages setelah 5 (except 7-8, those handled above) (6, 9-12)
         // ⭐ UPDATED: Only block if refund branch already triggered
         // Otherwise sequential: accessible jika prev stage completed
+        // ⭐ SPECIAL: Stage 12 accessible if Stage 10+ completed (allow skipping Stage 11 for direct filing)
         if (hasRefundTriggered() && isStage4Completed()) {
           // Refund branch active, block stages 6-12
           stage.accessible = false
+        } else if (stage.id === 12) {
+          // Stage 12 (Supreme Court Decision) - Accessible if Stage 10+ completed
+          // This allows testing Stage 12 without needing full sequence through Stage 11
+          stage.accessible = isStageCompleted(10)
         } else {
           // Normal sequential: accessible jika prev stage completed
           const previousStage = stage.id - 1
