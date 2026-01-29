@@ -140,11 +140,39 @@ class SkpRecordController extends ApiController
 
         // ⭐ CHANGE 4: Check if KIAN reminder email should be sent
         // KIAN is needed when user chose not to continue to next stage (case ends)
+        Log::info('[SKP] KIAN CHECK - Before condition', [
+            'continue_to_next_stage' => $validated['continue_to_next_stage'],
+            'continue_to_next_stage_type' => gettype($validated['continue_to_next_stage']),
+            'condition_met' => !$validated['continue_to_next_stage'],
+        ]);
+        
         if (!$validated['continue_to_next_stage']) {
+            Log::info('[SKP] KIAN CHECK - Inside condition, checking eligibility...');
+            
             $reason = $taxCase->getKianEligibilityReason();
+            
+            Log::info('[SKP] KIAN CHECK - Reason from TaxCase', [
+                'reason' => $reason,
+                'reason_is_null' => is_null($reason),
+                'disputed_amount' => $taxCase->disputed_amount,
+                'skp_amount' => $skpRecord->skp_amount,
+            ]);
+            
             if ($reason) {
+                Log::info('[SKP] KIAN CHECK - Reason exists, dispatching job', [
+                    'reason' => $reason,
+                    'stage' => 'SKP (Stage 4)',
+                    'tax_case_id' => $taxCase->id,
+                ]);
+                
                 dispatch(new SendKianReminderJob($taxCase, 'SKP (Stage 4)', $reason));
+                
+                Log::info('[SKP] KIAN CHECK - Job dispatched successfully');
+            } else {
+                Log::info('[SKP] KIAN CHECK - No reason returned, job NOT dispatched');
             }
+        } else {
+            Log::info('[SKP] KIAN CHECK - Condition NOT met, continue_to_next_stage is true');
         }
 
         return $this->success(

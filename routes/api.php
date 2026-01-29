@@ -357,6 +357,18 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                         $skpData
                     );
                     Log::info('SkpRecord saved', ['skpData' => $skpData]);
+                    
+                    // ⭐ KIAN REMINDER TRIGGER - Check if should send KIAN reminder
+                    $taxCase->refresh();
+                    if (!$skpData['continue_to_next_stage']) {
+                        Log::info('[Stage 4] KIAN CHECK - Checking eligibility', ['continue_to_next_stage' => $skpData['continue_to_next_stage']]);
+                        $reason = $taxCase->getKianEligibilityReason();
+                        if ($reason) {
+                            Log::info('[Stage 4] KIAN TRIGGER - Reason found, dispatching job', ['reason' => $reason]);
+                            dispatch(new \App\Jobs\SendKianReminderJob($taxCase, 'SKP (Stage 4)', $reason));
+                            Log::info('[Stage 4] Job dispatched successfully');
+                        }
+                    }
 
                 } elseif ($stage == 5) {
                     $objectionData = $request->only([
