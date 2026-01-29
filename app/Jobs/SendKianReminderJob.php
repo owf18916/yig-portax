@@ -44,22 +44,32 @@ class SendKianReminderJob implements ShouldQueue
 
             // Get holding users for CC (if applicable)
             $holdingUsers = $case->entity->holding?->users ?? collect();
+            $ccEmails = $holdingUsers->pluck('email')->toArray();
 
-            // Send email to entity users
-            foreach ($entityUsers as $user) {
-                Mail::to($user->email)
-                    ->cc($holdingUsers->pluck('email')->toArray())
+            // ⭐ APPROACH 2: Send single email to ALL entity users (TO) with holding users (CC once)
+            // This is more efficient and aligns with documentation:
+            // "Send email to entity users with CC to holding users"
+            if ($entityUsers->isNotEmpty()) {
+                // All entity users as TO recipients
+                $toEmails = $entityUsers->pluck('email')->toArray();
+                
+                Mail::to($toEmails)
+                    ->cc($ccEmails)
                     ->send(new KianReminderMail($case, $this->stageName, $this->reason));
-            }
-
-            // If no entity users, send to case owner
-            if ($entityUsers->isEmpty()) {
+                    
+                $sentTo = $toEmails;
+            } else {
+                // Fallback: send to case owner if no entity users
                 Mail::to($case->user->email)
-                    ->cc($holdingUsers->pluck('email')->toArray())
+                    ->cc($ccEmails)
                     ->send(new KianReminderMail($case, $this->stageName, $this->reason));
+                    
+                $sentTo = [$case->user->email];
             }
 
-            // Log to audit_logs
+            // Log to audit_logs with complete recipient information
+            $allRecipients = collect($sentTo)->merge($ccEmails)->unique()->values()->toArray();
+            
             \App\Models\AuditLog::create([
                 'auditable_type' => TaxCase::class,
                 'auditable_id' => $this->taxCase->id,
@@ -70,7 +80,10 @@ class SendKianReminderJob implements ShouldQueue
                 'new_values' => json_encode([
                     'stage' => $this->stageName,
                     'reason' => $this->reason,
-                    'recipients' => $entityUsers->pluck('email')->merge($holdingUsers->pluck('email'))->unique()->values(),
+                    'to_recipients' => $sentTo,
+                    'cc_recipients' => $ccEmails,
+                    'total_recipients' => count($allRecipients),
+                    'all_recipients' => $allRecipients,
                 ]),
                 'ip_address' => request()?->ip(),
             ]);
