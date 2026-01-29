@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Models\TaxCase;
 use App\Models\SkpRecord;
+use App\Jobs\SendKianReminderJob;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
@@ -136,6 +137,15 @@ class SkpRecordController extends ApiController
             'user_id' => auth()->id(),
             'created_at' => now(),
         ]);
+
+        // ⭐ CHANGE 4: Check if KIAN reminder email should be sent
+        // KIAN is needed when user chose not to continue to next stage (case ends)
+        if (!$validated['continue_to_next_stage']) {
+            $reason = $taxCase->getKianEligibilityReason();
+            if ($reason) {
+                dispatch(new SendKianReminderJob($taxCase, 'SKP (Stage 4)', $reason));
+            }
+        }
 
         return $this->success(
             $skpRecord->load(['taxCase', 'submittedBy']),

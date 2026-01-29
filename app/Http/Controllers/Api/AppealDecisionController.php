@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Models\TaxCase;
 use App\Models\AppealDecision;
+use App\Jobs\SendKianReminderJob;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 
@@ -102,6 +103,15 @@ class AppealDecisionController extends ApiController
             'user_id' => auth()->id(),
             'created_at' => now(),
         ]);
+
+        // ⭐ CHANGE 4: Check if KIAN reminder email should be sent
+        // KIAN is needed when decision is rejected/partially_granted and user chose not to continue to supreme court
+        if (!$validated['continue_to_next_stage']) {
+            $reason = $taxCase->getKianEligibilityReason();
+            if ($reason) {
+                dispatch(new SendKianReminderJob($taxCase, 'Appeal Decision (Stage 10)', $reason));
+            }
+        }
 
         return $this->success(
             $decision->load(['taxCase', 'submittedBy']),

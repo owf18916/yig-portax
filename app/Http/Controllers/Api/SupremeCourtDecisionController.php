@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Models\TaxCase;
 use App\Models\SupremeCourtDecision;
 use App\Models\WorkflowHistory;
+use App\Jobs\SendKianReminderJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -80,6 +81,16 @@ class SupremeCourtDecisionController extends ApiController
                     'refund_amount' => $validated['refund_amount'],
                 ]),
             ]);
+
+            // ⭐ CHANGE 4: Check if KIAN reminder email should be sent
+            // Supreme Court is final stage, so if decision is REJECTED/PARTIALLY_GRANTED and no refund was created,
+            // KIAN reminder should be sent
+            if (!$validated['create_refund'] && $validated['decision_type'] !== 'GRANTED') {
+                $reason = $taxCase->getKianEligibilityReason();
+                if ($reason) {
+                    dispatch(new SendKianReminderJob($taxCase, 'Supreme Court Decision (Stage 12)', $reason));
+                }
+            }
 
             // Mark case as completed (Supreme Court is final stage)
             $taxCase->update([
