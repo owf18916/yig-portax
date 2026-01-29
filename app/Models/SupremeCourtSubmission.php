@@ -15,8 +15,9 @@ class SupremeCourtSubmission extends Model
     protected $fillable = [
         'tax_case_id',
         'submission_number',
-        'supreme_court_letter_number',
         'submission_date',
+        'submission_amount',
+        'supreme_court_letter_number',
         'review_amount',
         'status',
         'notes',

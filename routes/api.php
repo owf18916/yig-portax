@@ -473,6 +473,11 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                         $supremeCourtSubmissionData['submission_number'] = $supremeCourtSubmissionData['supreme_court_letter_number'];
                     }
                     
+                    // Map review_amount to submission_amount for database constraint
+                    if (isset($supremeCourtSubmissionData['review_amount'])) {
+                        $supremeCourtSubmissionData['submission_amount'] = $supremeCourtSubmissionData['review_amount'];
+                    }
+                    
                     \App\Models\SupremeCourtSubmission::updateOrCreate(
                         ['tax_case_id' => $taxCase->id],
                         $supremeCourtSubmissionData
