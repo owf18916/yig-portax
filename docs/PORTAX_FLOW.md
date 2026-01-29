@@ -399,12 +399,12 @@ The case number is **automatically generated** by the system when creating a new
 **Option A: Dikabulkan (Granted)**
 - **Case Status: GRANTED**
 - Result: Accepted
-- Proceed to: **Refund Procedure** (Stage 13) [Terminal]
+- User Proceed to: **Refund Procedure** (Stage 13) [Terminal]
 
 **Option B: Dikabulkan Sebagian (Partially Granted)**
 - **Case Status: NOT GRANTED / PARTIALLY GRANTED**
 - Result: Accepted (Partial)
-- User can choose:
+- User will proceed these actions:
   - **Proceed to Refund Procedure** (Accept partial decision - Stage 13) [Terminal]
   - **Proceed to KIAN Procedure** (Recognize partial rejection as loss - Stage 16) [Terminal]
 

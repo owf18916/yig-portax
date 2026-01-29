@@ -20,6 +20,7 @@ const AppealSubmissionForm = defineAsyncComponent(() => import('../pages/AppealS
 const AppealExplanationRequestForm = defineAsyncComponent(() => import('../pages/AppealExplanationRequestForm.vue'))
 const AppealDecisionForm = defineAsyncComponent(() => import('../pages/AppealDecisionForm.vue'))
 const SupremeCourtSubmissionForm = defineAsyncComponent(() => import('../pages/SupremeCourtSubmissionForm.vue'))
+const SupremeCourtDecisionForm = defineAsyncComponent(() => import('../pages/SupremeCourtDecisionForm.vue'))
 const BankTransferRequestForm = defineAsyncComponent(() => import('../pages/BankTransferRequestForm.vue'))
 const SuratInstruksiTransferForm = defineAsyncComponent(() => import('../pages/SuratInstruksiTransferForm.vue'))
 const RefundReceivedForm = defineAsyncComponent(() => import('../pages/RefundReceivedForm.vue'))
@@ -120,6 +121,12 @@ const routes = [
     path: '/tax-cases/:id/workflow/11',
     name: 'SupremeCourtSubmissionForm',
     component: SupremeCourtSubmissionForm,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/tax-cases/:id/workflow/12',
+    name: 'SupremeCourtDecisionForm',
+    component: SupremeCourtDecisionForm,
     meta: { requiresAuth: true }
   },
   {
