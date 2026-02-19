@@ -852,6 +852,9 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         Route::post('/kian-submissions/{kianSubmission}/submit', [KianSubmissionController::class, 'submit'])->name('kian-submissions.submit');
         Route::post('/kian-submissions/{kianSubmission}/record-response', [KianSubmissionController::class, 'recordResponse'])->name('kian-submissions.record-response');
         Route::post('/kian-submissions/{kianSubmission}/close', [KianSubmissionController::class, 'close'])->name('kian-submissions.close');
+        
+        // ✅ NEW: Per-stage KIAN submissions - Multi-stage KIAN support (Stages 4, 7, 10, 12)
+        Route::post('/kian-submissions/{stageId}', [KianSubmissionController::class, 'store'])->where('stageId', '4|7|10|12')->name('kian-submissions.store-by-stage');
     });
 });
 

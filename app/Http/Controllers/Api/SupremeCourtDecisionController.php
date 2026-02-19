@@ -86,9 +86,11 @@ class SupremeCourtDecisionController extends ApiController
             // Supreme Court is final stage, so if decision is REJECTED/PARTIALLY_GRANTED and no refund was created,
             // KIAN reminder should be sent
             if (!$validated['create_refund'] && $validated['decision_type'] !== 'GRANTED') {
-                $reason = $taxCase->getKianEligibilityReason();
-                if ($reason) {
-                    dispatch(new SendKianReminderJob($taxCase, 'Supreme Court Decision (Stage 12)', $reason));
+                // ✅ NEW: Check if KIAN is needed at Stage 12 specifically
+                if ($taxCase->needsKianAtStage(12)) {
+                    $reason = $taxCase->getKianEligibilityReasonForStage(12);
+                    // ✅ UPDATED: Dispatch with stage_id = 12
+                    dispatch(new SendKianReminderJob($taxCase, 'Stage 12 - Supreme Court Decision (Keputusan Peninjauan Kembali)', $reason, 12));
                 }
             }
 

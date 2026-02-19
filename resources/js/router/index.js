@@ -153,6 +153,13 @@ const routes = [
     component: KianSubmissionForm,
     meta: { requiresAuth: true }
   },
+  // ✅ NEW: Per-stage KIAN submission routes (convenience for direct navigation)
+  {
+    path: '/tax-cases/:id/kian/:stageId',
+    name: 'KianSubmissionStage',
+    component: KianSubmissionForm,
+    meta: { requiresAuth: true }
+  },
   {
     path: '/tax-cases/:id',
     name: 'TaxCaseDetail',

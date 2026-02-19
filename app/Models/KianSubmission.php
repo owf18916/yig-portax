@@ -14,6 +14,7 @@ class KianSubmission extends Model
 
     protected $fillable = [
         'tax_case_id',
+        'stage_id',
         'kian_number',
         'submission_date',
         'loss_amount',

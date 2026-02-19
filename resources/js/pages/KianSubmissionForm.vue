@@ -8,7 +8,158 @@
       </div>
     </div>
 
+    <!-- ✅ NEW: KIAN Status by Stage - Multiple KIAN per case concept -->
+    <div v-if="!isLoading && kianStatusByStage && Object.keys(kianStatusByStage).length > 0" class="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4">
+      <div class="flex items-start">
+        <div class="flex-1">
+          <h3 class="text-sm font-semibold text-blue-900 mb-2">💰 KIAN Opportunities Available</h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <!-- Stage 4 KIAN -->
+            <div v-if="kianStatusByStage['4']?.needsKian" 
+              :class="['p-3 rounded-lg border', kianStatusByStage['4']?.submitted ? 'bg-green-50 border-green-200' : 'bg-white border-blue-200']">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-xs font-semibold text-blue-900">Stage 4 - SKP Decision</p>
+                  <p class="text-xs text-blue-700 mt-1">Loss: Rp {{ formatAmount(kianStatusByStage['4']?.lossAmount) }}</p>
+                </div>
+                <button v-if="!kianStatusByStage['4']?.submitted"
+                  @click="selectStageForKian(4)"
+                  class="px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600">
+                  Submit KIAN
+                </button>
+                <span v-else class="px-3 py-1 bg-green-500 text-white text-xs rounded">✓ Submitted</span>
+              </div>
+            </div>
+
+            <!-- Stage 7 KIAN -->
+            <div v-if="kianStatusByStage['7']?.needsKian" 
+              :class="['p-3 rounded-lg border', kianStatusByStage['7']?.submitted ? 'bg-green-50 border-green-200' : 'bg-white border-blue-200']">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-xs font-semibold text-blue-900">Stage 7 - Objection Decision</p>
+                  <p class="text-xs text-blue-700 mt-1">Loss: Rp {{ formatAmount(kianStatusByStage['7']?.lossAmount) }}</p>
+                </div>
+                <button v-if="!kianStatusByStage['7']?.submitted"
+                  @click="selectStageForKian(7)"
+                  class="px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600">
+                  Submit KIAN
+                </button>
+                <span v-else class="px-3 py-1 bg-green-500 text-white text-xs rounded">✓ Submitted</span>
+              </div>
+            </div>
+
+            <!-- Stage 10 KIAN -->
+            <div v-if="kianStatusByStage['10']?.needsKian" 
+              :class="['p-3 rounded-lg border', kianStatusByStage['10']?.submitted ? 'bg-green-50 border-green-200' : 'bg-white border-blue-200']">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-xs font-semibold text-blue-900">Stage 10 - Appeal Decision</p>
+                  <p class="text-xs text-blue-700 mt-1">Loss: Rp {{ formatAmount(kianStatusByStage['10']?.lossAmount) }}</p>
+                </div>
+                <button v-if="!kianStatusByStage['10']?.submitted"
+                  @click="selectStageForKian(10)"
+                  class="px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600">
+                  Submit KIAN
+                </button>
+                <span v-else class="px-3 py-1 bg-green-500 text-white text-xs rounded">✓ Submitted</span>
+              </div>
+            </div>
+
+            <!-- Stage 12 KIAN -->
+            <div v-if="kianStatusByStage['12']?.needsKian" 
+              :class="['p-3 rounded-lg border', kianStatusByStage['12']?.submitted ? 'bg-green-50 border-green-200' : 'bg-white border-blue-200']">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-xs font-semibold text-blue-900">Stage 12 - Supreme Court Decision</p>
+                  <p class="text-xs text-blue-700 mt-1">Loss: Rp {{ formatAmount(kianStatusByStage['12']?.lossAmount) }}</p>
+                </div>
+                <button v-if="!kianStatusByStage['12']?.submitted"
+                  @click="selectStageForKian(12)"
+                  class="px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600">
+                  Submit KIAN
+                </button>
+                <span v-else class="px-3 py-1 bg-green-500 text-white text-xs rounded">✓ Submitted</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ✅ KIAN Submission Form for selected stage -->
+    <div v-if="selectedStageForKian" class="bg-white p-6 rounded-lg border border-gray-200 mb-4">
+      <p class="text-sm text-gray-600 mb-4">Submitting KIAN for {{ getStageName(selectedStageForKian) }}</p>
+      
+      <form @submit.prevent="submitKianForStage" class="space-y-4">
+        <!-- KIAN Number -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Nomor KIAN</label>
+          <input 
+            v-model="kianFormData.kian_number"
+            type="text"
+            placeholder="e.g., KIAN-2024-001"
+            required
+            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        </div>
+
+        <!-- Submission Date -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal Pengajuan</label>
+          <input 
+            v-model="kianFormData.submission_date"
+            type="date"
+            required
+            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        </div>
+
+        <!-- Loss Amount (Pre-filled, Read-only) -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Loss Amount (Pre-filled from Stage)</label>
+          <input 
+            :value="'Rp ' + formatAmount(preFilledLossAmount)"
+            type="text"
+            readonly
+            class="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600"
+          />
+          <p class="text-xs text-gray-500 mt-1">This is calculated automatically from Stage {{ selectedStageForKian }} decision</p>
+        </div>
+
+        <!-- Notes -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Catatan</label>
+          <textarea 
+            v-model="kianFormData.notes"
+            placeholder="Optional notes"
+            rows="3"
+            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          ></textarea>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex gap-2">
+          <button 
+            type="submit"
+            :disabled="isSubmittingKian"
+            class="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400"
+          >
+            {{ isSubmittingKian ? 'Submitting...' : 'Submit KIAN' }}
+          </button>
+          <button 
+            type="button"
+            @click="selectedStageForKian = null"
+            class="flex-1 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Original StageForm for backward compatibility / general info -->
     <StageForm
+      v-if="!selectedStageForKian"
       :stageName="`Stage 16: KIAN Report Submission`"
       :stageDescription="`Submit internal loss recognition document (KIAN) when disputed tax amount cannot be refunded`"
       :stageId="16"
@@ -46,7 +197,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useRevisionAPI } from '@/composables/useRevisionAPI'
 import StageForm from '../components/StageForm.vue'
@@ -65,6 +216,23 @@ const formatDateForInput = (date) => {
   return `${d.getFullYear()}-${month}-${day}`
 }
 
+// Helper to format amount
+const formatAmount = (amount) => {
+  if (!amount) return '0'
+  return Number(amount).toLocaleString('id-ID')
+}
+
+// Helper to get stage name
+const getStageName = (stageId) => {
+  const names = {
+    4: 'Stage 4 - SKP Decision',
+    7: 'Stage 7 - Objection Decision',
+    10: 'Stage 10 - Appeal Decision',
+    12: 'Stage 12 - Supreme Court Decision'
+  }
+  return names[stageId] || `Stage ${stageId}`
+}
+
 const caseNumber = ref('TAX-2026-001')
 const preFilledMessage = ref('Loading...')
 const isLoading = ref(true)
@@ -73,6 +241,21 @@ const caseData = ref({})
 const revisions = ref([])
 const currentUser = ref(null)
 const currentDocuments = ref([])
+
+// ✅ NEW: KIAN Status by Stage
+const kianStatusByStage = ref({})
+
+// ✅ NEW: Selected stage for KIAN submission
+const selectedStageForKian = ref(null)
+const preFilledLossAmount = ref(0)
+const isSubmittingKian = ref(false)
+
+// ✅ NEW: KIAN form data
+const kianFormData = ref({
+  kian_number: '',
+  submission_date: new Date().toISOString().split('T')[0],
+  notes: ''
+})
 
 // Available fields untuk revisi
 const availableFields = [
@@ -151,6 +334,11 @@ onMounted(async () => {
     // Store full case data
     caseData.value = caseFetchedData
 
+    // ✅ NEW: Load KIAN status by stage
+    if (caseFetchedData.kian_status_by_stage) {
+      kianStatusByStage.value = caseFetchedData.kian_status_by_stage
+    }
+
     // Pre-fill dengan existing KIAN Submission record jika ada
     const kianSubmission = caseFetchedData.kian_submission
     if (kianSubmission) {
@@ -168,7 +356,7 @@ onMounted(async () => {
 
     caseNumber.value = caseFetchedData.case_number || 'N/A'
     caseStatus.value = caseFetchedData.case_status_id
-    preFilledMessage.value = `✅ Case: ${caseFetchedData.case_number} | Terminal Stage`
+    preFilledMessage.value = `✅ Case: ${caseFetchedData.case_number} | Multiple KIAN per Stage`
 
     // Load revisions
     await loadRevisions()
@@ -191,6 +379,15 @@ onMounted(async () => {
       console.error('Failed to load user:', err)
     }
 
+    // ✅ NEW: Auto-select stage if stageId in route params
+    const routeStageId = route.params.stageId
+    if (routeStageId) {
+      const stageId = parseInt(routeStageId, 10)
+      if ([4, 7, 10, 12].includes(stageId) && kianStatusByStage.value[stageId]?.needsKian) {
+        selectStageForKian(stageId)
+      }
+    }
+
   } catch (error) {
     preFilledMessage.value = '❌ Error loading case data'
     console.error('Error:', error)
@@ -198,6 +395,60 @@ onMounted(async () => {
     isLoading.value = false
   }
 })
+
+// ✅ NEW: Select stage and prepare form
+const selectStageForKian = (stageId) => {
+  selectedStageForKian.value = stageId
+  preFilledLossAmount.value = kianStatusByStage.value[stageId]?.lossAmount || 0
+  kianFormData.value = {
+    kian_number: '',
+    submission_date: new Date().toISOString().split('T')[0],
+    notes: ''
+  }
+}
+
+// ✅ NEW: Submit KIAN for selected stage
+const submitKianForStage = async () => {
+  try {
+    isSubmittingKian.value = true
+    
+    const response = await fetch(
+      `/api/tax-cases/${caseId}/kian-submissions/${selectedStageForKian.value}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content
+        },
+        body: JSON.stringify({
+          stage_id: selectedStageForKian.value,
+          kian_number: kianFormData.value.kian_number,
+          submission_date: kianFormData.value.submission_date,
+          notes: kianFormData.value.notes
+        })
+      }
+    )
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message || 'Failed to submit KIAN')
+    }
+
+    const result = await response.json()
+    console.log('✅ KIAN submitted:', result)
+
+    // Reset form
+    selectedStageForKian.value = null
+    
+    // Refresh case data
+    await refreshTaxCase()
+  } catch (error) {
+    console.error('Error submitting KIAN:', error)
+    alert('Error: ' + error.message)
+  } finally {
+    isSubmittingKian.value = false
+  }
+}
 
 const loadRevisions = async () => {
   try {
@@ -237,6 +488,11 @@ const refreshTaxCase = async () => {
       const caseResponse = await response.json()
       const caseFetchedData = caseResponse.data ? caseResponse.data : caseResponse
       caseData.value = caseFetchedData
+      
+      // ✅ NEW: Refresh KIAN status by stage
+      if (caseFetchedData.kian_status_by_stage) {
+        kianStatusByStage.value = caseFetchedData.kian_status_by_stage
+      }
       
       // Refresh prefill data dari kian_submission terbaru
       const kianSubmission = caseFetchedData.kian_submission

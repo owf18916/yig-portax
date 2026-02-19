@@ -147,29 +147,24 @@ class SkpRecordController extends ApiController
         ]);
         
         if (!$validated['continue_to_next_stage']) {
-            Log::info('[SKP] KIAN CHECK - Inside condition, checking eligibility...');
+            Log::info('[SKP] KIAN CHECK - Inside condition, checking eligibility at Stage 4...');
             
-            $reason = $taxCase->getKianEligibilityReason();
-            
-            Log::info('[SKP] KIAN CHECK - Reason from TaxCase', [
-                'reason' => $reason,
-                'reason_is_null' => is_null($reason),
-                'disputed_amount' => $taxCase->disputed_amount,
-                'skp_amount' => $skpRecord->skp_amount,
-            ]);
-            
-            if ($reason) {
-                Log::info('[SKP] KIAN CHECK - Reason exists, dispatching job', [
+            // ✅ NEW: Check if KIAN is needed at Stage 4 specifically
+            if ($taxCase->needsKianAtStage(4)) {
+                $reason = $taxCase->getKianEligibilityReasonForStage(4);
+                
+                Log::info('[SKP] KIAN CHECK - Stage 4 needs KIAN', [
                     'reason' => $reason,
-                    'stage' => 'SKP (Stage 4)',
+                    'loss_amount' => $taxCase->calculateLossAtStage(4),
                     'tax_case_id' => $taxCase->id,
                 ]);
                 
-                dispatch(new SendKianReminderJob($taxCase, 'SKP (Stage 4)', $reason));
+                // ✅ UPDATED: Dispatch with stage_id = 4
+                dispatch(new SendKianReminderJob($taxCase, 'Stage 4 - SKP (Surat Ketetapan Pajak)', $reason, 4));
                 
-                Log::info('[SKP] KIAN CHECK - Job dispatched successfully');
+                Log::info('[SKP] KIAN CHECK - Job dispatched successfully for Stage 4');
             } else {
-                Log::info('[SKP] KIAN CHECK - No reason returned, job NOT dispatched');
+                Log::info('[SKP] KIAN CHECK - Stage 4 does not need KIAN');
             }
         } else {
             Log::info('[SKP] KIAN CHECK - Condition NOT met, continue_to_next_stage is true');

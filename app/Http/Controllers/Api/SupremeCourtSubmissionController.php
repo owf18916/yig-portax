@@ -12,6 +12,10 @@ class SupremeCourtSubmissionController extends ApiController
 {
     /**
      * Store supreme court review submission (Stage 11)
+     * 
+     * ✅ NEW: Validate that review_amount doesn't exceed loss from Stage 10
+     * Loss from Stage 10 = appeal_amount - decision_amount
+     * If no Stage 10 loss, max review_amount = disputed_amount
      */
     public function store(Request $request, TaxCase $taxCase)
     {
@@ -25,6 +29,28 @@ class SupremeCourtSubmissionController extends ApiController
                 'supporting_documents' => 'nullable|string',
                 'notes' => 'nullable|string',
             ]);
+
+            // ✅ NEW: Calculate maximum allowed review_amount from Stage 10 loss
+            $maxAllowedAmount = $taxCase->disputed_amount; // Default: full disputed amount
+            
+            if ($taxCase->appealDecision && $taxCase->appealSubmission) {
+                // Stage 10 loss = appeal_amount - decision_amount
+                $stage10Loss = $taxCase->calculateLossAtStage(10);
+                if ($stage10Loss !== null) {
+                    // If there's a loss at Stage 10, max review cannot exceed this loss
+                    $maxAllowedAmount = $stage10Loss;
+                }
+            }
+
+            // ✅ NEW: Validate tax_amount_reviewed doesn't exceed maximum allowed
+            if ($validated['tax_amount_reviewed'] > $maxAllowedAmount) {
+                return $this->error(
+                    "Review amount cannot exceed Rp " . number_format($maxAllowedAmount, 0, ',', '.') . 
+                    " (maximum loss from Stage 10). Your requested: Rp " . 
+                    number_format($validated['tax_amount_reviewed'], 0, ',', '.'),
+                    422
+                );
+            }
 
             DB::beginTransaction();
 

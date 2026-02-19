@@ -19,15 +19,22 @@ class SendKianReminderJob implements ShouldQueue
     protected TaxCase $taxCase;
     protected string $stageName;
     protected string $reason;
+    protected int $stageId;
 
     /**
      * Create a new job instance.
+     * 
+     * @param TaxCase $taxCase The tax case
+     * @param string $stageName Human-readable stage name (e.g., "Stage 4 - SKP")
+     * @param string $reason Eligibility reason for KIAN
+     * @param int $stageId The stage ID that triggered KIAN (4, 7, 10, 12)
      */
-    public function __construct(TaxCase $taxCase, string $stageName, string $reason)
+    public function __construct(TaxCase $taxCase, string $stageName, string $reason, int $stageId = 12)
     {
         $this->taxCase = $taxCase;
         $this->stageName = $stageName;
         $this->reason = $reason;
+        $this->stageId = $stageId;
     }
 
     /**
@@ -75,10 +82,11 @@ class SendKianReminderJob implements ShouldQueue
                 'auditable_id' => $this->taxCase->id,
                 'user_id' => auth()->id() ?? null,
                 'action' => 'KIAN_REMINDER_SENT',
-                'description' => "KIAN reminder sent for stage: {$this->stageName}",
+                'description' => "KIAN reminder sent for stage: {$this->stageName} (Stage {$this->stageId})",
                 'old_values' => null,
                 'new_values' => json_encode([
-                    'stage' => $this->stageName,
+                    'stage_id' => $this->stageId,
+                    'stage_name' => $this->stageName,
                     'reason' => $this->reason,
                     'to_recipients' => $sentTo,
                     'cc_recipients' => $ccEmails,

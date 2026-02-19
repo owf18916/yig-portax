@@ -95,9 +95,11 @@ class ObjectionDecisionController extends ApiController
         // ⭐ CHANGE 4: Check if KIAN reminder email should be sent
         // KIAN is needed when decision is rejected/partially_granted and user chose not to continue
         if (!$validated['continue_to_next_stage']) {
-            $reason = $taxCase->getKianEligibilityReason();
-            if ($reason) {
-                dispatch(new SendKianReminderJob($taxCase, 'Objection Decision (Stage 7)', $reason));
+            // ✅ NEW: Check if KIAN is needed at Stage 7 specifically
+            if ($taxCase->needsKianAtStage(7)) {
+                $reason = $taxCase->getKianEligibilityReasonForStage(7);
+                // ✅ UPDATED: Dispatch with stage_id = 7
+                dispatch(new SendKianReminderJob($taxCase, 'Stage 7 - Objection Decision (Keputusan Keberatan)', $reason, 7));
             }
         }
 

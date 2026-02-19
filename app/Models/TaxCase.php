@@ -401,6 +401,172 @@ class TaxCase extends Model
         return !empty($reasons) ? implode(' | ', $reasons) : null;
     }
 
+    /**
+     * ✅ NEW METHOD 1: Check if KIAN is needed at a specific stage
+     * Multiple KIAN per stage concept (v2)
+     */
+    public function needsKianAtStage(int $stageId): bool
+    {
+        if ($stageId === 4) {
+            // Stage 4: SKP
+            return $this->skpRecord && 
+                   $this->skpRecord->skp_amount < $this->disputed_amount;
+        }
+        
+        if ($stageId === 7) {
+            // Stage 7: Objection Decision
+            return $this->objectionDecision && $this->objectionSubmission &&
+                   $this->objectionDecision->decision_amount < 
+                   $this->objectionSubmission->objection_amount;
+        }
+        
+        if ($stageId === 10) {
+            // Stage 10: Appeal Decision
+            return $this->appealDecision && $this->appealSubmission &&
+                   $this->appealDecision->decision_amount < 
+                   $this->appealSubmission->appeal_amount;
+        }
+        
+        if ($stageId === 12) {
+            // Stage 12: Supreme Court Decision
+            return $this->supremeCourtDecision && $this->supremeCourtSubmission &&
+                   in_array($this->supremeCourtDecision->decision_type, 
+                       ['PARTIALLY_GRANTED', 'REJECTED']) &&
+                   $this->supremeCourtDecision->decision_amount < 
+                   $this->supremeCourtSubmission->review_amount;
+        }
+        
+        return false;
+    }
+
+    /**
+     * ✅ NEW METHOD 2: Calculate loss amount at a specific stage
+     * Returns null if no loss at that stage
+     */
+    public function calculateLossAtStage(int $stageId): ?float
+    {
+        if ($stageId === 4) {
+            if (!$this->needsKianAtStage(4)) return null;
+            return (float) ($this->disputed_amount - $this->skpRecord->skp_amount);
+        }
+        
+        if ($stageId === 7) {
+            if (!$this->needsKianAtStage(7)) return null;
+            return (float) ($this->objectionSubmission->objection_amount - 
+                   $this->objectionDecision->decision_amount);
+        }
+        
+        if ($stageId === 10) {
+            if (!$this->needsKianAtStage(10)) return null;
+            return (float) ($this->appealSubmission->appeal_amount - 
+                   $this->appealDecision->decision_amount);
+        }
+        
+        if ($stageId === 12) {
+            if (!$this->needsKianAtStage(12)) return null;
+            return (float) ($this->supremeCourtSubmission->review_amount - 
+                   $this->supremeCourtDecision->decision_amount);
+        }
+        
+        return null;
+    }
+
+    /**
+     * ✅ NEW METHOD 3: Check if KIAN can be created for a specific stage
+     * Returns true only if:
+     * - KIAN is needed at that stage
+     * - KIAN for that stage doesn't already exist
+     */
+    public function canCreateKianForStage(int $stageId): bool
+    {
+        // KIAN must be needed at this stage
+        if (!$this->needsKianAtStage($stageId)) {
+            return false;
+        }
+        
+        // KIAN for this stage must not already exist
+        return !$this->kianSubmissions()
+            ->where('stage_id', $stageId)
+            ->exists();
+    }
+
+    /**
+     * ✅ NEW METHOD 4: Get eligibility reason for KIAN at specific stage
+     * Returns null if no KIAN needed at stage, otherwise returns human-readable reason
+     */
+    public function getKianEligibilityReasonForStage(int $stageId): ?string
+    {
+        $loss = $this->calculateLossAtStage($stageId);
+        if (!$loss) return null;
+        
+        $lossFormatted = 'Rp ' . number_format($loss, 0, ',', '.');
+        
+        switch ($stageId) {
+            case 4:
+                return "SKP amount (Rp " . 
+                    number_format($this->skpRecord->skp_amount, 0, ',', '.') . 
+                    ") kurang dari SPT (Rp " . 
+                    number_format($this->disputed_amount, 0, ',', '.') . 
+                    "). Loss: {$lossFormatted}";
+            
+            case 7:
+                return "Keputusan Keberatan (Rp " . 
+                    number_format($this->objectionDecision->decision_amount, 0, ',', '.') . 
+                    ") kurang dari pengajuan (Rp " . 
+                    number_format($this->objectionSubmission->objection_amount, 0, ',', '.') . 
+                    "). Loss: {$lossFormatted}";
+            
+            case 10:
+                return "Keputusan Banding (Rp " . 
+                    number_format($this->appealDecision->decision_amount, 0, ',', '.') . 
+                    ") kurang dari pengajuan (Rp " . 
+                    number_format($this->appealSubmission->appeal_amount, 0, ',', '.') . 
+                    "). Loss: {$lossFormatted}";
+            
+            case 12:
+                return "Keputusan PK (Rp " . 
+                    number_format($this->supremeCourtDecision->decision_amount, 0, ',', '.') . 
+                    ") kurang dari pengajuan (Rp " . 
+                    number_format($this->supremeCourtSubmission->review_amount, 0, ',', '.') . 
+                    "). Loss: {$lossFormatted}";
+        }
+        
+        return null;
+    }
+
+    /**
+     * ✅ NEW METHOD 5: Get comprehensive KIAN status for all 4 stages
+     * Returns array with status for each stage (4, 7, 10, 12)
+     * Used in API response for frontend
+     */
+    public function getKianStatusByStage(): array
+    {
+        $stages = [4, 7, 10, 12];
+        $status = [];
+        
+        foreach ($stages as $stageId) {
+            $needsKian = $this->needsKianAtStage($stageId);
+            $lossAmount = $this->calculateLossAtStage($stageId);
+            $reason = $this->getKianEligibilityReasonForStage($stageId);
+            
+            // Check if KIAN already submitted for this stage
+            $kianSubmission = $this->kianSubmissions()
+                ->where('stage_id', $stageId)
+                ->first();
+            
+            $status[$stageId] = [
+                'needsKian' => $needsKian,
+                'lossAmount' => $lossAmount,
+                'reason' => $reason,
+                'submitted' => $kianSubmission ? in_array($kianSubmission->status, ['submitted', 'approved']) : false,
+                'kianId' => $kianSubmission?->id,
+                'kianStatus' => $kianSubmission?->status,
+            ];
+        }
+        
+        return $status;
+    }
+
     // Audit relationships
     public function documents(): HasMany
     {

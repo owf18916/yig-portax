@@ -12,6 +12,10 @@ class ObjectionSubmissionController extends ApiController
 {
     /**
      * Store a newly created objection submission (Stage 5)
+     * 
+     * ✅ NEW: Validate that objection_amount doesn't exceed loss from Stage 4
+     * Loss from Stage 4 = disputed_amount - skp_amount
+     * If no Stage 4 loss, max objection_amount = disputed_amount
      */
     public function store(Request $request, TaxCase $taxCase)
     {
@@ -25,6 +29,28 @@ class ObjectionSubmissionController extends ApiController
                 'supporting_documents' => 'nullable|string',
                 'notes' => 'nullable|string',
             ]);
+
+            // ✅ NEW: Calculate maximum allowed objection_amount from Stage 4 loss
+            $maxAllowedAmount = $taxCase->disputed_amount; // Default: full disputed amount
+            
+            if ($taxCase->skpRecord) {
+                // Stage 4 loss = disputed_amount - skp_amount
+                $stage4Loss = $taxCase->calculateLossAtStage(4);
+                if ($stage4Loss !== null) {
+                    // If there's a loss at Stage 4, max objection cannot exceed this loss
+                    $maxAllowedAmount = $stage4Loss;
+                }
+            }
+
+            // ✅ NEW: Validate requested_amount doesn't exceed maximum allowed
+            if ($validated['requested_amount'] > $maxAllowedAmount) {
+                return $this->error(
+                    "Objection amount cannot exceed Rp " . number_format($maxAllowedAmount, 0, ',', '.') . 
+                    " (maximum loss from Stage 4). Your requested: Rp " . 
+                    number_format($validated['requested_amount'], 0, ',', '.'),
+                    422
+                );
+            }
 
             DB::beginTransaction();
 

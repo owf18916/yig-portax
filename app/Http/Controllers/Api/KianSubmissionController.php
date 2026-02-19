@@ -11,54 +11,79 @@ use Illuminate\Support\Facades\DB;
 class KianSubmissionController extends ApiController
 {
     /**
-     * Store KIAN submission - Correction/Amendment Request (Stage 12)
+     * Store KIAN submission for a specific stage
+     * Multiple KIAN per case concept (v2)
+     * 
+     * Endpoint: POST /api/tax-cases/{id}/kian-submissions/{stageId}
      */
-    public function store(Request $request, TaxCase $taxCase)
+    public function store(Request $request, TaxCase $taxCase, int $stageId = null)
     {
         try {
+            // If stageId not in route, try to get from request
+            if (!$stageId) {
+                $stageId = $request->input('stage_id', 12);
+            }
+
+            // Validate stage_id is one of the allowed KIAN stages
+            if (!in_array($stageId, [4, 7, 10, 12])) {
+                return $this->error('Invalid stage ID. KIAN can only be submitted at stages 4, 7, 10, or 12', 422);
+            }
+
+            // ✅ NEW: Check if KIAN is needed at this stage
+            if (!$taxCase->needsKianAtStage($stageId)) {
+                return $this->error("KIAN is not needed at Stage {$stageId} for this tax case", 422);
+            }
+
+            // ✅ NEW: Check if KIAN for this stage already exists
+            if (!$taxCase->canCreateKianForStage($stageId)) {
+                $existingKian = $taxCase->kianSubmissions()->where('stage_id', $stageId)->first();
+                return $this->error("KIAN for Stage {$stageId} already exists (ID: {$existingKian->id})", 422);
+            }
+
+            // ✅ NEW: Get pre-calculated loss amount for this stage
+            $lossAmount = $taxCase->calculateLossAtStage($stageId);
+            if ($lossAmount === null) {
+                return $this->error("Unable to calculate loss amount for Stage {$stageId}", 422);
+            }
+
             $validated = $request->validate([
-                'submission_number' => 'required|string|unique:kian_submissions',
+                'kian_number' => 'required|string',
                 'submission_date' => 'required|date',
-                'submission_type' => 'required|in:CORRECTION_ERROR,ADDITIONAL_DATA,ADJUSTMENT_REQUEST',
-                'correction_reason' => 'required|string',
-                'amount_correction' => 'required|numeric',
-                'supporting_documents' => 'nullable|string',
                 'notes' => 'nullable|string',
+                'next_action' => 'nullable|string',
+                'next_action_due_date' => 'nullable|date',
+                'status_comment' => 'nullable|string',
             ]);
 
             DB::beginTransaction();
 
             $kianSubmission = KianSubmission::create([
                 'tax_case_id' => $taxCase->id,
-                'submission_number' => $validated['submission_number'],
+                'stage_id' => $stageId,  // ✅ NEW: Store stage_id
+                'kian_number' => $validated['kian_number'],
                 'submission_date' => $validated['submission_date'],
-                'submission_type' => $validated['submission_type'],
-                'correction_reason' => $validated['correction_reason'],
-                'amount_correction' => $validated['amount_correction'],
-                'supporting_documents' => $validated['supporting_documents'] ?? null,
+                'loss_amount' => $lossAmount,  // ✅ NEW: Pre-fill loss amount from calculation
+                'status' => 'draft',
                 'notes' => $validated['notes'] ?? null,
-                'status' => 'DRAFT',
+                'next_action' => $validated['next_action'] ?? null,
+                'next_action_due_date' => $validated['next_action_due_date'] ?? null,
+                'status_comment' => $validated['status_comment'] ?? null,
+                'submitted_by' => auth()->id(),
             ]);
 
             // Log workflow history
             WorkflowHistory::create([
                 'tax_case_id' => $taxCase->id,
-                'stage_number' => 12,
+                'stage_id' => $stageId,
                 'action' => 'KIAN_DRAFT_CREATED',
-                'description' => 'KIAN (Correction/Amendment Request) created in draft status',
+                'description' => "KIAN draft created at Stage {$stageId} with loss amount: Rp " . number_format($lossAmount, 0, ',', '.'),
                 'performed_by' => auth()->id(),
                 'notes' => $validated['notes'] ?? null,
             ]);
 
-            // Update tax case status
-            $taxCase->update([
-                'current_stage' => 12,
-                'status' => 'KIAN_SUBMITTED'
-            ]);
-
             DB::commit();
 
-            return $this->success($kianSubmission, 'KIAN submission created', 201);
+            return $this->success($kianSubmission, "KIAN submission created for Stage {$stageId}", 201);
         } catch (\Exception $e) {
             DB::rollBack();
             return $this->error($e->getMessage(), 500);
@@ -78,7 +103,7 @@ class KianSubmissionController extends ApiController
     }
 
     /**
-     * Submit KIAN to tax authority
+     * Submit KIAN submission (move from draft to submitted status)
      */
     public function submit(Request $request, TaxCase $taxCase, KianSubmission $kianSubmission)
     {
@@ -87,37 +112,33 @@ class KianSubmissionController extends ApiController
                 return $this->error('KIAN submission not found for this tax case', 404);
             }
 
-            if ($kianSubmission->status !== 'DRAFT') {
+            if ($kianSubmission->status !== 'draft') {
                 return $this->error('Only draft KIAN submissions can be submitted', 400);
             }
 
             DB::beginTransaction();
 
             $kianSubmission->update([
-                'status' => 'SUBMITTED',
-                'submitted_date' => now(),
+                'status' => 'submitted',
+                'submitted_at' => now(),
                 'submitted_by' => auth()->id(),
             ]);
+
+            $stageId = $kianSubmission->stage_id ?? 12;
 
             // Log workflow history
             WorkflowHistory::create([
                 'tax_case_id' => $taxCase->id,
-                'stage_number' => 12,
+                'stage_id' => $stageId,
                 'action' => 'KIAN_SUBMITTED',
-                'description' => 'KIAN submitted to tax authority for review',
+                'description' => "KIAN submitted at Stage {$stageId}",
                 'performed_by' => auth()->id(),
                 'notes' => $request->input('notes'),
             ]);
 
-            // Update tax case status
-            $taxCase->update([
-                'current_stage' => 12,
-                'status' => 'KIAN_AWAITING_RESPONSE'
-            ]);
-
             DB::commit();
 
-            return $this->success($kianSubmission, 'KIAN submitted, awaiting tax authority response', 200);
+            return $this->success($kianSubmission, "KIAN for Stage {$stageId} submitted successfully", 200);
         } catch (\Exception $e) {
             DB::rollBack();
             return $this->error($e->getMessage(), 500);

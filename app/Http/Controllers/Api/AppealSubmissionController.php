@@ -12,6 +12,10 @@ class AppealSubmissionController extends ApiController
 {
     /**
      * Store a newly created appeal submission (Stage 8)
+     * 
+     * ✅ NEW: Validate that appeal_amount doesn't exceed loss from Stage 7
+     * Loss from Stage 7 = objection_amount - decision_amount
+     * If no Stage 7 loss, max appeal_amount = disputed_amount
      */
     public function store(Request $request, TaxCase $taxCase)
     {
@@ -25,6 +29,28 @@ class AppealSubmissionController extends ApiController
                 'supporting_documents' => 'nullable|string',
                 'notes' => 'nullable|string',
             ]);
+
+            // ✅ NEW: Calculate maximum allowed appeal_amount from Stage 7 loss
+            $maxAllowedAmount = $taxCase->disputed_amount; // Default: full disputed amount
+            
+            if ($taxCase->objectionDecision && $taxCase->objectionSubmission) {
+                // Stage 7 loss = objection_amount - decision_amount
+                $stage7Loss = $taxCase->calculateLossAtStage(7);
+                if ($stage7Loss !== null) {
+                    // If there's a loss at Stage 7, max appeal cannot exceed this loss
+                    $maxAllowedAmount = $stage7Loss;
+                }
+            }
+
+            // ✅ NEW: Validate requested_amount doesn't exceed maximum allowed
+            if ($validated['requested_amount'] > $maxAllowedAmount) {
+                return $this->error(
+                    "Appeal amount cannot exceed Rp " . number_format($maxAllowedAmount, 0, ',', '.') . 
+                    " (maximum loss from Stage 7). Your requested: Rp " . 
+                    number_format($validated['requested_amount'], 0, ',', '.'),
+                    422
+                );
+            }
 
             DB::beginTransaction();
 
