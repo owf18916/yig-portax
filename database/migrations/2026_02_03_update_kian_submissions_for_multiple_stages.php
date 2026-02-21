@@ -16,26 +16,41 @@ return new class extends Migration
      */
     public function up(): void
     {
+        $driver = DB::connection()->getDriverName();
+        
         // Disable foreign key checks temporarily to manipulate constraints
-        DB::statement('SET FOREIGN_KEY_CHECKS=0');
+        if ($driver === 'mysql') {
+            DB::statement('SET FOREIGN_KEY_CHECKS=0');
+        } else if ($driver === 'pgsql') {
+            DB::statement('SET CONSTRAINTS ALL DEFERRED');
+        }
 
         try {
-            // First, drop the old unique constraint using ALTER TABLE with DROP INDEX
-            DB::statement('ALTER TABLE kian_submissions DROP INDEX kian_submissions_tax_case_id_unique');
+            // First, drop the old unique constraint
+            if ($driver === 'mysql') {
+                DB::statement('ALTER TABLE kian_submissions DROP INDEX kian_submissions_tax_case_id_unique');
+            } else if ($driver === 'pgsql') {
+                DB::statement('ALTER TABLE kian_submissions DROP CONSTRAINT IF EXISTS kian_submissions_tax_case_id_unique');
+            }
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::warning('Could not drop unique index', ['error' => $e->getMessage()]);
         }
 
         // Create a new unique index on (tax_case_id, stage_id) combination
-        // Also need to ensure it can be used as backing index for foreign key
         try {
-            DB::statement('ALTER TABLE kian_submissions ADD UNIQUE INDEX kian_submissions_tax_case_stage_unique (tax_case_id, stage_id)');
+            if ($driver === 'mysql') {
+                DB::statement('ALTER TABLE kian_submissions ADD UNIQUE INDEX kian_submissions_tax_case_stage_unique (tax_case_id, stage_id)');
+            } else if ($driver === 'pgsql') {
+                DB::statement('ALTER TABLE kian_submissions ADD CONSTRAINT kian_submissions_tax_case_stage_unique UNIQUE (tax_case_id, stage_id)');
+            }
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::warning('Could not create new unique index', ['error' => $e->getMessage()]);
         }
 
         // Re-enable foreign key checks
-        DB::statement('SET FOREIGN_KEY_CHECKS=1');
+        if ($driver === 'mysql') {
+            DB::statement('SET FOREIGN_KEY_CHECKS=1');
+        }
     }
 
     /**
@@ -43,24 +58,40 @@ return new class extends Migration
      */
     public function down(): void
     {
+        $driver = DB::connection()->getDriverName();
+        
         // Disable foreign key checks temporarily
-        DB::statement('SET FOREIGN_KEY_CHECKS=0');
+        if ($driver === 'mysql') {
+            DB::statement('SET FOREIGN_KEY_CHECKS=0');
+        } else if ($driver === 'pgsql') {
+            DB::statement('SET CONSTRAINTS ALL DEFERRED');
+        }
 
         try {
             // Drop the new composite unique constraint
-            DB::statement('ALTER TABLE kian_submissions DROP INDEX kian_submissions_tax_case_stage_unique');
+            if ($driver === 'mysql') {
+                DB::statement('ALTER TABLE kian_submissions DROP INDEX kian_submissions_tax_case_stage_unique');
+            } else if ($driver === 'pgsql') {
+                DB::statement('ALTER TABLE kian_submissions DROP CONSTRAINT IF EXISTS kian_submissions_tax_case_stage_unique');
+            }
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::warning('Could not drop unique index', ['error' => $e->getMessage()]);
         }
 
         // Restore the old unique constraint on tax_case_id only
         try {
-            DB::statement('ALTER TABLE kian_submissions ADD UNIQUE INDEX kian_submissions_tax_case_id_unique (tax_case_id)');
+            if ($driver === 'mysql') {
+                DB::statement('ALTER TABLE kian_submissions ADD UNIQUE INDEX kian_submissions_tax_case_id_unique (tax_case_id)');
+            } else if ($driver === 'pgsql') {
+                DB::statement('ALTER TABLE kian_submissions ADD CONSTRAINT kian_submissions_tax_case_id_unique UNIQUE (tax_case_id)');
+            }
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::warning('Could not recreate unique index', ['error' => $e->getMessage()]);
         }
 
         // Re-enable foreign key checks
-        DB::statement('SET FOREIGN_KEY_CHECKS=1');
+        if ($driver === 'mysql') {
+            DB::statement('SET FOREIGN_KEY_CHECKS=1');
+        }
     }
 };
