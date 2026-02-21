@@ -188,8 +188,7 @@ onMounted(async () => {
             kian_number: existing.kian_number || '',
             submission_date: formatDateForInput(existing.submission_date) || null,
             loss_amount: formatAmount(existing.loss_amount || existing.kian_amount || lossAmount),
-            notes: existing.notes || '',
-            workflowHistories: caseFetchedData.workflow_histories || []
+            notes: existing.notes || ''
           }
           preFilledMessage.value = `✅ Existing KIAN found for Stage ${stageId} - Nomor: ${existing.kian_number}`
           console.log('Loaded existing KIAN:', prefillData.value)
@@ -199,8 +198,7 @@ onMounted(async () => {
             kian_number: '',
             submission_date: null,
             loss_amount: formatAmount(lossAmount),
-            notes: '',
-            workflowHistories: caseFetchedData.workflow_histories || []
+            notes: ''
           }
           preFilledMessage.value = `📝 New KIAN Submission for Stage ${stageId}`
           console.log('No existing KIAN, using defaults:', prefillData.value)
@@ -211,8 +209,7 @@ onMounted(async () => {
           kian_number: '',
           submission_date: null,
           loss_amount: formatAmount(lossAmount),
-          notes: '',
-          workflowHistories: caseFetchedData.workflow_histories || []
+          notes: ''
         }
         preFilledMessage.value = `📝 New KIAN Submission for Stage ${stageId}`
       }
@@ -222,8 +219,7 @@ onMounted(async () => {
         kian_number: '',
         submission_date: null,
         loss_amount: formatAmount(lossAmount),
-        notes: '',
-        workflowHistories: caseFetchedData.workflow_histories || []
+        notes: ''
       }
       preFilledMessage.value = `📝 New KIAN Submission for Stage ${stageId}`
     }

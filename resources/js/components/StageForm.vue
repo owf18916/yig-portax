@@ -576,8 +576,14 @@ const computedNextStageId = computed(() => {
 
 // Compute whether fields should be disabled based on case status
 const fieldsDisabled = computed(() => {
+  // Only check workflowHistories if available (for main workflow stages)
+  // For KIAN/branch stages, workflowHistories won't be passed, so fields remain editable
+  if (!props.prefillData?.workflowHistories || !Array.isArray(props.prefillData.workflowHistories)) {
+    return false
+  }
+  
   // Check if THIS STAGE has been submitted via workflow_history
-  const isStageSubmitted = props.prefillData?.workflowHistories?.some(
+  const isStageSubmitted = props.prefillData.workflowHistories.some(
     h => h.stage_id === props.stageId && (h.status === 'submitted' || h.status === 'approved')
   )
   return isStageSubmitted

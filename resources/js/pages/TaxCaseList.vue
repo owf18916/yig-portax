@@ -194,8 +194,8 @@
                 </span>
               </td>
               <td class="px-4 py-2">
-                <span class="inline-flex items-center px-3 py-1.5 bg-indigo-100 text-indigo-800 rounded-lg text-xs font-medium whitespace-nowrap">
-                  {{ getStageName(taxCase.current_stage) }}
+                <span v-if="getDisplayStage(taxCase)" class="inline-flex items-center px-3 py-1.5 bg-indigo-100 text-indigo-800 rounded-lg text-xs font-medium whitespace-nowrap">
+                  {{ getStageName(getDisplayStage(taxCase)) }}
                 </span>
               </td>
               <td class="px-4 py-2">
@@ -298,9 +298,13 @@ const loading = ref(true)
 const taxCases = ref([])
 const availableEntities = ref([])
 const availableStages = computed(() => {
+  // Only include main workflow stages 1-12, exclude branch actions (KIAN=16, Refund=13-15)
   const stages = new Set()
   taxCases.value.forEach(tc => {
-    if (tc.current_stage) stages.add(tc.current_stage)
+    const displayStage = getDisplayStage(tc)
+    if (displayStage && displayStage >= 1 && displayStage <= 12) {
+      stages.add(displayStage)
+    }
   })
   return Array.from(stages).sort((a, b) => a - b)
 })
@@ -344,9 +348,9 @@ const filteredCases = computed(() => {
       (filterStatus.value === 'closed' && tc.is_completed)
     )
     
-    // Current stage filter
+    // Current stage filter - use display stage (shows latest main workflow stage 1-12)
     const matchesCurrentStage = !filterCurrentStage.value || 
-      tc.current_stage == filterCurrentStage.value
+      getDisplayStage(tc) == filterCurrentStage.value
     
     // Stage status filter
     const matchesStageStatus = !filterStageStatus.value || 
@@ -477,6 +481,28 @@ const formatCurrency = (amount, currencyCode = 'IDR') => {
 
 const getStageName = (stageId) => {
   return stageNames[stageId] || `Stage ${stageId}`
+}
+
+// Helper: Get display stage - only show main workflow stages (1-12)
+// If current_stage is a branch action (13+), find the latest main workflow stage that was completed
+const getDisplayStage = (taxCase) => {
+  // If current_stage is within main workflow (1-12), show it
+  if (taxCase.current_stage >= 1 && taxCase.current_stage <= 12) {
+    return taxCase.current_stage
+  }
+  
+  // If current_stage is branch action (13+), find latest completed main workflow stage
+  if (taxCase.workflow_histories && taxCase.workflow_histories.length > 0) {
+    const mainWorkflowStages = taxCase.workflow_histories
+      .filter(wh => wh.stage_id >= 1 && wh.stage_id <= 12)
+      .sort((a, b) => b.stage_id - a.stage_id) // Descending by stage_id
+    
+    if (mainWorkflowStages.length > 0) {
+      return mainWorkflowStages[0].stage_id
+    }
+  }
+  
+  return undefined
 }
 
 const getStageStatus = (taxCase) => {
