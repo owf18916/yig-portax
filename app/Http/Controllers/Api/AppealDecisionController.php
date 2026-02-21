@@ -104,15 +104,11 @@ class AppealDecisionController extends ApiController
             'created_at' => now(),
         ]);
 
-        // ⭐ CHANGE 4: Check if KIAN reminder email should be sent
-        // KIAN is needed when decision is rejected/partially_granted and user chose not to continue to supreme court
-        if (!$validated['continue_to_next_stage']) {
-            // ✅ NEW: Check if KIAN is needed at Stage 10 specifically
-            if ($taxCase->needsKianAtStage(10)) {
-                $reason = $taxCase->getKianEligibilityReasonForStage(10);
-                // ✅ UPDATED: Dispatch with stage_id = 10
-                dispatch(new SendKianReminderJob($taxCase, 'Stage 10 - Appeal Decision (Keputusan Banding)', $reason, 10));
-            }
+        // ✅ FIXED: Check if KIAN reminder email should be sent
+        // KIAN is needed WHENEVER loss exists at Stage 10, REGARDLESS of next stage choice
+        if ($taxCase->needsKianAtStage(10)) {
+            $reason = $taxCase->getKianEligibilityReasonForStage(10);
+            dispatch(new SendKianReminderJob($taxCase, 'Stage 10 - Appeal Decision (Keputusan Banding)', $reason, 10));
         }
 
         return $this->success(

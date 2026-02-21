@@ -21,18 +21,31 @@ class BankTransferRequestController extends ApiController
 {
     /**
      * Stage 13: Show bank transfer request data
+     * @param int $refundId - Optional refund process ID (if not provided, uses latest)
      */
-    public function show(Request $request, TaxCase $taxCase): JsonResponse
+    public function show(Request $request, TaxCase $taxCase, $refundId = null): JsonResponse
     {
         try {
-            // Get the latest refund process with bank transfer requests
-            $refundProcess = $taxCase->refundProcesses()
-                ->with('bankTransferRequests')
-                ->latest()
-                ->first();
+            // Get specific refund process or latest
+            if ($refundId) {
+                $refundProcess = $taxCase->refundProcesses()
+                    ->where('id', $refundId)
+                    ->with('bankTransferRequests')
+                    ->first();
+                
+                if (!$refundProcess) {
+                    return $this->error('Refund process not found or does not belong to this tax case', 404);
+                }
+            } else {
+                // Fallback to latest for backward compatibility
+                $refundProcess = $taxCase->refundProcesses()
+                    ->with('bankTransferRequests')
+                    ->latest()
+                    ->first();
 
-            if (!$refundProcess) {
-                return $this->error('No refund process found for this tax case', 404);
+                if (!$refundProcess) {
+                    return $this->error('No refund process found for this tax case', 404);
+                }
             }
 
             // Get the most recent bank transfer request
@@ -57,8 +70,9 @@ class BankTransferRequestController extends ApiController
 
     /**
      * Stage 13: Create or update bank transfer request
+     * @param int $refundId - Optional refund process ID (if not provided, creates new or uses latest)
      */
-    public function createTransferRequest(Request $request, TaxCase $taxCase): JsonResponse
+    public function createTransferRequest(Request $request, TaxCase $taxCase, $refundId = null): JsonResponse
     {
         try {
             $validated = $request->validate([
@@ -69,19 +83,34 @@ class BankTransferRequestController extends ApiController
                 'documents' => 'nullable|array',
             ]);
 
-            // Get or create refund process for this tax case
-            $refundProcess = RefundProcess::firstOrCreate(
-                ['tax_case_id' => $taxCase->id],
-                [
-                    'refund_number' => $this->generateRefundNumber($taxCase),
-                    'refund_amount' => 0,
-                    'refund_method' => 'bank_transfer',
-                    'refund_status' => 'pending',
-                    'submitted_by' => auth()->id(),
-                    'submitted_at' => now(),
-                    'status' => 'draft',
-                ]
-            );
+            // Get specific refund or create new one
+            if ($refundId) {
+                $refundProcess = RefundProcess::where('id', $refundId)
+                    ->where('tax_case_id', $taxCase->id)
+                    ->first();
+                
+                if (!$refundProcess) {
+                    return $this->error('Refund process not found or does not belong to this tax case', 404);
+                }
+            } else {
+                // Fallback: Get or create refund process for this tax case
+                $refundProcess = RefundProcess::where('tax_case_id', $taxCase->id)
+                    ->latest()
+                    ->first();
+                
+                if (!$refundProcess) {
+                    $refundProcess = RefundProcess::create([
+                        'tax_case_id' => $taxCase->id,
+                        'refund_number' => $this->generateRefundNumber($taxCase),
+                        'refund_amount' => 0,
+                        'refund_method' => 'bank_transfer',
+                        'refund_status' => 'pending',
+                        'submitted_by' => auth()->id(),
+                        'submitted_at' => now(),
+                        'status' => 'draft',
+                    ]);
+                }
+            }
 
             // Create bank transfer request (Stage 13)
             $bankTransfer = BankTransferRequest::create([
@@ -115,14 +144,31 @@ class BankTransferRequestController extends ApiController
 
     /**
      * Stage 14: Show transfer instruction data
+     * @param int $refundId - Optional refund process ID (if not provided, uses latest)
      */
-    public function showTransferInstruction(Request $request, TaxCase $taxCase): JsonResponse
+    public function showTransferInstruction(Request $request, TaxCase $taxCase, $refundId = null): JsonResponse
     {
         try {
-            $refundProcess = $taxCase->refundProcesses()->with('bankTransferRequests')->latest()->first();
+            // Get specific refund process or latest
+            if ($refundId) {
+                $refundProcess = $taxCase->refundProcesses()
+                    ->where('id', $refundId)
+                    ->with('bankTransferRequests')
+                    ->first();
+                
+                if (!$refundProcess) {
+                    return $this->error('Refund process not found or does not belong to this tax case', 404);
+                }
+            } else {
+                // Fallback to latest for backward compatibility
+                $refundProcess = $taxCase->refundProcesses()
+                    ->with('bankTransferRequests')
+                    ->latest()
+                    ->first();
             
-            if (!$refundProcess) {
-                return $this->error('No refund process found', 404);
+                if (!$refundProcess) {
+                    return $this->error('No refund process found', 404);
+                }
             }
 
             $bankTransfer = $refundProcess->bankTransferRequests()->latest()->first();
@@ -147,8 +193,9 @@ class BankTransferRequestController extends ApiController
 
     /**
      * Stage 14: Update transfer instruction with bank details
+     * @param int $refundId - Optional refund process ID (if not provided, uses latest)
      */
-    public function updateTransferInstruction(Request $request, TaxCase $taxCase): JsonResponse
+    public function updateTransferInstruction(Request $request, TaxCase $taxCase, $refundId = null): JsonResponse
     {
         try {
             $validated = $request->validate([
@@ -162,13 +209,24 @@ class BankTransferRequestController extends ApiController
                 'documents' => 'nullable|array',
             ]);
 
-            // Get the latest refund process
-            $refundProcess = RefundProcess::where('tax_case_id', $taxCase->id)
-                ->latest()
-                ->first();
+            // Get specific refund or latest
+            if ($refundId) {
+                $refundProcess = RefundProcess::where('id', $refundId)
+                    ->where('tax_case_id', $taxCase->id)
+                    ->first();
+                
+                if (!$refundProcess) {
+                    return $this->error('Refund process not found or does not belong to this tax case', 404);
+                }
+            } else {
+                // Fallback to latest for backward compatibility
+                $refundProcess = RefundProcess::where('tax_case_id', $taxCase->id)
+                    ->latest()
+                    ->first();
 
-            if (!$refundProcess) {
-                return $this->error('No refund process found. Please complete Stage 13 first.', 422);
+                if (!$refundProcess) {
+                    return $this->error('No refund process found. Please complete Stage 13 first.', 422);
+                }
             }
 
             // Get the latest bank transfer request
@@ -221,14 +279,31 @@ class BankTransferRequestController extends ApiController
 
     /**
      * Stage 15: Show refund receipt data
+     * @param int $refundId - Optional refund process ID (if not provided, uses latest)
      */
-    public function showRefundReceipt(Request $request, TaxCase $taxCase): JsonResponse
+    public function showRefundReceipt(Request $request, TaxCase $taxCase, $refundId = null): JsonResponse
     {
         try {
-            $refundProcess = $taxCase->refundProcesses()->with('bankTransferRequests')->latest()->first();
+            // Get specific refund process or latest
+            if ($refundId) {
+                $refundProcess = $taxCase->refundProcesses()
+                    ->where('id', $refundId)
+                    ->with('bankTransferRequests')
+                    ->first();
+                
+                if (!$refundProcess) {
+                    return $this->error('Refund process not found or does not belong to this tax case', 404);
+                }
+            } else {
+                // Fallback to latest for backward compatibility
+                $refundProcess = $taxCase->refundProcesses()
+                    ->with('bankTransferRequests')
+                    ->latest()
+                    ->first();
             
-            if (!$refundProcess) {
-                return $this->error('No refund process found', 404);
+                if (!$refundProcess) {
+                    return $this->error('No refund process found', 404);
+                }
             }
 
             $bankTransfer = $refundProcess->bankTransferRequests()->latest()->first();
@@ -251,8 +326,9 @@ class BankTransferRequestController extends ApiController
 
     /**
      * Stage 15: Complete refund process with receipt confirmation
+     * @param int $refundId - Optional refund process ID (if not provided, uses latest)
      */
-    public function completeRefund(Request $request, TaxCase $taxCase): JsonResponse
+    public function completeRefund(Request $request, TaxCase $taxCase, $refundId = null): JsonResponse
     {
         try {
             $validated = $request->validate([
@@ -264,13 +340,24 @@ class BankTransferRequestController extends ApiController
                 'documents' => 'nullable|array',
             ]);
 
-            // Get the latest refund process
-            $refundProcess = RefundProcess::where('tax_case_id', $taxCase->id)
-                ->latest()
-                ->first();
+            // Get specific refund or latest
+            if ($refundId) {
+                $refundProcess = RefundProcess::where('id', $refundId)
+                    ->where('tax_case_id', $taxCase->id)
+                    ->first();
+                
+                if (!$refundProcess) {
+                    return $this->error('Refund process not found or does not belong to this tax case', 404);
+                }
+            } else {
+                // Fallback to latest for backward compatibility
+                $refundProcess = RefundProcess::where('tax_case_id', $taxCase->id)
+                    ->latest()
+                    ->first();
 
-            if (!$refundProcess) {
-                return $this->error('No refund process found. Please complete Stages 13-14 first.', 422);
+                if (!$refundProcess) {
+                    return $this->error('No refund process found. Please complete Stages 13-14 first.', 422);
+                }
             }
 
             // Get the latest bank transfer request

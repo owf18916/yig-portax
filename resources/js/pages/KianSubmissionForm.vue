@@ -396,14 +396,43 @@ onMounted(async () => {
   }
 })
 
-// ✅ NEW: Select stage and prepare form
-const selectStageForKian = (stageId) => {
+// ✅ NEW: Select stage and prepare form (fetch existing KIAN if any)
+const selectStageForKian = async (stageId) => {
   selectedStageForKian.value = stageId
   preFilledLossAmount.value = kianStatusByStage.value[stageId]?.lossAmount || 0
+  
+  // Reset form to defaults
   kianFormData.value = {
     kian_number: '',
     submission_date: new Date().toISOString().split('T')[0],
     notes: ''
+  }
+
+  // ✅ NEW: Try to fetch existing KIAN submission for this stage
+  try {
+    const response = await fetch(`/api/tax-cases/${caseId}/kian-submissions/${stageId}`)
+    if (response.ok) {
+      const result = await response.json()
+      
+      // If existing KIAN found, pre-fill the form
+      if (result.data && result.data.id) {
+        const existingKian = result.data
+        kianFormData.value = {
+          kian_number: existingKian.kian_number || '',
+          submission_date: formatDateForInput(existingKian.submission_date) || new Date().toISOString().split('T')[0],
+          notes: existingKian.notes || ''
+        }
+        // Indicate that we're editing an existing submission
+        console.log(`Loaded existing KIAN submission for Stage ${stageId}:`, existingKian)
+      } else {
+        console.log(`No existing KIAN submission for Stage ${stageId}, creating new`)
+      }
+    } else {
+      console.warn(`Could not fetch KIAN for stage ${stageId}:`, response.status)
+    }
+  } catch (error) {
+    console.error(`Error fetching KIAN for stage ${stageId}:`, error)
+    // Continue anyway - it's not critical if fetch fails
   }
 }
 

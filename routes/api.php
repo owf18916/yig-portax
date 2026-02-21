@@ -251,15 +251,6 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
             // Variable to store decision point value for workflow history
             $decisionValue = null;
             
-            // DEBUG: Log the request to help troubleshoot
-            Log::info('Workflow endpoint called', [
-                'stage' => $stage,
-                'action' => $action,
-                'isDraft' => $isDraft,
-                'case_id' => $taxCase->id,
-                'request_all' => $request->all()
-            ]);
-            
             try {
                 // Update tax case with form data (only updatable fields)
                 $updateData = [];
@@ -283,7 +274,6 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                         ['tax_case_id' => $taxCase->id],
                         $sp2Data
                     );
-                    Log::info('SP2Record saved', ['sp2Data' => $sp2Data]);
                 } elseif ($stage == 3) {
                     $sphpData = $request->only([
                         'sphp_number', 'sphp_issue_date', 'sphp_receipt_date',
@@ -294,25 +284,11 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                         ['tax_case_id' => $taxCase->id],
                         $sphpData
                     );
-                    Log::info('SphpRecord saved', ['sphpData' => $sphpData]);
                 } elseif ($stage == 4) {
-                    // ⭐ DEBUG: Check if decision fields exist in request
-                    Log::info('[Stage 4 DEBUG] Request has decision fields?', [
-                        'has_create_refund' => $request->has('create_refund'),
-                        'has_continue' => $request->has('continue_to_next_stage'),
-                        'raw_create_refund' => $request->input('create_refund'),
-                        'raw_continue' => $request->input('continue_to_next_stage'),
-                    ]);
-                    
                     $skpData = $request->only([
                         'skp_number', 'issue_date', 'receipt_date', 'skp_type',
                         'skp_amount', 'royalty_correction', 'service_correction', 'other_correction', 'notes',
                         'correction_notes', 'user_routing_choice', 'create_refund', 'refund_amount', 'continue_to_next_stage'
-                    ]);
-                    
-                    Log::info('[Stage 4] After only() - skpData keys', [
-                        'keys' => array_keys($skpData),
-                        'full_data' => $skpData
                     ]);
                     
                     $skpData['tax_case_id'] = $taxCase->id;
@@ -325,19 +301,11 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                         $skpData['continue_to_next_stage'] = filter_var($skpData['continue_to_next_stage'] ?? false, FILTER_VALIDATE_BOOLEAN);
                     }
                     
-                    Log::info('[Stage 4] Decision Checkboxes', [
-                        'create_refund' => $skpData['create_refund'] ?? null,
-                        'create_refund_type' => gettype($skpData['create_refund'] ?? null),
-                        'continue_to_next_stage' => $skpData['continue_to_next_stage'] ?? null,
-                        'continue_to_next_stage_type' => gettype($skpData['continue_to_next_stage'] ?? null),
-                    ]);
-                    
                     // ⭐ If user_routing_choice is provided, update tax_case next_stage_id
                     if ($request->has('user_routing_choice')) {
                         $routingChoice = $request->input('user_routing_choice');
                         $nextStageId = ($routingChoice === 'refund') ? 13 : 5;
                         $taxCase->update(['next_stage_id' => $nextStageId]);
-                        Log::info('Stage 4 Routing Choice', ['choice' => $routingChoice, 'next_stage' => $nextStageId]);
                     }
                     
                     // ⭐ SET decision_value: Store decision checkpoint values as JSON for workflow history
@@ -348,25 +316,17 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                         'skp_type' => $request->input('skp_type')
                     ]);
                     
-                    Log::info('Stage 4 Decision Value Set', [
-                        'decisionValue' => $decisionValue
-                    ]);
-                    
                     \App\Models\SkpRecord::updateOrCreate(
                         ['tax_case_id' => $taxCase->id],
                         $skpData
                     );
-                    Log::info('SkpRecord saved', ['skpData' => $skpData]);
                     
-                    // ⭐ KIAN REMINDER TRIGGER - Check if should send KIAN reminder
+                    // ⭐ KIAN REMINDER TRIGGER - FIXED to trigger whenever loss exists
                     $taxCase->refresh();
-                    if (!$skpData['continue_to_next_stage']) {
-                        Log::info('[Stage 4] KIAN CHECK - Checking eligibility', ['continue_to_next_stage' => $skpData['continue_to_next_stage']]);
-                        $reason = $taxCase->getKianEligibilityReason();
+                    if ($taxCase->needsKianAtStage(4)) {
+                        $reason = $taxCase->getKianEligibilityReasonForStage(4);
                         if ($reason) {
-                            Log::info('[Stage 4] KIAN TRIGGER - Reason found, dispatching job', ['reason' => $reason]);
-                            dispatch(new \App\Jobs\SendKianReminderJob($taxCase, 'SKP (Stage 4)', $reason));
-                            Log::info('[Stage 4] Job dispatched successfully');
+                            dispatch(new \App\Jobs\SendKianReminderJob($taxCase, 'Stage 4 - SKP (Surat Ketetapan Pajak)', $reason, 4));
                         }
                     }
 
@@ -564,6 +524,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                     $bankTransferData['refund_process_id'] = $refundProcess->id;
                     $bankTransferData['transfer_number'] = 'TRN-' . $refundProcess->id . '-' . time();
                     $bankTransferData['transfer_status'] = 'pending';
+                    $bankTransferData['transfer_amount'] = 0; // Will be updated in Stage 14
                     $bankTransferData['created_by'] = auth()->id();
                     
                     \App\Models\BankTransferRequest::updateOrCreate(
@@ -676,11 +637,6 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                     'decision_value' => $decisionValue, // For Stage 4 (SKP) or Stage 7+ decisions
                 ]);
                 
-                Log::info('Workflow history created', [
-                    'stage_id' => $stage,
-                    'decision_value' => $decisionValue
-                ]);
-                
                 // STAGE 7 SPECIAL HANDLING: Auto-routing based on decision type
                 if ($stage == 7) {
                     $decisionType = $request->input('decision_type');
@@ -719,19 +675,24 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                             'user_id' => $user->id,
                             'notes' => "Auto-created from Stage 7 decision: $decisionType",
                         ]);
-                        
-                        Log::info("Stage 7 Routing triggered", [
-                            'case_id' => $taxCase->id,
-                            'decision_type' => $decisionType,
-                            'user_choice' => $userChoice,
-                            'routed_to_stage' => $autoRoutedStage
-                        ]);
-                    } else {
-                        // For partially_granted without user choice, user must choose - no auto-routing yet
-                        Log::info("Stage 7 Partially Granted - User choice required", [
-                            'case_id' => $taxCase->id
-                        ]);
                     }
+                }
+                
+                // ✅ NEW: KIAN REMINDER TRIGGERS for Stages 7, 10, 12
+                // Trigger KIAN whenever loss exists, not conditional on next stage choice
+                if ($stage == 7 && $taxCase->needsKianAtStage(7)) {
+                    $reason = $taxCase->getKianEligibilityReasonForStage(7);
+                    dispatch(new \App\Jobs\SendKianReminderJob($taxCase, 'Stage 7 - Objection Decision (Keputusan Keberatan)', $reason, 7));
+                }
+                
+                if ($stage == 10 && $taxCase->needsKianAtStage(10)) {
+                    $reason = $taxCase->getKianEligibilityReasonForStage(10);
+                    dispatch(new \App\Jobs\SendKianReminderJob($taxCase, 'Stage 10 - Appeal Decision (Keputusan Banding)', $reason, 10));
+                }
+                
+                if ($stage == 12 && $taxCase->needsKianAtStage(12)) {
+                    $reason = $taxCase->getKianEligibilityReasonForStage(12);
+                    dispatch(new \App\Jobs\SendKianReminderJob($taxCase, 'Stage 12 - Supreme Court Decision (Keputusan Peninjauan Kembali)', $reason, 12));
                 }
                 
                 return response()->json([
@@ -829,6 +790,17 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         Route::post('/workflow/14', [BankTransferRequestController::class, 'updateTransferInstruction'])->name('workflow.stage-14.store');
         Route::post('/workflow/15', [BankTransferRequestController::class, 'completeRefund'])->name('workflow.stage-15.store');
         
+        // Refund-scoped Workflow Routes (Stages 13-15) - Support multiple refunds per decision point
+        // GET stage data with specific refund
+        Route::get('/refunds/{refundId}/workflow/13', [BankTransferRequestController::class, 'show'])->name('workflow.refund.stage-13.show');
+        Route::get('/refunds/{refundId}/workflow/14', [BankTransferRequestController::class, 'showTransferInstruction'])->name('workflow.refund.stage-14.show');
+        Route::get('/refunds/{refundId}/workflow/15', [BankTransferRequestController::class, 'showRefundReceipt'])->name('workflow.refund.stage-15.show');
+        
+        // POST stage data with specific refund
+        Route::post('/refunds/{refundId}/workflow/13', [BankTransferRequestController::class, 'createTransferRequest'])->name('workflow.refund.stage-13.store');
+        Route::post('/refunds/{refundId}/workflow/14', [BankTransferRequestController::class, 'updateTransferInstruction'])->name('workflow.refund.stage-14.store');
+        Route::post('/refunds/{refundId}/workflow/15', [BankTransferRequestController::class, 'completeRefund'])->name('workflow.refund.stage-15.store');
+        
         Route::get('/refund-processes', [RefundProcessController::class, 'index'])->name('refund-processes.index');
         Route::post('/refund-processes', [RefundProcessController::class, 'store'])->name('refund-processes.store');
         Route::get('/refund-processes/{refundProcess}', [RefundProcessController::class, 'show'])->name('refund-processes.show');
@@ -854,6 +826,8 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         Route::post('/kian-submissions/{kianSubmission}/close', [KianSubmissionController::class, 'close'])->name('kian-submissions.close');
         
         // ✅ NEW: Per-stage KIAN submissions - Multi-stage KIAN support (Stages 4, 7, 10, 12)
+        Route::get('/kian-submissions/{stageId}', [KianSubmissionController::class, 'showByStage'])->where('stageId', '4|7|10|12')->name('kian-submissions.show-by-stage');
+        Route::put('/kian-submissions/{stageId}', [KianSubmissionController::class, 'updateByStage'])->where('stageId', '4|7|10|12')->name('kian-submissions.update-by-stage');
         Route::post('/kian-submissions/{stageId}', [KianSubmissionController::class, 'store'])->where('stageId', '4|7|10|12')->name('kian-submissions.store-by-stage');
     });
 });

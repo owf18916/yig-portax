@@ -138,36 +138,25 @@ class SkpRecordController extends ApiController
             'created_at' => now(),
         ]);
 
-        // ⭐ CHANGE 4: Check if KIAN reminder email should be sent
-        // KIAN is needed when user chose not to continue to next stage (case ends)
-        Log::info('[SKP] KIAN CHECK - Before condition', [
-            'continue_to_next_stage' => $validated['continue_to_next_stage'],
-            'continue_to_next_stage_type' => gettype($validated['continue_to_next_stage']),
-            'condition_met' => !$validated['continue_to_next_stage'],
-        ]);
+        // ✅ FIXED: Check if KIAN reminder email should be sent
+        // KIAN is needed WHENEVER loss exists at Stage 4, REGARDLESS of next stage choice
+        Log::info('[SKP] KIAN CHECK - Checking eligibility at Stage 4...');
         
-        if (!$validated['continue_to_next_stage']) {
-            Log::info('[SKP] KIAN CHECK - Inside condition, checking eligibility at Stage 4...');
+        if ($taxCase->needsKianAtStage(4)) {
+            $reason = $taxCase->getKianEligibilityReasonForStage(4);
             
-            // ✅ NEW: Check if KIAN is needed at Stage 4 specifically
-            if ($taxCase->needsKianAtStage(4)) {
-                $reason = $taxCase->getKianEligibilityReasonForStage(4);
-                
-                Log::info('[SKP] KIAN CHECK - Stage 4 needs KIAN', [
-                    'reason' => $reason,
-                    'loss_amount' => $taxCase->calculateLossAtStage(4),
-                    'tax_case_id' => $taxCase->id,
-                ]);
-                
-                // ✅ UPDATED: Dispatch with stage_id = 4
-                dispatch(new SendKianReminderJob($taxCase, 'Stage 4 - SKP (Surat Ketetapan Pajak)', $reason, 4));
-                
-                Log::info('[SKP] KIAN CHECK - Job dispatched successfully for Stage 4');
-            } else {
-                Log::info('[SKP] KIAN CHECK - Stage 4 does not need KIAN');
-            }
+            Log::info('[SKP] KIAN CHECK - Stage 4 needs KIAN', [
+                'reason' => $reason,
+                'loss_amount' => $taxCase->calculateLossAtStage(4),
+                'tax_case_id' => $taxCase->id,
+            ]);
+            
+            // ✅ UPDATED: Dispatch with stage_id = 4
+            dispatch(new SendKianReminderJob($taxCase, 'Stage 4 - SKP (Surat Ketetapan Pajak)', $reason, 4));
+            
+            Log::info('[SKP] KIAN CHECK - Job dispatched successfully for Stage 4');
         } else {
-            Log::info('[SKP] KIAN CHECK - Condition NOT met, continue_to_next_stage is true');
+            Log::info('[SKP] KIAN CHECK - Stage 4 does not need KIAN (no loss detected)');
         }
 
         return $this->success(

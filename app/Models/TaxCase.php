@@ -486,7 +486,7 @@ class TaxCase extends Model
         
         // KIAN for this stage must not already exist
         return !$this->kianSubmissions()
-            ->where('stage_id', $stageId)
+            ->where('kian_submissions.stage_id', $stageId)
             ->exists();
     }
 
@@ -551,7 +551,7 @@ class TaxCase extends Model
             
             // Check if KIAN already submitted for this stage
             $kianSubmission = $this->kianSubmissions()
-                ->where('stage_id', $stageId)
+                ->where('kian_submissions.stage_id', $stageId)
                 ->first();
             
             $status[$stageId] = [

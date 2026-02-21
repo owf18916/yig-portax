@@ -25,6 +25,7 @@ const BankTransferRequestForm = defineAsyncComponent(() => import('../pages/Bank
 const SuratInstruksiTransferForm = defineAsyncComponent(() => import('../pages/SuratInstruksiTransferForm.vue'))
 const RefundReceivedForm = defineAsyncComponent(() => import('../pages/RefundReceivedForm.vue'))
 const KianSubmissionForm = defineAsyncComponent(() => import('../pages/KianSubmissionForm.vue'))
+const KianForm = () => import('../pages/KianForm.vue')
 
 const routes = [
   {
@@ -157,7 +158,7 @@ const routes = [
   {
     path: '/tax-cases/:id/kian/:stageId',
     name: 'KianSubmissionStage',
-    component: KianSubmissionForm,
+    component: KianForm,
     meta: { requiresAuth: true }
   },
   {

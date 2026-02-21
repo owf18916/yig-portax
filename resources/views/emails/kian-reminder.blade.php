@@ -237,30 +237,7 @@
             <!-- Amount Summary -->
             <div class="amount">
                 <div class="amount-label">Kerugian yang Masih Tertanggung</div>
-                <div class="amount-value">Rp {{ number_format($lossAmount, 0, ',', '.') }}</div>
-            </div>
-
-            <!-- Detailed Breakdown -->
-            <div class="case-details">
-                <h3 style="margin-top: 0; color: #1e293b; font-size: 16px;">Rincian Perhitungan</h3>
-                <div class="detail-row">
-                    <div class="detail-label">Jumlah Sengketa:</div>
-                    <div class="detail-value">Rp {{ number_format($disputedAmount, 0, ',', '.') }}</div>
-                </div>
-                <div class="detail-row">
-                    <div class="detail-label">Telah Dikembalikan:</div>
-                    <div class="detail-value">Rp {{ number_format($refundedAmount, 0, ',', '.') }}</div>
-                </div>
-                <div class="detail-row" style="border: none; background-color: #dbeafe; margin: 8px -20px -20px -20px; padding: 8px 20px;">
-                    <div class="detail-label">Sisa Kerugian:</div>
-                    <div class="detail-value" style="color: #2563eb; font-weight: 700;">Rp {{ number_format($lossAmount, 0, ',', '.') }}</div>
-                </div>
-            </div>
-
-            <!-- Reason -->
-            <div class="reason-box">
-                <div class="reason-label">Alasan Pengajuan KIAN:</div>
-                <div class="reason-text">{{ $reason }}</div>
+                <div class="amount-value">{{ $currencyCode }} {{ number_format($lossAmount, 0, ',', '.') }}</div>
             </div>
 
             <!-- Instructions -->

@@ -82,16 +82,11 @@ class SupremeCourtDecisionController extends ApiController
                 ]),
             ]);
 
-            // ⭐ CHANGE 4: Check if KIAN reminder email should be sent
-            // Supreme Court is final stage, so if decision is REJECTED/PARTIALLY_GRANTED and no refund was created,
-            // KIAN reminder should be sent
-            if (!$validated['create_refund'] && $validated['decision_type'] !== 'GRANTED') {
-                // ✅ NEW: Check if KIAN is needed at Stage 12 specifically
-                if ($taxCase->needsKianAtStage(12)) {
-                    $reason = $taxCase->getKianEligibilityReasonForStage(12);
-                    // ✅ UPDATED: Dispatch with stage_id = 12
-                    dispatch(new SendKianReminderJob($taxCase, 'Stage 12 - Supreme Court Decision (Keputusan Peninjauan Kembali)', $reason, 12));
-                }
+            // ✅ FIXED: Check if KIAN reminder email should be sent
+            // KIAN is needed WHENEVER loss exists at Stage 12, REGARDLESS of decision type
+            if ($taxCase->needsKianAtStage(12)) {
+                $reason = $taxCase->getKianEligibilityReasonForStage(12);
+                dispatch(new SendKianReminderJob($taxCase, 'Stage 12 - Supreme Court Decision (Keputusan Peninjauan Kembali)', $reason, 12));
             }
 
             // Mark case as completed (Supreme Court is final stage)

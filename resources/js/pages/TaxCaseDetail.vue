@@ -45,9 +45,46 @@
         </div>
       </Card>
 
-      <!-- KIAN Eligibility Notice and Button -->
+      <!-- ✅ MULTI-STAGE KIAN Opportunities (Stages 4, 7, 10, 12) -->
+      <div v-if="caseData.kian_status_by_stage && Object.values(caseData.kian_status_by_stage).some(s => s.needsKian)" class="bg-red-100 border-2 border-red-500 p-4 rounded-lg">
+        <div class="text-red-900 font-bold mb-3">🚨 IMPORTANT: KIAN Required At These Stages</div>
+        <div class="space-y-3">
+          <div
+            v-for="(status, stageId) in caseData.kian_status_by_stage"
+            v-show="status.needsKian"
+            :key="`kian-${stageId}`"
+            class="bg-white p-4 rounded border-l-4 border-red-500"
+          >
+            <div class="flex items-start justify-between">
+              <div>
+                <p class="font-bold text-lg text-red-900">
+                  Stage {{ stageId }} - {{ getStageNameForKian(stageId) }}
+                </p>
+                <p class="text-sm text-gray-700 mt-1">{{ status.reason }}</p>
+                <p class="text-sm font-bold text-red-900 mt-2">
+                  Loss Amount: {{ formatCurrency(status.lossAmount, 'IDR') }}
+                </p>
+              </div>
+              <div class="flex gap-2">
+                <button
+                  v-if="!status.submitted"
+                  @click="navigateToKianSubmission(stageId)"
+                  class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded font-semibold whitespace-nowrap"
+                >
+                  ➜ Submit KIAN
+                </button>
+                <span v-else class="px-4 py-2 bg-green-600 text-white rounded font-semibold inline-block">
+                  ✅ Submitted
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- KIAN Eligibility Notice and Button (Legacy - kept for backward compatibility) -->
       <Alert
-        v-if="caseData.can_create_kian"
+        v-if="caseData.can_create_kian && !hasMultiStageKian"
         type="warning"
         title="KIAN Eligible"
         :message="`You are eligible to submit KIAN: ${caseData.kian_eligibility_reason}`"
@@ -116,6 +153,27 @@
                     >
                       Access
                     </Button>
+                    <!-- KIAN Button for Stages 4, 7, 10, 12 -->
+                    <Button
+                      v-if="[4, 7, 10, 12].includes(stage.id) && caseData.kian_status_by_stage?.[stage.id]?.needsKian && stage.accessible"
+                      @click="navigateToKianSubmission(stage.id)"
+                      variant="danger"
+                      size="sm"
+                      :disabled="caseData.kian_status_by_stage[stage.id]?.submitted"
+                    >
+                      KIAN
+                    </Button>
+                    <!-- Refund Button for Stages 4, 7, 10, 12 with create_refund=true -->
+                    <Button
+                      v-if="shouldShowRefundButton(stage.id)"
+                      @click="navigateToRefund(stage.id)"
+                      variant="primary"
+                      size="sm"
+                      class="bg-green-600 hover:bg-green-700 text-white"
+                      title="Proceed to Refund (Bank Transfer Request)"
+                    >
+                      💰
+                    </Button>
                     <button
                       v-if="stage.accessible"
                       @click="openNextActionModal(stage)"
@@ -135,21 +193,20 @@
             </transition>
           </div>
 
-          <!-- REFUND PROCESS SECTION -->
-          <div class="border rounded-lg overflow-hidden" v-if="workflowStages.some(s => s.branch === 'refund')">
+          <!-- REFUND FLOW SECTION - Multiple Refunds by Stage Source -->
+          <div v-if="hasRefundTriggered()" class="border rounded-lg overflow-hidden">
             <button
               @click="expandedSections.refund = !expandedSections.refund"
-              class="w-full px-4 py-3 bg-green-100 hover:bg-green-200 flex items-center justify-between transition"
-              :disabled="!isRefundBranchActive()"
-              :class="isRefundBranchActive() ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'"
+              class="w-full px-4 py-3 bg-green-50 hover:bg-green-100 flex items-center justify-between transition"
             >
               <div class="flex items-center space-x-3">
                 <span :class="['transform transition', expandedSections.refund ? 'rotate-90' : '']">▶</span>
-                <h3 class="font-semibold text-green-900">REFUND PROCESS</h3>
-                <span class="text-sm text-green-700">(Stages 13-15)</span>
-                <span v-if="!isRefundBranchActive()" class="text-xs text-green-600 italic">- Awaiting decision</span>
+                <h3 class="font-semibold text-green-900">REFUND FLOW</h3>
+                <span class="text-sm text-green-700">(Stages 13-15, Multiple Per Decision Point)</span>
               </div>
-              <span v-if="isRefundBranchActive()" class="px-2 py-1 bg-green-500 text-white text-xs font-semibold rounded">Active</span>
+              <span v-if="getRefundsByStageSource().length > 0" class="inline-block px-2 py-0.5 bg-green-200 text-green-800 text-xs font-semibold rounded">
+                {{ getRefundsByStageSource().length }} Refund{{ getRefundsByStageSource().length !== 1 ? 's' : '' }}
+              </span>
             </button>
             <transition
               enter-active-class="transition ease-out duration-100"
@@ -159,110 +216,55 @@
               leave-from-class="transform opacity-100"
               leave-to-class="transform opacity-0 -translate-y-2"
             >
-              <div v-show="expandedSections.refund && isRefundBranchActive()" class="space-y-2 p-4 bg-green-50">
-                <div v-for="stage in getStagesByBranch('refund')" :key="stage.id" class="flex items-center space-x-3 p-3 rounded-lg bg-white border border-green-200 hover:border-green-400 transition">
-                  <div
-                    :class="[
-                      'w-8 h-8 rounded-full flex items-center justify-center text-white font-bold shrink-0',
-                      stage.completed ? 'bg-green-500' : stage.accessible ? 'bg-green-500' : 'bg-gray-300'
-                    ]"
-                  >
-                    {{ stage.id }}
+              <div v-show="expandedSections.refund" class="space-y-4 p-4 bg-green-50">
+                <!-- For each refund grouped by stage source -->
+                <div v-for="refundGroup in getRefundsByStageSource()" :key="refundGroup.source" class="border border-green-200 rounded-lg bg-white p-4">
+                  <div class="mb-3">
+                    <h4 class="font-semibold text-green-900">💰 {{ refundGroup.label }}</h4>
+                    <p class="text-sm text-gray-600">{{ refundGroup.refunds.length }} refund process{{ refundGroup.refunds.length !== 1 ? 'es' : '' }}</p>
                   </div>
-                  <div class="flex-1">
-                    <p class="font-medium text-gray-900">{{ stage.name }}</p>
-                    <p class="text-sm text-gray-600">{{ stage.description }}</p>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <Button
-                      v-if="canAccessStage(stage.id)"
-                      @click="$router.push(`/tax-cases/${$route.params.id}/workflow/${stage.id}`)"
-                      variant="primary"
-                      size="sm"
-                      :disabled="!stage.accessible"
-                    >
-                      Access
-                    </Button>
-                    <button
-                      v-if="stage.accessible"
-                      @click="openNextActionModal(stage)"
-                      title="Edit next action for this stage"
-                      class="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-150 group relative"
-                    >
-                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                      <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-900 text-white text-xs py-1 px-2 rounded whitespace-nowrap z-10">
-                        Edit Next Action
+                  
+                  <!-- For each refund in this group -->
+                  <div v-for="refund in refundGroup.refunds" :key="`refund-${refund.id}`" class="space-y-2 bg-gray-50 p-3 rounded">
+                    <div class="flex items-center justify-between mb-2">
+                      <div>
+                        <p class="font-medium text-gray-900">Refund #{{ refund.refund_number }}</p>
+                        <p class="text-xs text-gray-600">Status: {{ refund.refund_status }}</p>
                       </div>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </transition>
-          </div>
-
-          <!-- KIAN SUBMISSION SECTION -->
-          <div class="border rounded-lg overflow-hidden" v-if="workflowStages.some(s => s.branch === 'kian')">
-            <button
-              @click="expandedSections.kian = !expandedSections.kian"
-              class="w-full px-4 py-3 bg-amber-100 hover:bg-amber-200 flex items-center justify-between transition"
-              :disabled="!isKianBranchActive()"
-              :class="isKianBranchActive() ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'"
-            >
-              <div class="flex items-center space-x-3">
-                <span :class="['transform transition', expandedSections.kian ? 'rotate-90' : '']">▶</span>
-                <h3 class="font-semibold text-amber-900">KIAN SUBMISSION</h3>
-                <span class="text-sm text-amber-700">(Stage 16)</span>
-                <span v-if="!isKianBranchActive()" class="text-xs text-amber-600 italic">- Awaiting decision</span>
-              </div>
-              <span v-if="isKianBranchActive()" class="px-2 py-1 bg-amber-500 text-white text-xs font-semibold rounded">Active</span>
-            </button>
-            <transition
-              enter-active-class="transition ease-out duration-100"
-              enter-from-class="transform opacity-0 -translate-y-2"
-              enter-to-class="transform opacity-100"
-              leave-active-class="transition ease-in duration-75"
-              leave-from-class="transform opacity-100"
-              leave-to-class="transform opacity-0 -translate-y-2"
-            >
-              <div v-show="expandedSections.kian && isKianBranchActive()" class="space-y-2 p-4 bg-amber-50">
-                <div v-for="stage in getStagesByBranch('kian')" :key="stage.id" class="flex items-center space-x-3 p-3 rounded-lg bg-white border border-amber-200 hover:border-amber-400 transition">
-                  <div
-                    :class="[
-                      'w-8 h-8 rounded-full flex items-center justify-center text-white font-bold shrink-0',
-                      stage.completed ? 'bg-amber-500' : stage.accessible ? 'bg-amber-500' : 'bg-gray-300'
-                    ]"
-                  >
-                    {{ stage.id }}
-                  </div>
-                  <div class="flex-1">
-                    <p class="font-medium text-gray-900">{{ stage.name }}</p>
-                    <p class="text-sm text-gray-600">{{ stage.description }}</p>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <Button
-                      v-if="canAccessStage(stage.id)"
-                      @click="$router.push(`/tax-cases/${$route.params.id}/workflow/${stage.id}`)"
-                      variant="primary"
-                      size="sm"
-                      :disabled="!stage.accessible"
-                    >
-                      Access
-                    </Button>
-                    <button
-                      v-if="stage.accessible"
-                      @click="openNextActionModal(stage)"
-                      title="Edit next action for this stage"
-                      class="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-150 group relative"
-                    >
-                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                      <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-900 text-white text-xs py-1 px-2 rounded whitespace-nowrap z-10">
-                        Edit Next Action
+                      <p class="text-right">
+                        <p class="text-lg font-bold text-green-600">{{ formatCurrency(refund.refund_amount, caseData.currency?.code) }}</p>
+                      </p>
+                    </div>
+                    
+                    <!-- Stages 13-15 for this refund -->
+                    <div class="space-y-1 mt-3">
+                      <div
+                        v-for="stage in getStagesByBranch('refund')"
+                        :key="`refund-${refund.id}-stage-${stage.id}`"
+                        class="flex items-center space-x-2 p-2 bg-white rounded border border-gray-200"
+                      >
+                        <div
+                          :class="[
+                            'w-6 h-6 rounded-full flex items-center justify-center text-white font-bold shrink-0 text-xs',
+                            'bg-blue-400'
+                          ]"
+                        >
+                          {{ stage.id }}
+                        </div>
+                        <div class="flex-1 text-sm">
+                          <p class="font-medium text-gray-900">{{ stage.name }}</p>
+                          <p class="text-xs text-gray-600">{{ stage.description }}</p>
+                        </div>
+                        <Button
+                          @click="$router.push(`/tax-cases/${$route.params.id}/refunds/${refund.id}/workflow/${stage.id}`)"
+                          variant="primary"
+                          size="sm"
+                          class="text-xs"
+                        >
+                          Access
+                        </Button>
                       </div>
-                    </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -270,15 +272,6 @@
           </div>
         </div>
       </Card>
-
-      <!-- Refund List Component -->
-      <RefundList
-        :refunds="taxCaseStore.refundProcessesData"
-        :totalRefunded="taxCaseStore.totalRefundedAmount"
-        :availableAmount="taxCaseStore.availableRefundAmount"
-        :currencyCode="caseData.currency?.code || 'IDR'"
-        :canCreateMore="taxCaseStore.canCreateRefund"
-      />
 
       <!-- Documents section removed - documents uploaded per stage -->
 
@@ -305,7 +298,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useToast } from '../composables/useToast'
 import { useTaxCaseStore } from '../stores/taxCaseStore'
@@ -315,7 +308,6 @@ import Alert from '../components/Alert.vue'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
 import NextActionModal from '../components/NextActionModal.vue'
 import KianModal from '../components/KianModal.vue'
-import RefundList from './RefundList.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -442,20 +434,122 @@ const hasRefundTriggered = () => {
   return false
 }
 
-// Helper function: Check apakah refund branch active
-const isRefundBranchActive = () => {
-  return hasRefundTriggered()
+// Helper function: Check if refund button should show for a stage
+const shouldShowRefundButton = (stageId) => {
+  const cond1 = [4, 7, 10, 12].includes(stageId)
+  const cond2 = hasStageRefundTriggered(stageId)
+  const all = cond1 && cond2
+  
+  console.log(`[Refund Button Check] Stage ${stageId}: isDecisionStage=${cond1}, hasRefund=${cond2}, SHOW=${all}`)
+  
+  return all
 }
 
-// Helper function: Check apakah KIAN branch active (simple logic for now)
+// Helper function: Check if specific stage has create_refund = true
+const hasStageRefundTriggered = (stageId) => {
+  console.log(`[hasStageRefundTriggered] Checking stage ${stageId}`)
+  console.log(`[hasStageRefundTriggered] workflowHistory.value:`, workflowHistory.value)
+  
+  // Find ANY history for this stage with decision_value (don't filter by status)
+  const history = workflowHistory.value.find(
+    h => h.stage_id === stageId && h.decision_value
+  )
+  
+  console.log(`[hasStageRefundTriggered] Stage ${stageId} history:`, history)
+  
+  if (!history || !history.decision_value) {
+    console.log(`[hasStageRefundTriggered] Stage ${stageId}: No history or decision_value found`)
+    return false
+  }
+  
+  try {
+    let decisionData = history.decision_value
+    console.log(`[hasStageRefundTriggered] Stage ${stageId} raw decision_value:`, decisionData, typeof decisionData)
+    
+    if (typeof decisionData === 'string') {
+      decisionData = JSON.parse(decisionData)
+    }
+    
+    console.log(`[hasStageRefundTriggered] Stage ${stageId} parsed decision_data:`, decisionData)
+    
+    const hasRefund = decisionData && decisionData.create_refund === true
+    console.log(`[hasStageRefundTriggered] ✅ Stage ${stageId} create_refund=${hasRefund}`)
+    
+    return hasRefund
+  } catch (error) {
+    console.error(`[hasStageRefundTriggered] Stage ${stageId} parsing error:`, error)
+    return false
+  }
+}
+
+// Helper function: Get refund ID triggered by specific stage
+const getRefundIdForStage = (stageId) => {
+  if (!caseData.value.refund_processes || !Array.isArray(caseData.value.refund_processes)) {
+    return null
+  }
+  
+  const stageSourceMap = {
+    4: 'SKP',
+    7: 'OBJECTION',
+    10: 'APPEAL',
+    12: 'SUPREME_COURT'
+  }
+  
+  const targetSource = stageSourceMap[stageId]
+  if (!targetSource) return null
+  
+  // Find the refund with matching stage_source
+  const refund = caseData.value.refund_processes.find(
+    r => r.stage_source === targetSource
+  )
+  
+  return refund ? refund.id : null
+}
+
+// Helper function: Check apakah refund branch active
+
+// Helper function: Check apakah KIAN branch active (updated for multi-stage KIAN)
 const isKianBranchActive = () => {
-  // KIAN active jika can_create_kian flag dari API = true
+  // ✅ NEW: Check if any stage (4, 7, 10, 12) needs KIAN
+  if (caseData.value.kian_status_by_stage) {
+    return Object.values(caseData.value.kian_status_by_stage).some(status => status.needsKian)
+  }
+  // Fallback to old logic if new data not available
   return caseData.value.can_create_kian === true
 }
 
 // Helper function: Get stages by branch
 const getStagesByBranch = (branch) => {
   return workflowStages.value.filter(s => s.branch === branch)
+}
+
+// Helper function: Get refunds organized by stage source for multi-refund display
+const getRefundsByStageSource = () => {
+  if (!caseData.value.refund_processes || !Array.isArray(caseData.value.refund_processes)) {
+    return []
+  }
+  
+  const refundMap = {}
+  const stageSourceLabels = {
+    'SKP': 'Stage 4 - SKP Decision',
+    'OBJECTION': 'Stage 7 - Objection Decision',
+    'APPEAL': 'Stage 10 - Appeal Decision',
+    'SUPREME_COURT': 'Stage 12 - Supreme Court Decision'
+  }
+  
+  caseData.value.refund_processes.forEach(refund => {
+    const source = refund.stage_source || 'UNKNOWN'
+    if (!refundMap[source]) {
+      refundMap[source] = {
+        source,
+        label: stageSourceLabels[source] || source,
+        refunds: []
+      }
+    }
+    refundMap[source].refunds.push(refund)
+  })
+  
+  return Object.values(refundMap)
 }
 
 // Function untuk update accessibility berdasarkan workflow history
@@ -639,6 +733,7 @@ onMounted(async () => {
     // Load workflow history untuk determine accessibility
     if (caseData.value.workflowHistories && Array.isArray(caseData.value.workflowHistories)) {
       workflowHistory.value = caseData.value.workflowHistories
+      console.log('[TaxCaseDetail] Loaded workflowHistories from caseData:', workflowHistory.value)
     }
     
     // Always fetch workflow history separately to ensure we have latest data
@@ -653,6 +748,7 @@ onMounted(async () => {
           const histories = historyData.data || historyData
           if (Array.isArray(histories)) {
             workflowHistory.value = histories
+            console.log('[TaxCaseDetail] Loaded workflowHistory from API:', workflowHistory.value)
           }
         }
       } catch (e) {
@@ -802,6 +898,42 @@ const formatCurrency = (amount, currencyCode = 'IDR') => {
     minimumFractionDigits: 0
   }).format(amount)
 }
+
+// ✅ NEW: Check if multi-stage KIAN data is available
+const hasMultiStageKian = computed(() => {
+  return caseData.value.kian_status_by_stage && 
+         Object.values(caseData.value.kian_status_by_stage).some(status => status.needsKian)
+})
+
+// ✅ NEW: Navigate to KIAN submission form for specific stage
+const navigateToKianSubmission = (stageId) => {
+  router.push({
+    name: 'KianSubmissionStage',
+    params: { id: caseData.value.id, stageId }
+  })
+}
+
+// ✅ Navigate to Refund workflow (Stage 13) - Refund created by form submission
+const navigateToRefund = (triggerStageId) => {
+  console.log('[navigateToRefund] Navigate to Stage 13 for stage:', triggerStageId)
+  // Navigate to Stage 13 without refund_id
+  // RefundProcess will be created when user submits the form
+  router.push({
+    path: `/tax-cases/${caseData.value.id}/workflow/13`
+  })
+}
+
+// ✅ NEW: Get stage display name for KIAN alerts
+const getStageNameForKian = (stageId) => {
+  const stageNames = {
+    '4': 'SKP (Assessment)',
+    '7': 'Objection Decision',
+    '10': 'Appeal Decision',
+    '12': 'Supreme Court Decision'
+  };
+  return stageNames[String(stageId)] || `Stage ${stageId}`;
+}
+
 
 // ============= NEXT ACTION MODAL LOGIC =============
 const isNextActionModalOpen = ref(false)

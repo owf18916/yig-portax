@@ -1149,8 +1149,10 @@ const executeSubmitForm = async () => {
     console.log('   ├─ formData.create_refund:', formData.create_refund)
     console.log('   └─ decisionActions.value:', decisionActions.value)
 
-    // Submit form to backend
-    const response = await fetch(`/api/tax-cases/${props.caseId}/workflow/${props.stageId}`, {
+    // Submit form to backend - use apiEndpoint prop if provided, otherwise use workflow endpoint
+    const submitEndpoint = props.apiEndpoint || `/api/tax-cases/${props.caseId}/workflow/${props.stageId}`
+    
+    const response = await fetch(submitEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1228,8 +1230,10 @@ const executeSaveDraft = async () => {
     // DEBUG: Log the request payload
     // console.log('📤 Sending DRAFT request with payload:', payload)
 
-    // Save draft to backend
-    const response = await fetch(`/api/tax-cases/${props.caseId}/workflow/${props.stageId}`, {
+    // Save draft to backend - use apiEndpoint prop if provided, otherwise use workflow endpoint
+    const draftEndpoint = props.apiEndpoint || `/api/tax-cases/${props.caseId}/workflow/${props.stageId}`
+    
+    const response = await fetch(draftEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -17,6 +17,7 @@ class KianSubmission extends Model
         'stage_id',
         'kian_number',
         'submission_date',
+        'kian_amount',
         'loss_amount',
         'loss_description',
         'supporting_documents',
@@ -32,6 +33,7 @@ class KianSubmission extends Model
     ];
 
     protected $casts = [
+        'kian_amount' => 'decimal:2',
         'loss_amount' => 'decimal:2',
         'supporting_documents' => 'json',
         'submission_date' => 'date',

@@ -16,7 +16,7 @@
       :caseId="caseId"
       :caseNumber="caseNumber"
       :fields="fields"
-      :apiEndpoint="`/api/tax-cases/${caseId}/workflow/14`"
+      :apiEndpoint="apiEndpoint"
       :isReviewMode="false"
       :isLoading="isLoading"
       :caseStatus="caseStatus"
@@ -47,7 +47,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useRevisionAPI } from '@/composables/useRevisionAPI'
 import StageForm from '../components/StageForm.vue'
@@ -55,7 +55,16 @@ import RevisionHistoryPanel from '../components/RevisionHistoryPanel.vue'
 
 const route = useRoute()
 const caseId = parseInt(route.params.id, 10)
+const refundId = route.params.refundId ? parseInt(route.params.refundId, 10) : null
 const { listRevisions } = useRevisionAPI()
+
+// Compute API endpoint based on whether refundId is provided
+const apiEndpoint = computed(() => {
+  if (refundId) {
+    return `/api/tax-cases/${caseId}/refunds/${refundId}/workflow/14`
+  }
+  return `/api/tax-cases/${caseId}/workflow/14`
+})
 
 const caseNumber = ref('TAX-2026-001')
 const preFilledMessage = ref('Loading...')
@@ -170,7 +179,7 @@ const loadCaseData = async () => {
 
 const loadStageData = async () => {
   try {
-    const response = await fetch(`/api/tax-cases/${caseId}/workflow/14`)
+    const response = await fetch(apiEndpoint.value)
     if (response.ok) {
       const stageData = await response.json()
       const data = stageData.data || stageData
