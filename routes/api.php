@@ -243,6 +243,8 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         
         // Generic workflow endpoint for all stages - save draft or submit
         Route::post('/workflow/{stage}', function (Request $request, TaxCase $taxCase, $stage) {
+            // ⭐ CAST stage to integer (route param comes as string)
+            $stage = (int) $stage;
             // Determine action from request body - must explicitly check for 'draft'
             $action = $request->input('action');
             $isDraft = ($action === 'draft') || ($action === null && $request->boolean('is_draft', false));
@@ -256,10 +258,13 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                 $updateData = [];
                 
                 // Stage 1 (SPT Filing) - tax_cases table fields
-                if ($stage === 1) {
+                if ($stage == 1) {
                     if ($request->has('period_id')) $updateData['period_id'] = $request->input('period_id');
                     if ($request->has('currency_id')) $updateData['currency_id'] = $request->input('currency_id');
                     if ($request->has('disputed_amount')) $updateData['disputed_amount'] = $request->input('disputed_amount');
+                    if ($request->has('spt_type') && !empty($request->input('spt_type'))) {
+                        $updateData['spt_type'] = $request->input('spt_type');
+                    }
                 }
                 
                 // STAGE-SPECIFIC DATA HANDLING
@@ -326,7 +331,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                     if ($taxCase->needsKianAtStage(4)) {
                         $reason = $taxCase->getKianEligibilityReasonForStage(4);
                         if ($reason) {
-                            dispatch(new \App\Jobs\SendKianReminderJob($taxCase, 'Stage 4 - SKP (Surat Ketetapan Pajak)', $reason, 4));
+                            dispatch(new \App\Jobs\SendKianReminderJob($taxCase->id, 'Stage 4 - SKP (Surat Ketetapan Pajak)', $reason, 4));
                         }
                     }
 
@@ -682,17 +687,17 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                 // Trigger KIAN whenever loss exists, not conditional on next stage choice
                 if ($stage == 7 && $taxCase->needsKianAtStage(7)) {
                     $reason = $taxCase->getKianEligibilityReasonForStage(7);
-                    dispatch(new \App\Jobs\SendKianReminderJob($taxCase, 'Stage 7 - Objection Decision (Keputusan Keberatan)', $reason, 7));
+                    dispatch(new \App\Jobs\SendKianReminderJob($taxCase->id, 'Stage 7 - Objection Decision (Keputusan Keberatan)', $reason, 7));
                 }
                 
                 if ($stage == 10 && $taxCase->needsKianAtStage(10)) {
                     $reason = $taxCase->getKianEligibilityReasonForStage(10);
-                    dispatch(new \App\Jobs\SendKianReminderJob($taxCase, 'Stage 10 - Appeal Decision (Keputusan Banding)', $reason, 10));
+                    dispatch(new \App\Jobs\SendKianReminderJob($taxCase->id, 'Stage 10 - Appeal Decision (Keputusan Banding)', $reason, 10));
                 }
                 
                 if ($stage == 12 && $taxCase->needsKianAtStage(12)) {
                     $reason = $taxCase->getKianEligibilityReasonForStage(12);
-                    dispatch(new \App\Jobs\SendKianReminderJob($taxCase, 'Stage 12 - Supreme Court Decision (Keputusan Peninjauan Kembali)', $reason, 12));
+                    dispatch(new \App\Jobs\SendKianReminderJob($taxCase->id, 'Stage 12 - Supreme Court Decision (Keputusan Peninjauan Kembali)', $reason, 12));
                 }
                 
                 return response()->json([

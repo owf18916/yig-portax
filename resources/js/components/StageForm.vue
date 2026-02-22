@@ -22,7 +22,7 @@
         <!-- Header with Case Info -->
         <div class="flex items-center justify-between mb-2">
           <div class="flex items-center space-x-1">
-            <Button @click="$router.back()" variant="secondary" class="text-xs px-2 py-1">← Back</Button>
+            <Button @click="viewCaseDetail" variant="secondary" class="text-xs px-2 py-1">← Back</Button>
             <h1 class="text-lg font-bold text-gray-900">{{ stageName }}</h1>
           </div>
         </div>
@@ -49,13 +49,47 @@
           :message="successMessage"
         />
         
-        <!-- Continue to Next Stage Button (shown after successful submission) -->
-        <div v-if="submissionComplete && computedNextStageId" class="flex gap-1">
+        <!-- Continue to Next Stage Button (Decision Stages: 4, 7, 10 - conditional based on continue_to_next_stage) -->
+        <div v-if="[4, 7, 10].includes(stageId) && submissionComplete && computedNextStageId && formData.continue_to_next_stage" class="flex gap-1">
           <Button @click="continueToNextStage" variant="primary" class="text-xs px-2 py-1.5">
             Continue to Stage {{ computedNextStageId }} →
           </Button>
           <Button @click="viewCaseDetail" variant="secondary" class="text-xs px-2 py-1.5">
             View Case Detail
+          </Button>
+        </div>
+        
+        <!-- Continue to Next Stage Button (All other stages: automatic continue, no decision) -->
+        <div v-if="![4, 7, 10, 12].includes(stageId) && submissionComplete && computedNextStageId" class="flex gap-1">
+          <Button @click="continueToNextStage" variant="primary" class="text-xs px-2 py-1.5">
+            Continue to Stage {{ computedNextStageId }} →
+          </Button>
+          <Button @click="viewCaseDetail" variant="secondary" class="text-xs px-2 py-1.5">
+            View Case Detail
+          </Button>
+        </div>
+        
+        <!-- Completion Message (shown when submission complete but NOT continuing - ONLY for Decision Stages: 4, 7, 10) -->
+        <div v-if="[4, 7, 10].includes(stageId) && submissionComplete && !formData.continue_to_next_stage" class="bg-amber-50 border-2 border-amber-200 rounded-lg p-4 space-y-2">
+          <h3 class="font-semibold text-amber-900">✅ Stage {{ stageId }} Completed</h3>
+          <p class="text-sm text-amber-800">
+            You have completed this stage without proceeding to the next stage. This case will be paused here.
+            <span v-if="stageId <= 10">You can create a KIAN (Internal Loss Recognition) request for any remaining loss amount.</span>
+          </p>
+          <Button @click="viewCaseDetail" variant="secondary" class="text-xs px-2 py-1.5">
+            Back to Case Detail
+          </Button>
+        </div>
+        
+        <!-- Completion Message (shown for Stage 12 - Final stage) -->
+        <div v-if="stageId === 12 && submissionComplete" class="bg-green-50 border-2 border-green-200 rounded-lg p-4 space-y-2">
+          <h3 class="font-semibold text-green-900">✅ Workflow Completed</h3>
+          <p class="text-sm text-green-800">
+            Stage 12 (Supreme Court Decision) is the final stage of the main workflow. This case is now complete.
+            Refund or KIAN processing can be accessed separately from the case dashboard.
+          </p>
+          <Button @click="viewCaseDetail" variant="secondary" class="text-xs px-2 py-1.5">
+            Back to Case Detail
           </Button>
         </div>
 
@@ -371,7 +405,7 @@
               <Button type="button" @click="saveDraft" variant="secondary" :disabled="submitting || isLoading || fieldsDisabled || submissionComplete" class="text-xs px-2 py-1.5">
                 Save as Draft
               </Button>
-              <Button type="button" @click="$router.back()" variant="secondary" :disabled="isLoading" class="text-xs px-2 py-1.5">
+              <Button type="button" @click="viewCaseDetail" variant="secondary" :disabled="isLoading" class="text-xs px-2 py-1.5">
                 Cancel
               </Button>
             </div>
@@ -576,6 +610,12 @@ const computedNextStageId = computed(() => {
 
 // Compute whether fields should be disabled based on case status
 const fieldsDisabled = computed(() => {
+  // ✅ NEW: Check KIAN submission status first (for KIAN branch actions)
+  if (props.prefillData?.kianSubmissionStatus) {
+    return props.prefillData.kianSubmissionStatus === 'submitted' || props.prefillData.kianSubmissionStatus === 'approved'
+  }
+  
+  // ✅ EXISTING: Check workflowHistories (for main workflow stages 1-12)
   // Only check workflowHistories if available (for main workflow stages)
   // For KIAN/branch stages, workflowHistories won't be passed, so fields remain editable
   if (!props.prefillData?.workflowHistories || !Array.isArray(props.prefillData.workflowHistories)) {
@@ -786,7 +826,17 @@ watch(() => [props.fields, props.prefillData], ([newFields, newPrefillData]) => 
 const fetchDocuments = async () => {
   loadingDocuments.value = true
   try {
-    const response = await fetch(`/api/documents?tax_case_id=${props.caseId}&stage_code=${props.stageId}&status=DRAFT,ACTIVE,ARCHIVED`)
+    // ✅ NEW: If this is KIAN form (has kianSubmissionStatus), filter by KIAN documentable_type
+    // Otherwise, fetch all documents for this stage (for main workflow stages)
+    let documentEndpoint = `/api/documents?tax_case_id=${props.caseId}&stage_code=${props.stageId}&status=DRAFT,ACTIVE,ARCHIVED`
+    
+    if (props.prefillData?.kianSubmissionStatus) {
+      // ✅ KIAN form: only fetch KIAN documents
+      documentEndpoint += `&documentable_type=App%5CModels%5CKianSubmission`
+      console.log('[StageForm] KIAN form detected - filtering documents by KIAN type')
+    }
+    
+    const response = await fetch(documentEndpoint)
     
     if (!response.ok) {
       throw new Error('Failed to fetch documents')
@@ -843,8 +893,19 @@ const uploadFile = async (file) => {
       const formData = new FormData()
       formData.append('file', file)
       formData.append('tax_case_id', props.caseId)
-      formData.append('documentable_type', 'App\\Models\\WorkflowHistory')
-      formData.append('documentable_id', props.stageId)
+      
+      // ✅ NEW: Set documentable_type based on whether this is KIAN form or main workflow
+      if (props.prefillData?.kianSubmissionStatus) {
+        // KIAN form: use KianSubmission documentable_type
+        formData.append('documentable_type', 'App\\Models\\KianSubmission')
+        formData.append('documentable_id', 0)  // TODO: Get actual KianSubmission ID after it's created
+        console.log('[StageForm] Uploading document for KIAN submission')
+      } else {
+        // Main workflow: use WorkflowHistory (existing behavior)
+        formData.append('documentable_type', 'App\\Models\\WorkflowHistory')
+        formData.append('documentable_id', props.stageId)
+      }
+      
       formData.append('stage_code', props.stageId.toString())
       formData.append('document_type', 'supporting_document')
 
@@ -1148,12 +1209,7 @@ const executeSubmitForm = async () => {
       is_draft: false
     }
     
-    // DEBUG: Log the request payload - ESPECIALLY checkbox values
-    console.log('📤 [StageForm] SUBMIT PAYLOAD:', payload)
-    console.log('   ├─ create_refund:', payload.create_refund, '(type:', typeof payload.create_refund + ')')
-    console.log('   ├─ continue_to_next_stage:', payload.continue_to_next_stage, '(type:', typeof payload.continue_to_next_stage + ')')
-    console.log('   ├─ formData.create_refund:', formData.create_refund)
-    console.log('   └─ decisionActions.value:', decisionActions.value)
+
 
     // Submit form to backend - use apiEndpoint prop if provided, otherwise use workflow endpoint
     const submitEndpoint = props.apiEndpoint || `/api/tax-cases/${props.caseId}/workflow/${props.stageId}`

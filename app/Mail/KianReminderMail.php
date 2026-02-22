@@ -13,7 +13,7 @@ class KianReminderMail extends Mailable
 {
     use Queueable, SerializesModels;
 
-    protected TaxCase $taxCase;
+    protected int $taxCaseId;
     protected string $stageName;
     protected string $reason;
     protected int $stageId;
@@ -21,9 +21,9 @@ class KianReminderMail extends Mailable
     /**
      * Create a new message instance.
      */
-    public function __construct(TaxCase $taxCase, string $stageName, string $reason, int $stageId)
+    public function __construct(int $taxCaseId, string $stageName, string $reason, int $stageId)
     {
-        $this->taxCase = $taxCase;
+        $this->taxCaseId = $taxCaseId;
         $this->stageName = $stageName;
         $this->reason = $reason;
         $this->stageId = $stageId;
@@ -34,8 +34,10 @@ class KianReminderMail extends Mailable
      */
     public function envelope(): Envelope
     {
+        $taxCase = TaxCase::find($this->taxCaseId);
+        
         return new Envelope(
-            subject: "KIAN Required: Tax Case {$this->taxCase->case_number} - {$this->stageName}",
+            subject: "KIAN Required: Tax Case {$taxCase->case_number} - {$this->stageName}",
         );
     }
 
@@ -44,24 +46,34 @@ class KianReminderMail extends Mailable
      */
     public function content(): Content
     {
-        // Get stage-specific loss amount from kian_status_by_stage
-        $stageKianData = $this->taxCase->kian_status_by_stage[$this->stageId] ?? null;
-        $lossAmount = $stageKianData ? ($stageKianData['lossAmount'] ?? 0) : 0;
+        $taxCase = TaxCase::with(['entity', 'currency', 'period', 'skpRecord', 'objectionSubmission', 'objectionDecision', 'appealSubmission', 'appealDecision', 'supremeCourtSubmission', 'supremeCourtDecision'])->find($this->taxCaseId);
+        
+        // Calculate loss amount directly (don't rely on kian_status_by_stage which isn't set in queue context)
+        $lossAmount = $taxCase->calculateLossAtStage($this->stageId) ?? 0;
         
         // Get currency code from tax case
-        $currencyCode = $this->taxCase->currency?->code ?? 'IDR';
+        $currencyCode = $taxCase->currency?->code ?? 'IDR';
+
+        // Get case year based on case type
+        // - CIT (Corporate Income Tax): YYYY from period
+        // - VAT (Value Added Tax): YYYY-MM from period_code
+        $caseYear = match($taxCase->case_type) {
+            'CIT' => $taxCase->period?->year,
+            'VAT' => $taxCase->period?->period_code,
+            default => $taxCase->period?->period_code ?? $taxCase->period?->year,
+        };
 
         return new Content(
-            view: 'emails.kian-reminder',
+            view: 'emails.kian-reminder-compatible',
             with: [
-                'caseNumber' => $this->taxCase->case_number,
-                'caseType' => $this->taxCase->case_type,
-                'caseYear' => $this->taxCase->fiscal_year?->name,
-                'entityName' => $this->taxCase->entity?->name,
+                'caseNumber' => $taxCase->case_number,
+                'caseType' => $taxCase->case_type,
+                'caseYear' => $caseYear,
+                'entityName' => $taxCase->entity?->name,
                 'lossAmount' => $lossAmount,
                 'currencyCode' => $currencyCode,
                 'stageName' => $this->stageName,
-                'caseUrl' => route('tax-cases.show', $this->taxCase->id),
+                'caseUrl' => route('tax-cases.show', $taxCase->id, absolute: true),
             ],
         );
     }

@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Models\TaxCase;
 use App\Models\KianSubmission;
-use App\Models\WorkflowHistory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -57,6 +56,9 @@ class KianSubmissionController extends ApiController
                 'status_comment' => 'nullable|string',
             ]);
 
+            // ✅ NEW: Check action from request - can be 'save' (draft) or 'submit'
+            $action = $request->input('action', 'save');
+
             DB::beginTransaction();
 
             // ✅ NEW: If KIAN exists and is draft, update it; otherwise create new
@@ -91,19 +93,19 @@ class KianSubmissionController extends ApiController
                 $isUpdate = false;
             }
 
-            // Log workflow history
-            WorkflowHistory::create([
-                'tax_case_id' => $taxCase->id,
-                'stage_id' => $stageId,
-                'action' => 'submitted',
-                'status' => 'submitted',
-                'notes' => ($isUpdate ? "KIAN updated for" : "KIAN draft created at") . " Stage {$stageId} with loss amount: Rp " . number_format($lossAmount, 0, ',', '.') . ". " . ($validated['notes'] ?? ''),
-                'user_id' => auth()->id(),
-            ]);
+            // ✅ NEW: If action='submit', transition status from draft → submitted
+            if ($action === 'submit' && $kianSubmission->status === 'draft') {
+                $kianSubmission->update([
+                    'status' => 'submitted',
+                    'submitted_at' => now(),
+                ]);
+                $message = $isUpdate ? "KIAN submission updated and submitted for Stage {$stageId}" : "KIAN submission created and submitted for Stage {$stageId}";
+            } else {
+                $message = $isUpdate ? "KIAN submission updated for Stage {$stageId}" : "KIAN submission created for Stage {$stageId}";
+            }
 
             DB::commit();
 
-            $message = $isUpdate ? "KIAN submission updated for Stage {$stageId}" : "KIAN submission created for Stage {$stageId}";
             return $this->success($kianSubmission, $message, $isUpdate ? 200 : 201);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -176,16 +178,6 @@ class KianSubmissionController extends ApiController
 
             $stageId = $kianSubmission->stage_id ?? 12;
 
-            // Log workflow history
-            WorkflowHistory::create([
-                'tax_case_id' => $taxCase->id,
-                'stage_id' => $stageId,
-                'action' => 'KIAN_SUBMITTED',
-                'description' => "KIAN submitted at Stage {$stageId}",
-                'performed_by' => auth()->id(),
-                'notes' => $request->input('notes'),
-            ]);
-
             DB::commit();
 
             return $this->success($kianSubmission, "KIAN for Stage {$stageId} submitted successfully", 200);
@@ -223,16 +215,6 @@ class KianSubmissionController extends ApiController
                 'responded_date' => now(),
             ]);
 
-            // Log workflow history
-            WorkflowHistory::create([
-                'tax_case_id' => $taxCase->id,
-                'stage_number' => 12,
-                'action' => 'KIAN_RESPONSE_RECORDED',
-                'description' => 'KIAN response recorded. Status: ' . $validated['response_status'],
-                'performed_by' => auth()->id(),
-                'notes' => $validated['response_notes'] ?? null,
-            ]);
-
             // Update tax case status based on response
             $finalStatus = 'KIAN_' . $validated['response_status'];
             $taxCase->update([
@@ -265,17 +247,6 @@ class KianSubmissionController extends ApiController
                 'status' => 'CLOSED',
                 'closed_date' => now(),
                 'closed_by' => auth()->id(),
-            ]);
-
-            // Log workflow history
-            WorkflowHistory::create([
-                'tax_case_id' => $taxCase->id,
-                'stage_number' => 12,
-                'action' => 'KIAN_CLOSED',
-                'description' => 'KIAN case closed',
-                'performed_by' => auth()->id(),
-                'notes' => $request->input('notes'),
-                'next_stage' => 13,
             ]);
 
             // Update tax case status

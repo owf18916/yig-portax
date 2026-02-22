@@ -171,7 +171,7 @@ class DocumentController extends Controller
     /**
      * List documents for a tax case
      * 
-     * GET /api/documents?tax_case_id={id}&stage_code={code}
+     * GET /api/documents?tax_case_id={id}&stage_code={code}&documentable_type={type}
      */
     public function index(Request $request)
     {
@@ -185,6 +185,11 @@ class DocumentController extends Controller
         // Filter by stage_code if provided
         if ($request->has('stage_code')) {
             $query->where('stage_code', $request->get('stage_code'));
+        }
+
+        // ✅ Filter by documentable_type if provided (e.g., 'App\Models\KianSubmission')
+        if ($request->has('documentable_type')) {
+            $query->where('documentable_type', $request->get('documentable_type'));
         }
 
         // Filter by status (supports comma-separated values like "DRAFT,ACTIVE,ARCHIVED")

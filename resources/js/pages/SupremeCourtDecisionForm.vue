@@ -9,10 +9,10 @@
     </div>
 
     <StageForm
-      :stageName="`Stage 12: Keputusan Peninjauan Kembali (Supreme Court Decision)`"
-      :stageDescription="`Enter the final Supreme Court decision on case review (Peninjauan Kembali)`"
+      :stageName="`Stage 12: Keputusan Peninjauan Kembali (Supreme Court Decision - FINAL STAGE)`"
+      :stageDescription="`Enter the final Supreme Court decision on case review (Peninjauan Kembali). This is the final stage of the main workflow.`"
       :stageId="12"
-      :nextStageId="13"
+      :nextStageId="null"
       :caseId="caseId"
       :caseNumber="caseNumber"
       :fields="fields"
@@ -22,7 +22,7 @@
       :caseStatus="caseStatus"
       :preFilledMessage="preFilledMessage"
       :prefillData="prefillData"
-      :showDecisionOptions="true"
+      :showDecisionOptions="false"
       @submit="refreshTaxCase"
       @saveDraft="refreshTaxCase"
       @update:formData="syncFormDataToParent"
@@ -146,27 +146,8 @@ const prefillData = ref({
   decision_type: '',
   decision_amount: 0,
   decision_notes: '',
-  next_action: '',
   workflowHistories: []
 })
-
-// ⭐ REAL-TIME DECISION OPTIONS STATE
-const showDecisionOptions = ref(false)
-const selectedNextAction = ref('')
-
-// ⭐ WATCHER: Show decision options INSTANTLY when decision_type is selected
-watch(() => prefillData.value.decision_type, (newType) => {
-  if (newType) {
-    showDecisionOptions.value = true
-  }
-})
-
-// ⭐ UPDATE NEXT ACTION CHOICE: Store in prefillData
-const updateNextAction = (choice) => {
-  selectedNextAction.value = choice
-  prefillData.value.next_action = choice
-  console.log(`User selected next action: ${choice}`)
-}
 
 // ⭐ SYNC FORM DATA FROM STAGEFORM: Update prefillData in real-time
 const syncFormDataToParent = (formDataUpdate) => {
@@ -207,71 +188,8 @@ const currentDecision = computed(() => {
 const router = useRouter()
 const { showSuccess, showError } = useToast()
 
-// Handle routing to Refund (Stage 13)
-const proceedToRefund = async () => {
-  try {
-    const response = await fetch(`/api/tax-cases/${caseId}/workflow-decision`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
-      },
-      body: JSON.stringify({
-        current_stage_id: 12,
-        next_stage_id: 13,
-        decision_type: 'refund',
-        decision_reason: 'User selected to proceed with Refund path'
-      })
-    })
-
-    if (response.ok) {
-      showSuccess('Workflow locked to Refund path (Stage 13)')
-      // Navigate to Stage 13 (Bank Transfer Request)
-      setTimeout(() => {
-        router.push(`/tax-cases/${caseId}/workflow/13`)
-      }, 1000)
-    } else {
-      const errorData = await response.json()
-      throw new Error(errorData.message || 'Failed to update workflow')
-    }
-  } catch (error) {
-    showError('Error proceeding to Refund: ' + error.message)
-    console.error('Error:', error)
-  }
-}
-
-// Handle routing to KIAN (Stage 16)
-const proceedToKian = async () => {
-  try {
-    const response = await fetch(`/api/tax-cases/${caseId}/workflow-decision`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
-      },
-      body: JSON.stringify({
-        current_stage_id: 12,
-        next_stage_id: 16,
-        decision_type: 'kian',
-        decision_reason: 'User selected to proceed with KIAN path'
-      })
-    })
-
-    if (response.ok) {
-      showSuccess('Workflow locked to KIAN path (Stage 16)')
-      // Navigate to Stage 16 (KIAN Report)
-      setTimeout(() => {
-        router.push(`/tax-cases/${caseId}/workflow/16`)
-      }, 1000)
-    } else {
-      const errorData = await response.json()
-      throw new Error(errorData.message || 'Failed to update workflow')
-    }
-  } catch (error) {
-    showError('Error proceeding to KIAN: ' + error.message)
-    console.error('Error:', error)
-  }
-}
+// ⭐ Stage 12 is the FINAL STAGE - no routing methods needed
+// Refund and KIAN are handled as separate workflows, not as next stages from here
 
 onMounted(async () => {
   try {
@@ -302,9 +220,7 @@ onMounted(async () => {
         decision_type: supremeCourtDecision.decision_type || '',
         decision_amount: supremeCourtDecision.decision_amount || 0,
         decision_notes: supremeCourtDecision.decision_notes || '',
-        next_action: supremeCourtDecision.next_action || '',
         create_refund: supremeCourtDecision.create_refund ?? false,
-        continue_to_next_stage: supremeCourtDecision.continue_to_next_stage ?? false,
         workflowHistories: caseFetchedData.workflow_histories || []
       }
     } else {
@@ -392,9 +308,7 @@ const refreshTaxCase = async () => {
           decision_type: supremeCourtDecision.decision_type || '',
           decision_amount: supremeCourtDecision.decision_amount || 0,
           decision_notes: supremeCourtDecision.decision_notes || '',
-          next_action: supremeCourtDecision.next_action || '',
           create_refund: supremeCourtDecision.create_refund ?? false,
-          continue_to_next_stage: supremeCourtDecision.continue_to_next_stage ?? false,
           workflowHistories: caseFetchedData.workflow_histories || []
         }
       }

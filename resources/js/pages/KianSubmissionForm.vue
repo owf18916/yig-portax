@@ -87,10 +87,15 @@
     </div>
 
     <!-- ✅ KIAN Submission Form for selected stage -->
-    <div v-if="selectedStageForKian" class="bg-white p-6 rounded-lg border border-gray-200 mb-4">
-      <p class="text-sm text-gray-600 mb-4">Submitting KIAN for {{ getStageName(selectedStageForKian) }}</p>
+    <div v-if="selectedStageForKian" class="bg-white p-6 rounded-lg border" :class="isKianSubmitted ? 'border-green-300 bg-green-50' : 'border-gray-200'">
+      <div class="flex items-center justify-between mb-4">
+        <p class="text-sm" :class="isKianSubmitted ? 'text-green-700 font-semibold' : 'text-gray-600'">
+          {{ isKianSubmitted ? '✅ KIAN Submitted for ' : 'Submitting KIAN for ' }}{{ getStageName(selectedStageForKian) }}
+          <span v-if="isKianSubmitted" class="ml-2 text-xs">(Read-only mode)</span>
+        </p>
+      </div>
       
-      <form @submit.prevent="submitKianForStage" class="space-y-4">
+      <form @submit.prevent="isKianSubmitted ? null : submitKianForStage" class="space-y-4">
         <!-- KIAN Number -->
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Nomor KIAN</label>
@@ -99,7 +104,8 @@
             type="text"
             placeholder="e.g., KIAN-2024-001"
             required
-            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            :readonly="isKianSubmitted"
+            :class="['w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent', isKianSubmitted ? 'bg-gray-50 text-gray-600' : '']"
           />
         </div>
 
@@ -110,7 +116,8 @@
             v-model="kianFormData.submission_date"
             type="date"
             required
-            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            :readonly="isKianSubmitted"
+            :class="['w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent', isKianSubmitted ? 'bg-gray-50 text-gray-600' : '']"
           />
         </div>
 
@@ -133,13 +140,15 @@
             v-model="kianFormData.notes"
             placeholder="Optional notes"
             rows="3"
-            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            :readonly="isKianSubmitted"
+            :class="['w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent', isKianSubmitted ? 'bg-gray-50 text-gray-600' : '']"
           ></textarea>
         </div>
 
         <!-- Action Buttons -->
         <div class="flex gap-2">
           <button 
+            v-if="!isKianSubmitted"
             type="submit"
             :disabled="isSubmittingKian"
             class="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400"
@@ -147,11 +156,19 @@
             {{ isSubmittingKian ? 'Submitting...' : 'Submit KIAN' }}
           </button>
           <button 
+            v-else
             type="button"
-            @click="selectedStageForKian = null"
+            disabled
+            class="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg cursor-not-allowed"
+          >
+            ✅ KIAN Submitted
+          </button>
+          <button 
+            type="button"
+            @click="selectedStageForKian = null; isKianSubmitted = false"
             class="flex-1 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
           >
-            Cancel
+            Close
           </button>
         </div>
       </form>
@@ -249,6 +266,7 @@ const kianStatusByStage = ref({})
 const selectedStageForKian = ref(null)
 const preFilledLossAmount = ref(0)
 const isSubmittingKian = ref(false)
+const isKianSubmitted = ref(false)
 
 // ✅ NEW: KIAN form data
 const kianFormData = ref({
@@ -422,16 +440,27 @@ const selectStageForKian = async (stageId) => {
           submission_date: formatDateForInput(existingKian.submission_date) || new Date().toISOString().split('T')[0],
           notes: existingKian.notes || ''
         }
+        
+        // ✅ Check if KIAN is already submitted/approved → set read-only mode
+        if (existingKian.status && ['submitted', 'approved'].includes(existingKian.status)) {
+          isKianSubmitted.value = true
+        } else {
+          isKianSubmitted.value = false
+        }
+        
         // Indicate that we're editing an existing submission
         console.log(`Loaded existing KIAN submission for Stage ${stageId}:`, existingKian)
       } else {
         console.log(`No existing KIAN submission for Stage ${stageId}, creating new`)
+        isKianSubmitted.value = false
       }
     } else {
       console.warn(`Could not fetch KIAN for stage ${stageId}:`, response.status)
+      isKianSubmitted.value = false
     }
   } catch (error) {
     console.error(`Error fetching KIAN for stage ${stageId}:`, error)
+    isKianSubmitted.value = false
     // Continue anyway - it's not critical if fetch fails
   }
 }

@@ -137,7 +137,7 @@ const prefillData = ref({
   submission_date: null,
   loss_amount: '0',
   notes: '',
-  workflowHistories: []
+  kianSubmissionStatus: 'draft'  // ✅ KIAN-specific status instead of workflowHistories
 })
 
 // Helper to format amount
@@ -188,7 +188,8 @@ onMounted(async () => {
             kian_number: existing.kian_number || '',
             submission_date: formatDateForInput(existing.submission_date) || null,
             loss_amount: formatAmount(existing.loss_amount || existing.kian_amount || lossAmount),
-            notes: existing.notes || ''
+            notes: existing.notes || '',
+            kianSubmissionStatus: existing.status || 'draft'  // ✅ KIAN status
           }
           preFilledMessage.value = `✅ Existing KIAN found for Stage ${stageId} - Nomor: ${existing.kian_number}`
           console.log('Loaded existing KIAN:', prefillData.value)
@@ -198,7 +199,8 @@ onMounted(async () => {
             kian_number: '',
             submission_date: null,
             loss_amount: formatAmount(lossAmount),
-            notes: ''
+            notes: '',
+            kianSubmissionStatus: 'draft'  // ✅ New KIAN in draft status
           }
           preFilledMessage.value = `📝 New KIAN Submission for Stage ${stageId}`
           console.log('No existing KIAN, using defaults:', prefillData.value)
@@ -209,7 +211,8 @@ onMounted(async () => {
           kian_number: '',
           submission_date: null,
           loss_amount: formatAmount(lossAmount),
-          notes: ''
+          notes: '',
+          kianSubmissionStatus: 'draft'  // ✅ Default to draft if fetch fails
         }
         preFilledMessage.value = `📝 New KIAN Submission for Stage ${stageId}`
       }
@@ -219,7 +222,8 @@ onMounted(async () => {
         kian_number: '',
         submission_date: null,
         loss_amount: formatAmount(lossAmount),
-        notes: ''
+        notes: '',
+        kianSubmissionStatus: 'draft'  // ✅ Default to draft on error
       }
       preFilledMessage.value = `📝 New KIAN Submission for Stage ${stageId}`
     }
@@ -264,7 +268,8 @@ const loadRevisions = async () => {
 
 const loadDocuments = async () => {
   try {
-    const docsRes = await fetch(`/api/tax-cases/${caseId}/documents?stage_code=${stageId}`)
+    // ✅ Filter by documentable_type to only load KIAN documents (not SKP documents)
+    const docsRes = await fetch(`/api/tax-cases/${caseId}/documents?stage_code=${stageId}&documentable_type=App%5CModels%5CKianSubmission`)
     if (docsRes.ok) {
       const docsData = await docsRes.json()
       let allDocs = docsData.data || docsData
@@ -304,7 +309,7 @@ const refreshTaxCase = async () => {
               submission_date: formatDateForInput(existing.submission_date) || null,
               loss_amount: formatAmount(existing.loss_amount || existing.kian_amount),
               notes: existing.notes || '',
-              workflowHistories: caseFetchedData.workflow_histories || []
+              kianSubmissionStatus: existing.status || 'draft'  // ✅ Use KIAN status, not workflow
             }
           }
         }

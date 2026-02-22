@@ -97,11 +97,11 @@ const fields = ref([
     type: 'select',
     key: 'spt_type',
     label: 'SPT Type (Jenis Pengembalian)',
-    required: false,
+    required: true,
     options: [
-      { id: 'Pengembalian Pendahuluan', label: 'Pengembalian Pendahuluan (Preliminary Refund)' },
-      { id: 'Restitusi', label: 'Restitusi (Restitution)' },
-      { id: 'Kompensasi', label: 'Kompensasi (Compensation)' }
+      { value: 'Pengembalian Pendahuluan', label: 'Pengembalian Pendahuluan (Preliminary Refund)' },
+      { value: 'Restitusi', label: 'Restitusi (Restitution)' },
+      { value: 'Kompensasi', label: 'Kompensasi (Compensation)' }
     ],
     description: 'Select "Pengembalian Pendahuluan" to skip audit stages (SP2, SPHP) and go directly to SKP'
   },
@@ -262,6 +262,7 @@ onMounted(async () => {
       entity_name: caseFetchedData.entity_name || '',
       period_id: caseFetchedData.period_id,  // Ini akan di-bind langsung di StageForm
       currency_id: caseFetchedData.currency_id,  // Ini akan di-bind langsung di StageForm
+      spt_type: caseFetchedData.spt_type || null,  // Include SPT type to prevent resetting
       disputed_amount: caseFetchedData.disputed_amount ? parseFloat(caseFetchedData.disputed_amount) : null,
       workflowHistories: caseFetchedData.workflow_histories || []  // Get workflow history untuk lock logic
     }
@@ -344,6 +345,7 @@ const refreshTaxCase = async () => {
       entity_name: caseData.entity_name || '',
       period_id: caseData.period_id,
       currency_id: caseData.currency_id,
+      spt_type: caseData.spt_type || null,  // Include SPT type to prevent resetting on refresh
       disputed_amount: caseData.disputed_amount ? parseFloat(caseData.disputed_amount) : null,
       submitted_at: caseData.submitted_at || null,
       workflowHistories: caseData.workflow_histories || []

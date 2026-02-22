@@ -16,7 +16,7 @@ class SendKianReminderJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    protected TaxCase $taxCase;
+    protected int $taxCaseId;
     protected string $stageName;
     protected string $reason;
     protected int $stageId;
@@ -24,14 +24,14 @@ class SendKianReminderJob implements ShouldQueue
     /**
      * Create a new job instance.
      * 
-     * @param TaxCase $taxCase The tax case
+     * @param int $taxCaseId The tax case ID
      * @param string $stageName Human-readable stage name (e.g., "Stage 4 - SKP")
      * @param string $reason Eligibility reason for KIAN
      * @param int $stageId The stage ID that triggered KIAN (4, 7, 10, 12)
      */
-    public function __construct(TaxCase $taxCase, string $stageName, string $reason, int $stageId = 12)
+    public function __construct(int $taxCaseId, string $stageName, string $reason, int $stageId = 12)
     {
-        $this->taxCase = $taxCase;
+        $this->taxCaseId = $taxCaseId;
         $this->stageName = $stageName;
         $this->reason = $reason;
         $this->stageId = $stageId;
@@ -44,7 +44,15 @@ class SendKianReminderJob implements ShouldQueue
     {
         try {
             // Get tax case with relationships
-            $case = $this->taxCase->load(['entity', 'user']);
+            $case = TaxCase::with(['entity', 'user'])->find($this->taxCaseId);
+            
+            if (!$case) {
+                Log::warning('Tax case not found for KIAN reminder', [
+                    'tax_case_id' => $this->taxCaseId,
+                    'stage' => $this->stageName,
+                ]);
+                return;
+            }
 
             // Get entity users (primary recipients)
             $entityUsers = $case->entity->users ?? collect();
@@ -62,14 +70,14 @@ class SendKianReminderJob implements ShouldQueue
                 
                 Mail::to($toEmails)
                     ->cc($ccEmails)
-                    ->send(new KianReminderMail($case, $this->stageName, $this->reason, $this->stageId));
+                    ->send(new KianReminderMail($this->taxCaseId, $this->stageName, $this->reason, $this->stageId));
                     
                 $sentTo = $toEmails;
             } else {
                 // Fallback: send to case owner if no entity users
                 Mail::to($case->user->email)
                     ->cc($ccEmails)
-                    ->send(new KianReminderMail($case, $this->stageName, $this->reason, $this->stageId));
+                    ->send(new KianReminderMail($this->taxCaseId, $this->stageName, $this->reason, $this->stageId));
                     
                 $sentTo = [$case->user->email];
             }
@@ -81,8 +89,8 @@ class SendKianReminderJob implements ShouldQueue
             try {
                 \App\Models\AuditLog::create([
                     'auditable_type' => TaxCase::class,
-                    'auditable_id' => $this->taxCase->id,
-                    'user_id' => $this->taxCase->user_id, // Use case owner since job runs in queue (no auth context)
+                    'auditable_id' => $this->taxCaseId,
+                    'user_id' => $case->user_id,
                     'action' => 'submitted', // Use standard action value
                     'description' => "KIAN reminder sent for stage: {$this->stageName} (Stage {$this->stageId})",
                     'old_values' => null,
@@ -100,14 +108,14 @@ class SendKianReminderJob implements ShouldQueue
             } catch (\Exception $auditError) {
                 // Log audit failure but don't fail the entire job
                 Log::warning('Failed to create audit log for KIAN reminder', [
-                    'tax_case_id' => $this->taxCase->id,
+                    'tax_case_id' => $this->taxCaseId,
                     'stage' => $this->stageName,
                     'audit_error' => $auditError->getMessage(),
                 ]);
             }
         } catch (\Exception $e) {
             Log::error('Failed to send KIAN reminder', [
-                'tax_case_id' => $this->taxCase->id,
+                'tax_case_id' => $this->taxCaseId,
                 'stage' => $this->stageName,
                 'error' => $e->getMessage(),
             ]);

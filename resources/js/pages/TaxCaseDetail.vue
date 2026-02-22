@@ -157,11 +157,10 @@
                     <Button
                       v-if="[4, 7, 10, 12].includes(stage.id) && caseData.kian_status_by_stage?.[stage.id]?.needsKian && stage.accessible"
                       @click="navigateToKianSubmission(stage.id)"
-                      variant="danger"
+                      :variant="caseData.kian_status_by_stage[stage.id]?.submitted ? 'secondary' : 'danger'"
                       size="sm"
-                      :disabled="caseData.kian_status_by_stage[stage.id]?.submitted"
                     >
-                      KIAN
+                      {{ caseData.kian_status_by_stage[stage.id]?.submitted ? '👁️ View KIAN' : '📄 KIAN' }}
                     </Button>
                     <!-- Refund Button for Stages 4, 7, 10, 12 with create_refund=true -->
                     <Button
@@ -231,9 +230,9 @@
                         <p class="font-medium text-gray-900">Refund #{{ refund.refund_number }}</p>
                         <p class="text-xs text-gray-600">Status: {{ refund.refund_status }}</p>
                       </div>
-                      <p class="text-right">
+                      <div class="text-right">
                         <p class="text-lg font-bold text-green-600">{{ formatCurrency(refund.refund_amount, caseData.currency?.code) }}</p>
-                      </p>
+                      </div>
                     </div>
                     
                     <!-- Stages 13-15 for this refund -->
@@ -298,7 +297,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch, computed } from 'vue'
+import { ref, onMounted, watch, computed, reactive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useToast } from '../composables/useToast'
 import { useTaxCaseStore } from '../stores/taxCaseStore'
@@ -563,10 +562,19 @@ const updateStageAccessibility = () => {
   
   // Helper function: Get decision details from workflow history (decision_value JSON)
   const getDecisionDetails = (stageId) => {
-    const history = workflowHistory.value.find(
-      h => h.stage_id === stageId && (h.status === 'submitted' || h.status === 'completed')
+    // ⭐ FIXED: Filter for entries with ACTUAL decision_value (not null or empty)
+    // Then pick the MOST RECENT one (last in array)
+    const histories = workflowHistory.value.filter(
+      h => h.stage_id === stageId && 
+           (h.status === 'submitted' || h.status === 'completed') &&
+           h.decision_value  // Explicit: only entries with decision_value
     )
-    if (!history || !history.decision_value) return null
+    
+    if (histories.length === 0) return null
+    
+    // Pick the LAST entry (most recent submission)
+    const history = histories[histories.length - 1]
+    
     try {
       return typeof history.decision_value === 'string' 
         ? JSON.parse(history.decision_value) 
@@ -596,9 +604,9 @@ const updateStageAccessibility = () => {
         // ⭐ UPDATED: Check continue_to_next_stage from Stage 4 decision_value, not user_routing_choice
         if (isStage4Completed()) {
           const stage4Details = getDecisionDetails(4)
-          // If continue_to_next_stage = true OR no decision value yet, stage 5 is accessible
+          // ⭐ FIXED: Explicitly check if continue_to_next_stage is NOT false
           // (backward compat: if no decision value, assume continue)
-          const shouldContinue = stage4Details ? stage4Details.continue_to_next_stage : true
+          const shouldContinue = stage4Details?.continue_to_next_stage !== false
           console.log(`[Stage Accessibility] Stage 5: stage4Details=`, stage4Details, `shouldContinue=`, shouldContinue)
           stage.accessible = shouldContinue
         } else {
@@ -626,8 +634,11 @@ const updateStageAccessibility = () => {
         if (!stage7Completed) {
           stage.accessible = false
         } else if (stage7Decision === 'rejected') {
-          // Auto-routed to Appeal
-          stage.accessible = true
+          // Auto-routed to Appeal, but still check continue_to_next_stage from Stage 7
+          // ⭐ FIXED: Must verify user wants to continue
+          const stage7Details = getDecisionDetails(7)
+          const shouldContinue = stage7Details?.continue_to_next_stage !== false
+          stage.accessible = shouldContinue
         } else if (stage7Decision === 'partially_granted') {
           // Check if user made choice to go to Appeal (via workflow_histories stage_to)
           const stage7History = workflowHistory.value.find(h => h.stage_id === 7 && h.status === 'submitted')
@@ -640,6 +651,10 @@ const updateStageAccessibility = () => {
           // granted → goes to Stage 13, not Stage 8
           stage.accessible = false
         }
+      } else if (stage.id === 4) {
+        // SPECIAL: Stage 4 (SKP) - First decision point, always accessible as entry point
+        // ⭐ FIXED: Stage 4 must be accessible for KIAN submission even if Stage 3 not in workflow
+        stage.accessible = true
       } else if (stage.id > 5) {
         // Stages setelah 5 (except 7-8, those handled above) (6, 9-12)
         // ⭐ UPDATED: Only block if refund branch already triggered
@@ -648,10 +663,26 @@ const updateStageAccessibility = () => {
         if (hasRefundTriggered() && isStage4Completed()) {
           // Refund branch active, block stages 6-12
           stage.accessible = false
+        } else if (stage.id === 11) {
+          // SPECIAL: Stage 11 (Supreme Court Submission) - Check continue_to_next_stage from Stage 10
+          // ⭐ FIXED: Must check Stage 10's decision on whether to continue
+          if (isStageCompleted(10)) {
+            const stage10Details = getDecisionDetails(10)
+            const shouldContinue = stage10Details?.continue_to_next_stage !== false
+            stage.accessible = shouldContinue
+          } else {
+            stage.accessible = false
+          }
         } else if (stage.id === 12) {
-          // Stage 12 (Supreme Court Decision) - Accessible if Stage 10+ completed
-          // This allows testing Stage 12 without needing full sequence through Stage 11
-          stage.accessible = isStageCompleted(10)
+          // Stage 12 (Supreme Court Decision) - Accessible if Stage 10 completed AND continue_to_next_stage = true
+          // ⭐ FIXED: Also check continue_to_next_stage from Stage 10
+          if (isStageCompleted(10)) {
+            const stage10Details = getDecisionDetails(10)
+            const shouldContinue = stage10Details?.continue_to_next_stage !== false
+            stage.accessible = shouldContinue
+          } else {
+            stage.accessible = false
+          }
         } else {
           // Normal sequential: accessible jika prev stage completed
           const previousStage = stage.id - 1
@@ -1069,6 +1100,6 @@ const onKianSubmissionSuccess = () => {
   showSuccess('Success', 'KIAN submitted successfully!')
   showKianModal.value = false
   // Reload case data to show updated KIAN status
-  loadCaseData()
+  reloadCaseData()
 }
 </script>
