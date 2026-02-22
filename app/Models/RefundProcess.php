@@ -14,7 +14,14 @@ class RefundProcess extends Model
 
     protected $table = 'refund_processes';
 
-    // Stage source constants
+    // ✅ Stage ID constants (align with TaxCase stages)
+    const STAGE_ID_PRELIMINARY = 0;      // Special: Preliminary Refund
+    const STAGE_ID_SKP = 4;               // SKP Decision
+    const STAGE_ID_OBJECTION = 7;         // Objection Decision
+    const STAGE_ID_APPEAL = 10;           // Appeal Decision
+    const STAGE_ID_SUPREME_COURT = 12;    // Supreme Court Decision
+
+    // ⚠️ DEPRECATED: stage_source will be removed in future migration
     const STAGE_SOURCE_PRELIMINARY = 'PRELIMINARY';
     const STAGE_SOURCE_SKP = 'SKP';
     const STAGE_SOURCE_OBJECTION = 'OBJECTION';
@@ -23,6 +30,7 @@ class RefundProcess extends Model
 
     protected $fillable = [
         'tax_case_id',
+        'stage_id',  // ✅ NEW: Primary identifier for refund origin
         'refund_number',
         'refund_date',
         'refund_method',
@@ -38,7 +46,7 @@ class RefundProcess extends Model
         'next_action',
         'next_action_due_date',
         'status_comment',
-        'stage_source',
+        'stage_source',  // ⚠️ DEPRECATED: kept for backward compatibility
         'sequence_number',
         'triggered_by_decision_id',
         'triggered_by_decision_type',
@@ -77,7 +85,15 @@ class RefundProcess extends Model
         return $this->hasMany(BankTransferRequest::class);
     }
 
-    // Scopes for filtering by stage source
+    /**
+     * ✅ NEW: Filter refunds by stage ID
+     */
+    public function scopeByStageId(Builder $query, int $stageId): Builder
+    {
+        return $query->where('stage_id', $stageId);
+    }
+
+    // ⚠️ DEPRECATED: Use scopeByStageId instead
     public function scopeByStageSource(Builder $query, string $stageSource): Builder
     {
         return $query->where('stage_source', $stageSource);
@@ -88,21 +104,72 @@ class RefundProcess extends Model
         return $query->orderBy('sequence_number', 'desc');
     }
 
-    // Helper method to get human-readable stage source label
+    /**
+     * ✅ NEW: Get human-readable stage label based on stage_id
+     */
     public function getStageLabelAttribute(): string
     {
-        return match($this->stage_source) {
-            self::STAGE_SOURCE_PRELIMINARY => 'Pengembalian Pendahuluan',
-            self::STAGE_SOURCE_SKP => 'SKP',
-            self::STAGE_SOURCE_OBJECTION => 'Objection Decision',
-            self::STAGE_SOURCE_APPEAL => 'Appeal Decision',
-            self::STAGE_SOURCE_SUPREME_COURT => 'Supreme Court Decision',
-            default => 'Unknown',
+        return match($this->stage_id) {
+            self::STAGE_ID_PRELIMINARY => 'Pengembalian Pendahuluan',
+            self::STAGE_ID_SKP => 'SKP Decision',
+            self::STAGE_ID_OBJECTION => 'Objection Decision',
+            self::STAGE_ID_APPEAL => 'Appeal Decision',
+            self::STAGE_ID_SUPREME_COURT => 'Supreme Court Decision',
+            default => 'Unknown Stage',
         };
     }
 
     /**
+     * ✅ NEW: Check if refund is from preliminary (stage_id = 0)
+     */
+    public function isPreliminary(): bool
+    {
+        return $this->stage_id === self::STAGE_ID_PRELIMINARY;
+    }
+
+    /**
+     * ✅ NEW: Check if refund is from decision stage (4, 7, 10, or 12)
+     */
+    public function isFromDecisionStage(): bool
+    {
+        return in_array($this->stage_id, [
+            self::STAGE_ID_SKP,
+            self::STAGE_ID_OBJECTION,
+            self::STAGE_ID_APPEAL,
+            self::STAGE_ID_SUPREME_COURT,
+        ]);
+    }
+
+    /**
+     * ✅ NEW: Map stage_id to decision model class
+     */
+    public static function getDecisionModelClassForStageId(int $stageId): ?string
+    {
+        return match($stageId) {
+            self::STAGE_ID_SKP => 'App\\Models\\SkpRecord',
+            self::STAGE_ID_OBJECTION => 'App\\Models\\ObjectionDecision',
+            self::STAGE_ID_APPEAL => 'App\\Models\\AppealDecision',
+            self::STAGE_ID_SUPREME_COURT => 'App\\Models\\SupremeCourtDecision',
+            default => null,
+        };
+    }
+
+    /**
+     * ✅ NEW: Get decision record that triggered this refund
+     * Returns the actual model instance (SkpRecord, ObjectionDecision, etc)
+     */
+    public function getTriggeredDecision()
+    {
+        if (!$this->triggered_by_decision_id || !$this->triggered_by_decision_type) {
+            return null;
+        }
+
+        return $this->triggered_by_decision_type::find($this->triggered_by_decision_id);
+    }
+
+    /**
      * Get the next sequence number for a tax case
+     * Sequence tracks the order of refunds within a single tax case
      * 
      * @param int $taxCaseId
      * @return int

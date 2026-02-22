@@ -257,6 +257,14 @@ onMounted(async () => {
       label: `${c.code} - ${c.name}`
     }))
 
+    // Filter SPT Type options based on case type
+    // "Pengembalian Pendahuluan" is only for VAT, not for CIT
+    if (caseFetchedData.case_type === 'CIT') {
+      fields.value[3].options = fields.value[3].options.filter(
+        option => option.value !== 'Pengembalian Pendahuluan'
+      )
+    }
+
     // Set pre-fill data dengan nilai dari tax case (benar-benar linked!)
     prefillData.value = {
       entity_name: caseFetchedData.entity_name || '',

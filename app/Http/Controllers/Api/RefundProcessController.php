@@ -11,15 +11,19 @@ use Illuminate\Http\JsonResponse;
 class RefundProcessController extends ApiController
 {
     /**
-     * Get all refund processes for a tax case
-     * Supports filtering by stage_source
+     * ✅ REFACTORED: Get all refund processes for a tax case
+     * Supports filtering by stage_id (preferred) or stage_source (deprecated)
      */
     public function index(Request $request, TaxCase $taxCase): JsonResponse
     {
         $query = $taxCase->refundProcesses()->with(['submittedBy', 'approvedBy']);
 
-        // Filter by stage_source if provided
-        if ($request->has('stage_source')) {
+        // Filter by stage_id (preferred)
+        if ($request->has('stage_id')) {
+            $query->byStageId($request->getInt('stage_id'));
+        }
+        // Filter by stage_source (deprecated, for backward compatibility)
+        elseif ($request->has('stage_source')) {
             $query->byStageSource($request->get('stage_source'));
         }
 
@@ -29,16 +33,27 @@ class RefundProcessController extends ApiController
     }
 
     /**
-     * Store refund process - now supports multiple refunds per tax case
+     * ✅ REFACTORED: Store refund process - now supports multiple refunds per tax case
+     * 
+     * Key Changes:
+     * - Uses stage_id (integer) as primary identifier, not stage_source (string)
+     * - Enforces one refund per stage via unique constraint (tax_case_id, stage_id)
+     * - Validates stage_id is valid (0, 4, 7, 10, or 12)
+     * - Manual creation: Users explicitly choose to create refund
      * 
      * Accepts parameters:
+     * - stage_id (required, in: 0,4,7,10,12)
+     *   └─ 0: PRELIMINARY (Pengembalian Pendahuluan at Stage 1)
+     *   └─ 4: SKP Decision
+     *   └─ 7: Objection Decision
+     *   └─ 10: Appeal Decision
+     *   └─ 12: Supreme Court Decision
      * - refund_number (required, unique)
      * - refund_date (required)
      * - refund_method (required)
      * - refund_amount (required, cannot exceed available amount)
      * - refund_status (required)
      * - bank_details (optional)
-     * - stage_source (required for manual creation, but will be set by decision models)
      * - notes (optional)
      */
     public function store(Request $request, TaxCase $taxCase): JsonResponse
@@ -49,6 +64,8 @@ class RefundProcessController extends ApiController
         }
 
         $validated = $request->validate([
+            // ✅ NEW: Use stage_id instead of stage_source
+            'stage_id' => 'required|integer|in:0,4,7,10,12',
             'refund_number' => 'required|string|unique:refund_processes',
             'refund_date' => 'required|date',
             'refund_method' => 'required|in:BANK_TRANSFER,CHEQUE,CASH',
@@ -64,13 +81,27 @@ class RefundProcessController extends ApiController
             ],
             'refund_status' => 'required|in:PENDING,PROCESSED,COMPLETED',
             'bank_details' => 'nullable|json',
-            'stage_source' => 'nullable|in:PRELIMINARY,SKP,OBJECTION,APPEAL,SUPREME_COURT',
             'notes' => 'nullable|string',
         ]);
 
+        // ✅ NEW: Validate no existing refund for this stage
+        $existingRefund = RefundProcess::where('tax_case_id', $taxCase->id)
+            ->where('stage_id', $validated['stage_id'])
+            ->exists();
+
+        if ($existingRefund) {
+            return $this->error(
+                'A refund already exists for this stage. Only one refund per stage is allowed.',
+                422
+            );
+        }
+
         // Auto-generate sequence number
         $validated['sequence_number'] = RefundProcess::getNextSequenceNumber($taxCase->id);
-        $validated['stage_source'] = $validated['stage_source'] ?? RefundProcess::STAGE_SOURCE_SKP;
+        
+        // ✅ NEW: Map stage_id to stage_source for backward compatibility during transition
+        $validated['stage_source'] = $this->mapStageIdToSource($validated['stage_id']);
+        
         $validated['tax_case_id'] = $taxCase->id;
         $validated['submitted_by'] = auth()->id();
         $validated['submitted_at'] = now();
@@ -80,7 +111,7 @@ class RefundProcessController extends ApiController
 
         return $this->success(
             $refundProcess->load(['taxCase', 'submittedBy']),
-            'Refund process created successfully (Sequence: #' . $refundProcess->sequence_number . ')',
+            'Refund process created successfully (Stage: ' . $refundProcess->stage_label . ', Sequence: #' . $refundProcess->sequence_number . ')',
             201
         );
     }
@@ -265,6 +296,26 @@ class RefundProcessController extends ApiController
             ->get();
 
         return $this->success($transfers);
+    }
+
+    /**
+     * ✅ NEW: Map stage_id (integer) to stage_source (string) for backward compatibility
+     * Used during transition to support both field formats
+     * 
+     * @param int $stageId One of: 0=PRELIMINARY, 4=SKP, 7=OBJECTION, 10=APPEAL, 12=SUPREME_COURT
+     * @return string One of: PRELIMINARY, SKP, OBJECTION, APPEAL, SUPREME_COURT
+     * @throws \InvalidArgumentException If stage_id is invalid
+     */
+    private function mapStageIdToSource(int $stageId): string
+    {
+        return match($stageId) {
+            0 => RefundProcess::STAGE_SOURCE_PRELIMINARY,
+            4 => RefundProcess::STAGE_SOURCE_SKP,
+            7 => RefundProcess::STAGE_SOURCE_OBJECTION,
+            10 => RefundProcess::STAGE_SOURCE_APPEAL,
+            12 => RefundProcess::STAGE_SOURCE_SUPREME_COURT,
+            default => throw new \InvalidArgumentException("Invalid stage_id: {$stageId}"),
+        };
     }
 
     /**

@@ -4,8 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Models\Entity;
 use App\Models\TaxCase;
-use App\Models\CaseStatus;
-use Illuminate\Support\Str;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -104,6 +102,8 @@ class TaxCaseController extends ApiController
             'period_id' => 'nullable|exists:periods,id',
             'currency_id' => 'nullable|exists:currencies,id',
             'description' => 'nullable|string',
+            // ✅ NEW: Support Preliminary Refund (Pengembalian Pendahuluan)
+            'spt_type' => 'nullable|in:SPT,Pengembalian Pendahuluan',
         ]);
 
         // Verify user can create case for this entity
@@ -154,9 +154,34 @@ class TaxCaseController extends ApiController
             'notes' => 'Initial tax case submission at Stage 1 (SPT Filing)',
         ]);
 
+        // ✅ NEW: Load refundProcesses and add Preliminary Refund info
+        $taxCase->load(['entity', 'fiscalYear', 'period', 'status', 'workflowHistories', 'refundProcesses']);
+        
+        // Prepare response data with Preliminary Refund support
+        $responseData = $taxCase->toArray();
+        $responseData['is_preliminary_refund'] = $taxCase->isPengembalianPendahuluan();
+        
+        // If Preliminary Refund, include refund info and available stages for independent SP2
+        if ($taxCase->isPengembalianPendahuluan()) {
+            $responseData['preliminary_refund_info'] = [
+                'label' => 'Pengembalian Pendahuluan (Preliminary Refund)',
+                'description' => 'An independent refund process that runs alongside the main SPT workflow',
+                'available_actions' => [
+                    'create_refund' => true,
+                    'continue_sp2' => true,
+                    'both' => true,
+                ],
+                'refund_details' => [
+                    'stage_id' => 0,
+                    'can_create_now' => true,
+                    'existing_refunds' => $taxCase->refundProcesses->filter(fn($r) => $r->stage_id === 0)->values(),
+                ]
+            ];
+        }
+
         return $this->success(
-            $taxCase->load(['entity', 'fiscalYear', 'period', 'status', 'workflowHistories']),
-            'Tax case created successfully',
+            $responseData,
+            'Tax case created successfully' . ($taxCase->isPengembalianPendahuluan() ? ' (Preliminary Refund enabled)' : ''),
             201
         );
     }
@@ -204,6 +229,27 @@ class TaxCaseController extends ApiController
 
         // ✅ NEW: ADD COMPREHENSIVE KIAN STATUS BY STAGE (Multiple KIAN per case concept)
         $taxCase->kian_status_by_stage = $taxCase->getKianStatusByStage();
+
+        // ✅ NEW: ADD PRELIMINARY REFUND INFO FOR STAGE 1
+        if ($taxCase->isPengembalianPendahuluan()) {
+            $taxCase->is_preliminary_refund = true;
+            $taxCase->preliminary_refund_info = [
+                'label' => 'Pengembalian Pendahuluan (Preliminary Refund)',
+                'description' => 'An independent refund process that runs alongside the main SPT workflow',
+                'available_actions' => [
+                    'create_refund' => true,
+                    'continue_sp2' => true,
+                    'both' => true,
+                ],
+                'refund_details' => [
+                    'stage_id' => 0,
+                    'can_create_now' => true,
+                    'existing_refunds' => $taxCase->refundProcesses->filter(fn($r) => $r->stage_id === 0)->values(),
+                ]
+            ];
+        } else {
+            $taxCase->is_preliminary_refund = false;
+        }
 
         return $this->success($taxCase);
     }

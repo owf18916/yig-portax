@@ -8,6 +8,31 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
+/**
+ * TaxCase Model
+ * 
+ * ✅ REFACTORED ARCHITECTURE (Feb 2026):
+ * 
+ * MAIN WORKFLOW STAGES: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12 [TERMINAL]
+ * 
+ * INDEPENDENT PARALLEL PROCESSES (attach to decision stages):
+ * - Refund: Can trigger from Stage 4, 7, 10, or 12 (if decision is favorable)
+ *   └─ One refund per stage max (via unique constraint on tax_case_id + stage_id)
+ * - KIAN: Can trigger from Stage 4, 7, 10, or 12 (if loss exists)
+ *   └─ One KIAN per stage max (via unique constraint on tax_case_id + stage_id)
+ * 
+ * SUPPORTING EXECUTION STAGES (not part of main workflow):
+ * - Stage 13-15: Bank Transfer execution (linked to specific RefundProcess, not TaxCase.current_stage)
+ * - These are triggered AFTER RefundProcess is created by user choice
+ * 
+ * KEY DESIGN PATTERNS:
+ * 1. current_stage ∈ {1-12} only (main workflow isolation)
+ * 2. Refund/KIAN are user-initiated parallel processes
+ * 3. Bank transfer is manual user input, NOT auto-generated
+ * 4. Preliminary Refund (spt_type='Pengembalian Pendahuluan') is special case at Stage 1
+ *    └─ Refund attach directly to Stage 1 with stage_id=0
+ *    └─ "Lanjut SP2" button allows independent progress to Stage 2
+ */
 class TaxCase extends Model
 {
     use SoftDeletes;
@@ -264,17 +289,27 @@ class TaxCase extends Model
     /**
      * Get available stages for this tax case based on SPT type
      * 
+     * ✅ REFACTORED: Main workflow is ONLY stages 1-12
+     * - Stages 13/14/15 are SUPPORTING EXECUTION stages for refund (not main workflow)
+     * - Refund/KIAN are INDEPENDENT PARALLEL PROCESSES (attach to decision stages)
+     * - current_stage ∈ {1-12} only (main workflow)
+     * 
      * @return array Stage IDs available for this case
      */
     public function getAvailableStages(): array
     {
+        // Main workflow is always 1-12, regardless of case type
+        // Refund/KIAN are independent, not part of sequential stages
+        $mainWorkflowStages = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+
         if ($this->isPengembalianPendahuluan()) {
-            // Pengembalian Pendahuluan: Skip SP2 (2) and SPHP (3), go directly from SPT (1) to SKP (4)
-            return [1, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+            // Pengembalian Pendahuluan: Skip SP2 (2) and SPHP (3)
+            // Go directly: 1 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12
+            return [1, 4, 5, 6, 7, 8, 9, 10, 11, 12];
         }
 
-        // Default: All stages available
-        return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        // Default: All main workflow stages available
+        return $mainWorkflowStages;
     }
 
     /**

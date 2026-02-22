@@ -46,7 +46,7 @@ class KianReminderMail extends Mailable
      */
     public function content(): Content
     {
-        $taxCase = TaxCase::with(['entity', 'currency', 'period', 'skpRecord', 'objectionSubmission', 'objectionDecision', 'appealSubmission', 'appealDecision', 'supremeCourtSubmission', 'supremeCourtDecision'])->find($this->taxCaseId);
+        $taxCase = TaxCase::with(['entity', 'currency', 'fiscalYear', 'skpRecord', 'objectionSubmission', 'objectionDecision', 'appealSubmission', 'appealDecision', 'supremeCourtSubmission', 'supremeCourtDecision'])->find($this->taxCaseId);
         
         // Calculate loss amount directly (don't rely on kian_status_by_stage which isn't set in queue context)
         $lossAmount = $taxCase->calculateLossAtStage($this->stageId) ?? 0;
@@ -54,26 +54,17 @@ class KianReminderMail extends Mailable
         // Get currency code from tax case
         $currencyCode = $taxCase->currency?->code ?? 'IDR';
 
-        // Get case year based on case type
-        // - CIT (Corporate Income Tax): YYYY from period
-        // - VAT (Value Added Tax): YYYY-MM from period_code
-        $caseYear = match($taxCase->case_type) {
-            'CIT' => $taxCase->period?->year,
-            'VAT' => $taxCase->period?->period_code,
-            default => $taxCase->period?->period_code ?? $taxCase->period?->year,
-        };
-
         return new Content(
             view: 'emails.kian-reminder-compatible',
             with: [
                 'caseNumber' => $taxCase->case_number,
                 'caseType' => $taxCase->case_type,
-                'caseYear' => $caseYear,
+                'caseYear' => $taxCase->fiscal_year?->name,
                 'entityName' => $taxCase->entity?->name,
                 'lossAmount' => $lossAmount,
                 'currencyCode' => $currencyCode,
                 'stageName' => $this->stageName,
-                'caseUrl' => route('tax-cases.show', $taxCase->id, absolute: true),
+                'caseUrl' => route('tax-cases.show', $taxCase->id),
             ],
         );
     }
