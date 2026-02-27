@@ -67,8 +67,7 @@ class RefundProcessController extends ApiController
             // ✅ NEW: Use stage_id instead of stage_source
             'stage_id' => 'required|integer|in:0,4,7,10,12',
             'refund_number' => 'required|string|unique:refund_processes',
-            'refund_date' => 'required|date',
-            'refund_method' => 'required|in:BANK_TRANSFER,CHEQUE,CASH',
+            'refund_method' => 'required|in:BANK_TRANSFER,CHEQUE,CHECK,CASH,bank_transfer,check,credit',
             'refund_amount' => [
                 'required',
                 'numeric',
@@ -79,10 +78,26 @@ class RefundProcessController extends ApiController
                     }
                 },
             ],
-            'refund_status' => 'required|in:PENDING,PROCESSED,COMPLETED',
+            'refund_date' => 'nullable|date',
             'bank_details' => 'nullable|json',
             'notes' => 'nullable|string',
         ]);
+        
+        // ✅ Map refund_method from frontend format to database enum values
+        $methodMap = [
+            'BANK_TRANSFER' => 'bank_transfer',
+            'CHEQUE' => 'check',
+            'CHECK' => 'check',
+            'CASH' => 'credit',
+            'bank_transfer' => 'bank_transfer',
+            'check' => 'check',
+            'credit' => 'credit'
+        ];
+        
+        $validated['refund_method'] = $methodMap[strtoupper($validated['refund_method'])] ?? 'bank_transfer';
+
+        // ✅ CRITICAL: Remove refund_date - this column does NOT exist in the database
+        unset($validated['refund_date']);
 
         // ✅ NEW: Validate no existing refund for this stage
         $existingRefund = RefundProcess::where('tax_case_id', $taxCase->id)
@@ -106,6 +121,7 @@ class RefundProcessController extends ApiController
         $validated['submitted_by'] = auth()->id();
         $validated['submitted_at'] = now();
         $validated['status'] = 'submitted';
+        $validated['refund_status'] = 'pending'; // Set refund_status to 'pending' (lowercase enum value)
 
         $refundProcess = RefundProcess::create($validated);
 

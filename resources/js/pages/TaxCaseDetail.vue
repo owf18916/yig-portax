@@ -84,7 +84,7 @@
 
       <!-- KIAN Eligibility Notice and Button (Legacy - kept for backward compatibility) -->
       <Alert
-        v-if="caseData.can_create_kian && !hasMultiStageKian"
+        v-if="caseData.can_create_kian && !(caseData.kian_status_by_stage && Object.values(caseData.kian_status_by_stage).some(s => s.needsKian))"
         type="warning"
         title="KIAN Eligible"
         :message="`You are eligible to submit KIAN: ${caseData.kian_eligibility_reason}`"
@@ -124,7 +124,36 @@
               leave-from-class="transform opacity-100"
               leave-to-class="transform opacity-0 -translate-y-2"
             >
-              <div v-show="expandedSections.main" class="space-y-2 p-4 bg-gray-50">
+              <div v-show="expandedSections.main" class="space-y-4 p-4 bg-gray-50">
+                <!-- ✅ NEW: Preliminary Refund Section for Stage 1 -->
+                <div v-if="caseData.is_preliminary_refund && caseData.current_stage === 1" class="border-2 border-orange-300 rounded-lg bg-orange-50 p-4">
+                  <div class="mb-4">
+                    <h4 class="font-bold text-orange-900 text-lg">🔄 Preliminary Refund (Pengembalian Pendahuluan)</h4>
+                    <p class="text-sm text-orange-700 mt-1">Independent refund process at Stage 1. You can create a refund and/or continue to SP2.</p>
+                  </div>
+                  <div class="space-y-3">
+                    <!-- Refund Button -->
+                    <Button
+                      @click="navigateToPreliminaryRefund()"
+                      variant="primary"
+                      class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3"
+                      :disabled="!caseData.preliminary_refund_info?.refund_details?.can_create_now"
+                    >
+                      💰 Create Refund
+                    </Button>
+                    
+                    <!-- Continue to SP2 Button -->
+                    <Button
+                      @click="continueToNextStage(2)"
+                      variant="primary"
+                      class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3"
+                    >
+                      ➜ Continue to Stage 2 (SP2)
+                    </Button>
+                  </div>
+                  <p class="text-xs text-orange-600 mt-3 italic">Both actions are independent. You can do them in any order or just one.</p>
+                </div>
+                
                 <div v-for="stage in getStagesByBranch('main')" :key="stage.id" class="flex items-center space-x-3 p-3 rounded-lg bg-white border border-gray-200 hover:border-blue-300 transition">
                   <div
                     :class="[
@@ -154,24 +183,14 @@
                       Access
                     </Button>
                     <!-- KIAN Button for Stages 4, 7, 10, 12 -->
+                    <!-- ⭐ FIXED: KIAN button is independent from stage accessibility (side action) -->
                     <Button
-                      v-if="[4, 7, 10, 12].includes(stage.id) && caseData.kian_status_by_stage?.[stage.id]?.needsKian && stage.accessible"
+                      v-if="[4, 7, 10, 12].includes(stage.id) && caseData.kian_status_by_stage?.[stage.id]?.needsKian"
                       @click="navigateToKianSubmission(stage.id)"
                       :variant="caseData.kian_status_by_stage[stage.id]?.submitted ? 'secondary' : 'danger'"
                       size="sm"
                     >
                       {{ caseData.kian_status_by_stage[stage.id]?.submitted ? '👁️ View KIAN' : '📄 KIAN' }}
-                    </Button>
-                    <!-- Refund Button for Stages 4, 7, 10, 12 with create_refund=true -->
-                    <Button
-                      v-if="shouldShowRefundButton(stage.id)"
-                      @click="navigateToRefund(stage.id)"
-                      variant="primary"
-                      size="sm"
-                      class="bg-green-600 hover:bg-green-700 text-white"
-                      title="Proceed to Refund (Bank Transfer Request)"
-                    >
-                      💰
                     </Button>
                     <button
                       v-if="stage.accessible"
@@ -201,7 +220,7 @@
               <div class="flex items-center space-x-3">
                 <span :class="['transform transition', expandedSections.refund ? 'rotate-90' : '']">▶</span>
                 <h3 class="font-semibold text-green-900">REFUND FLOW</h3>
-                <span class="text-sm text-green-700">(Stages 13-15, Multiple Per Decision Point)</span>
+                <span class="text-sm text-green-700">(New Stages 1-4)</span>
               </div>
               <span v-if="getRefundsByStageSource().length > 0" class="inline-block px-2 py-0.5 bg-green-200 text-green-800 text-xs font-semibold rounded">
                 {{ getRefundsByStageSource().length }} Refund{{ getRefundsByStageSource().length !== 1 ? 's' : '' }}
@@ -218,50 +237,124 @@
               <div v-show="expandedSections.refund" class="space-y-4 p-4 bg-green-50">
                 <!-- For each refund grouped by stage source -->
                 <div v-for="refundGroup in getRefundsByStageSource()" :key="refundGroup.source" class="border border-green-200 rounded-lg bg-white p-4">
-                  <div class="mb-3">
+                  <div class="mb-4">
                     <h4 class="font-semibold text-green-900">💰 {{ refundGroup.label }}</h4>
                     <p class="text-sm text-gray-600">{{ refundGroup.refunds.length }} refund process{{ refundGroup.refunds.length !== 1 ? 'es' : '' }}</p>
                   </div>
                   
                   <!-- For each refund in this group -->
-                  <div v-for="refund in refundGroup.refunds" :key="`refund-${refund.id}`" class="space-y-2 bg-gray-50 p-3 rounded">
-                    <div class="flex items-center justify-between mb-2">
+                  <div v-for="refund in refundGroup.refunds" :key="`refund-${refund.id}`" class="space-y-3 bg-gray-50 p-4 rounded">
+                    <!-- Refund Header -->
+                    <div class="flex items-center justify-between mb-3">
                       <div>
-                        <p class="font-medium text-gray-900">Refund #{{ refund.refund_number }}</p>
-                        <p class="text-xs text-gray-600">Status: {{ refund.refund_status }}</p>
+                        <p class="font-semibold text-gray-900">Refund #{{ refund.refund_number }}</p>
+                        <p class="text-xs text-gray-600 mt-0.5">{{ formatCurrency(refund.refund_amount, caseData.currency?.code) }} · {{ refund.refund_method }}</p>
                       </div>
                       <div class="text-right">
-                        <p class="text-lg font-bold text-green-600">{{ formatCurrency(refund.refund_amount, caseData.currency?.code) }}</p>
+                        <span :class="[
+                          'inline-block px-2 py-1 text-xs font-semibold rounded',
+                          refund.refund_status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                          refund.refund_status === 'INITIATED' ? 'bg-blue-100 text-blue-800' :
+                          'bg-yellow-100 text-yellow-800'
+                        ]">
+                          {{ refund.refund_status || 'PENDING' }}
+                        </span>
                       </div>
                     </div>
                     
-                    <!-- Stages 13-15 for this refund -->
-                    <div class="space-y-1 mt-3">
-                      <div
-                        v-for="stage in getStagesByBranch('refund')"
-                        :key="`refund-${refund.id}-stage-${stage.id}`"
-                        class="flex items-center space-x-2 p-2 bg-white rounded border border-gray-200"
-                      >
-                        <div
+                    <!-- NEW STAGES 1-4 PROGRESS BAR -->
+                    <div class="space-y-2 mt-4">
+                      <p class="text-xs font-semibold text-gray-700 uppercase">Refund Progress</p>
+                      <div class="flex gap-1">
+                        <!-- Stage 1 -->
+                        <button
+                          @click="navigateToRefundStage(1, refund.id)"
+                          :disabled="!isRefundStageAccessible(refund, 1)"
                           :class="[
-                            'w-6 h-6 rounded-full flex items-center justify-center text-white font-bold shrink-0 text-xs',
-                            'bg-blue-400'
+                            'flex-1 p-2 rounded text-xs font-semibold text-center transition',
+                            getCurrentRefundStage(refund) >= 1 ? 'bg-green-500 text-white' :
+                            getCurrentRefundStage(refund) === 0 ? 'bg-blue-500 text-white hover:bg-blue-600' :
+                            'bg-gray-300 text-gray-600 cursor-not-allowed'
                           ]"
+                          title="Stage 1: Refund Initiated"
                         >
-                          {{ stage.id }}
-                        </div>
-                        <div class="flex-1 text-sm">
-                          <p class="font-medium text-gray-900">{{ stage.name }}</p>
-                          <p class="text-xs text-gray-600">{{ stage.description }}</p>
-                        </div>
-                        <Button
-                          @click="$router.push(`/tax-cases/${$route.params.id}/refunds/${refund.id}/workflow/${stage.id}`)"
-                          variant="primary"
-                          size="sm"
-                          class="text-xs"
+                          1: Init
+                        </button>
+                        
+                        <!-- Stage 2 -->
+                        <button
+                          @click="navigateToRefundStage(2, refund.id)"
+                          :disabled="!isRefundStageAccessible(refund, 2)"
+                          :class="[
+                            'flex-1 p-2 rounded text-xs font-semibold text-center transition',
+                            getCurrentRefundStage(refund) >= 2 ? 'bg-green-500 text-white' :
+                            getCurrentRefundStage(refund) === 1 ? 'bg-blue-500 text-white hover:bg-blue-600' :
+                            'bg-gray-300 text-gray-600 cursor-not-allowed'
+                          ]"
+                          title="Stage 2: Bank Transfer Request"
                         >
-                          Access
-                        </Button>
+                          2: Transfer
+                        </button>
+                        
+                        <!-- Stage 3 -->
+                        <button
+                          @click="navigateToRefundStage(3, refund.id)"
+                          :disabled="!isRefundStageAccessible(refund, 3)"
+                          :class="[
+                            'flex-1 p-2 rounded text-xs font-semibold text-center transition',
+                            getCurrentRefundStage(refund) >= 3 ? 'bg-green-500 text-white' :
+                            getCurrentRefundStage(refund) === 2 ? 'bg-blue-500 text-white hover:bg-blue-600' :
+                            'bg-gray-300 text-gray-600 cursor-not-allowed'
+                          ]"
+                          title="Stage 3: Transfer Instruction"
+                        >
+                          3: Instr
+                        </button>
+                        
+                        <!-- Stage 4 -->
+                        <button
+                          @click="navigateToRefundStage(4, refund.id)"
+                          :disabled="!isRefundStageAccessible(refund, 4)"
+                          :class="[
+                            'flex-1 p-2 rounded text-xs font-semibold text-center transition',
+                            getCurrentRefundStage(refund) >= 4 ? 'bg-green-500 text-white' :
+                            getCurrentRefundStage(refund) === 3 ? 'bg-blue-500 text-white hover:bg-blue-600' :
+                            'bg-gray-300 text-gray-600 cursor-not-allowed'
+                          ]"
+                          title="Stage 4: Refund Completed"
+                        >
+                          4: Done
+                        </button>
+                      </div>
+                      <p class="text-xs text-gray-600 mt-1">
+                        Current Stage: <span class="font-semibold">{{ getCurrentRefundStage(refund) || 'Not started' }}</span>
+                      </p>
+                    </div>
+                    
+                    <!-- Legacy Stages 13-15 (Optional - kept for backward compatibility) -->
+                    <div class="border-t pt-3 mt-3">
+                      <p class="text-xs font-semibold text-gray-700 uppercase mb-2">Legacy Stages (13-15)</p>
+                      <div class="space-y-1">
+                        <div
+                          v-for="stage in getStagesByBranch('refund')"
+                          :key="`refund-${refund.id}-stage-${stage.id}`"
+                          class="flex items-center space-x-2 p-2 bg-white rounded border border-gray-200 text-xs"
+                        >
+                          <div class="w-5 h-5 rounded-full flex items-center justify-center text-white font-bold shrink-0 text-xs bg-gray-400">
+                            {{ stage.id }}
+                          </div>
+                          <div class="flex-1">
+                            <p class="font-medium text-gray-900">{{ stage.name }}</p>
+                          </div>
+                          <Button
+                            @click="$router.push(`/tax-cases/${$route.params.id}/refunds/${refund.id}/workflow/${stage.id}`)"
+                            variant="primary"
+                            size="sm"
+                            class="text-xs"
+                          >
+                            Access
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -297,7 +390,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch, computed, reactive } from 'vue'
+import { ref, onMounted, watch, reactive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useToast } from '../composables/useToast'
 import { useTaxCaseStore } from '../stores/taxCaseStore'
@@ -435,6 +528,11 @@ const hasRefundTriggered = () => {
 
 // Helper function: Check if refund button should show for a stage
 const shouldShowRefundButton = (stageId) => {
+  // ✅ NEW: Hide refund button for Stage 1 if Preliminary Refund (handled in dedicated section)
+  if (stageId === 1 && caseData.value.is_preliminary_refund) {
+    return false
+  }
+  
   const cond1 = [4, 7, 10, 12].includes(stageId)
   const cond2 = hasStageRefundTriggered(stageId)
   const all = cond1 && cond2
@@ -598,6 +696,15 @@ const updateStageAccessibility = () => {
       if (stage.id === 1) {
         // Stage 1 selalu accessible
         stage.accessible = true
+      } else if (stage.id === 2 && caseData.value.is_preliminary_refund) {
+        // ✅ NEW: Preliminary Refund special handling
+        // Stage 2 NOT automatically accessible - must use "Continue to SP2" button
+        // The button will create workflow history entry that makes Stage 2 accessible
+        const hasUserContinued = workflowHistory.value.some(
+          h => h.stage_id === 1 && h.stage_to === 2 && (h.status === 'submitted' || h.status === 'completed')
+        )
+        stage.accessible = hasUserContinued
+        console.log(`[Stage Accessibility] Stage 2 (Preliminary Refund): hasUserContinued=${hasUserContinued}, accessible=${stage.accessible}`)
       } else if (stage.id === 5) {
         // SPECIAL: Stage 5 (Objection) - Accessible if:
         // Stage 4 completed AND continue_to_next_stage = true (from decision_value)
@@ -651,10 +758,6 @@ const updateStageAccessibility = () => {
           // granted → goes to Stage 13, not Stage 8
           stage.accessible = false
         }
-      } else if (stage.id === 4) {
-        // SPECIAL: Stage 4 (SKP) - First decision point, always accessible as entry point
-        // ⭐ FIXED: Stage 4 must be accessible for KIAN submission even if Stage 3 not in workflow
-        stage.accessible = true
       } else if (stage.id > 5) {
         // Stages setelah 5 (except 7-8, those handled above) (6, 9-12)
         // ⭐ UPDATED: Only block if refund branch already triggered
@@ -930,12 +1033,6 @@ const formatCurrency = (amount, currencyCode = 'IDR') => {
   }).format(amount)
 }
 
-// ✅ NEW: Check if multi-stage KIAN data is available
-const hasMultiStageKian = computed(() => {
-  return caseData.value.kian_status_by_stage && 
-         Object.values(caseData.value.kian_status_by_stage).some(status => status.needsKian)
-})
-
 // ✅ NEW: Navigate to KIAN submission form for specific stage
 const navigateToKianSubmission = (stageId) => {
   router.push({
@@ -944,13 +1041,70 @@ const navigateToKianSubmission = (stageId) => {
   })
 }
 
-// ✅ Navigate to Refund workflow (Stage 13) - Refund created by form submission
+// ✅ Navigate to Refund workflow - Smart logic for existing vs new refunds
 const navigateToRefund = (triggerStageId) => {
-  console.log('[navigateToRefund] Navigate to Stage 13 for stage:', triggerStageId)
-  // Navigate to Stage 13 without refund_id
-  // RefundProcess will be created when user submits the form
+  console.log('[navigateToRefund] Processing refund navigation for stage:', triggerStageId)
+  
+  // Map stageId to stage_source
+  const stageSourceMap = {
+    4: 'SKP',
+    7: 'OBJECTION',
+    10: 'APPEAL',
+    12: 'SUPREME_COURT'
+  }
+  
+  const stageSource = stageSourceMap[triggerStageId]
+  console.log('[navigateToRefund] Mapped to stage_source:', stageSource)
+  
+  // Check if refund already exists for this decision stage
+  const existingRefund = caseData.value.refund_processes?.find(
+    r => r.stage_source === stageSource
+  )
+  
+  if (existingRefund) {
+    console.log('[navigateToRefund] Found existing refund:', existingRefund.id, 'current_stage:', existingRefund.current_stage)
+    
+    const currentStage = existingRefund.current_stage || 1
+    
+    // If in stage 2, 3, or 4 - navigate to that stage
+    if (currentStage >= 2) {
+      console.log('[navigateToRefund] Redirecting to stage', currentStage, 'with refundId', existingRefund.id)
+      const routeName = ['', 'RefundStage1FormWithId', 'RefundStage2FormWithId', 'RefundStage3FormWithId', 'RefundStage4FormWithId'][currentStage]
+      router.push({
+        name: routeName,
+        params: { 
+          id: caseData.value.id,
+          refundId: existingRefund.id
+        }
+      })
+      return
+    }
+    
+    // If in stage 1 - go to stage 1 but WITH refundId to pre-fill
+    console.log('[navigateToRefund] Redirecting to stage 1 with existing refundId:', existingRefund.id)
+    router.push({
+      name: 'RefundStage1FormWithId',
+      params: { 
+        id: caseData.value.id,
+        refundId: existingRefund.id
+      },
+      query: { 
+        stageId: triggerStageId
+      }
+    })
+    return
+  }
+  
+  // No existing refund - navigate to Stage 1 to create new one
+  console.log('[navigateToRefund] No existing refund - navigate to Stage 1 to create new, stageId:', triggerStageId)
   router.push({
-    path: `/tax-cases/${caseData.value.id}/workflow/13`
+    name: 'RefundStage1Form',
+    params: { 
+      id: caseData.value.id
+    },
+    query: { 
+      stageId: triggerStageId
+    }
   })
 }
 
@@ -1101,5 +1255,113 @@ const onKianSubmissionSuccess = () => {
   showKianModal.value = false
   // Reload case data to show updated KIAN status
   reloadCaseData()
+}
+
+// ✅ NEW: Navigate to create Preliminary Refund form page (stage_id=0)
+const navigateToPreliminaryRefund = () => {
+  console.log('[navigateToPreliminaryRefund] Navigate to preliminary refund form')
+  router.push({
+    path: `/tax-cases/${caseData.value.id}/refund-preliminary`
+  })
+}
+
+// ✅ NEW: Continue to next stage (for Preliminary Refund special handling)
+const continueToNextStage = async (nextStageId) => {
+  try {
+    // Create workflow history entry to mark user decided to continue to next stage
+    const response = await fetch(`/api/tax-cases/${caseData.value.id}/workflow-history`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content
+      },
+      body: JSON.stringify({
+        stage_id: 1,
+        stage_from: null,
+        stage_to: nextStageId,
+        action: 'submitted',
+        status: 'submitted',
+        decision_value: null,
+        notes: `User continued to Stage ${nextStageId} from Preliminary Refund (Stage 1)`
+      })
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message || error.error || `API Error: ${response.status}`)
+    }
+
+    showSuccess('Success', `Moving to Stage ${nextStageId}...`)
+    
+    // Reload to update accessibility
+    await reloadCaseData()
+    
+    // Navigate to next stage
+    setTimeout(() => {
+      router.push(`/tax-cases/${caseData.value.id}/workflow/${nextStageId}`)
+    }, 500)
+  } catch (error) {
+    showError('Error', error.message)
+  }
+}
+
+// ✅ NEW: Navigate to Refund Stage Form (1-4) - New components
+const navigateToRefundStage = (stageNum, refundId = null) => {
+  console.log(`[navigateToRefundStage] Navigate to stage ${stageNum}, refundId=${refundId}`)
+  
+  if (!refundId) {
+    console.error('[navigateToRefundStage] ERROR: refundId is required')
+    return
+  }
+  
+  // Use the *WithId route variants to properly include refundId in URL
+  const stageNameWithId = ['', 'RefundStage1FormWithId', 'RefundStage2FormWithId', 'RefundStage3FormWithId', 'RefundStage4FormWithId'][stageNum]
+  
+  console.log(`[navigateToRefundStage] Routing to: ${stageNameWithId} with refundId=${refundId}`)
+  
+  router.push({
+    name: stageNameWithId || 'RefundStage1FormWithId',
+    params: {
+      id: caseData.value.id,
+      refundId: refundId
+    }
+  })
+}
+
+// ✅ NEW: Get current stage for a specific refund
+const getCurrentRefundStage = (refund) => {
+  if (!refund) return 0
+  
+  // Stage progression logic:
+  // Stage 1: refund_status = 'INITIATED' (RefundProcess created)
+  // Stage 2: transfer_status = 'REQUESTED' (BankTransferRequest created)
+  // Stage 3: transfer_status = 'INSTRUCTION_ISSUED' (Bank instruction details recorded)
+  // Stage 4: transfer_status = 'COMPLETED' (Receipt confirmed)
+  
+  const refundStatus = refund.refund_status?.toLowerCase() || ''
+  const transferStatus = refund.transfer_status?.toLowerCase() || ''
+  
+  // Work backward from highest stage
+  if (transferStatus === 'completed') return 4
+  if (transferStatus === 'instruction_issued' || transferStatus === 'instruction_received') return 3
+  if (transferStatus === 'requested') return 2
+  if (refundStatus === 'initiated') return 1
+  
+  return 0
+}
+
+// ✅ NEW: Check if refund stage is accessible (can click to navigate)
+const isRefundStageAccessible = (refund, stageNum) => {
+  const currentStage = getCurrentRefundStage(refund)
+  
+  // Can click on: currently active stage OR next stage after current
+  // stageNum = 1 (can click if currentStage == 0 or == 1)
+  // stageNum = 2 (can click if currentStage == 1 or == 2)
+  // stageNum = 3 (can click if currentStage == 2 or == 3)
+  // stageNum = 4 (can click if currentStage == 3 or == 4)
+  
+  return currentStage === (stageNum - 1) || currentStage === stageNum
 }
 </script>

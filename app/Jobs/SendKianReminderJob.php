@@ -2,15 +2,16 @@
 
 namespace App\Jobs;
 
-use App\Models\TaxCase;
-use Illuminate\Bus\Queueable;
 use App\Mail\KianReminderMail;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
-use Illuminate\Queue\SerializesModels;
-use Illuminate\Queue\InteractsWithQueue;
+use App\Models\TaxCase;
+use App\Models\User;
+use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 class SendKianReminderJob implements ShouldQueue
 {
@@ -44,7 +45,7 @@ class SendKianReminderJob implements ShouldQueue
     {
         try {
             // Get tax case with relationships
-            $case = TaxCase::with(['entity', 'user'])->find($this->taxCaseId);
+            $case = TaxCase::with(['entity', 'entity.parentEntity', 'user', 'user.role'])->find($this->taxCaseId);
             
             if (!$case) {
                 Log::warning('Tax case not found for KIAN reminder', [
@@ -54,37 +55,79 @@ class SendKianReminderJob implements ShouldQueue
                 return;
             }
 
-            // Get entity users (primary recipients)
-            $entityUsers = $case->entity->users ?? collect();
-
-            // Get holding users for CC (if applicable)
-            $holdingUsers = $case->entity->holding?->users ?? collect();
-            $ccEmails = $holdingUsers->pluck('email')->toArray();
-
-            // ⭐ APPROACH 2: Send single email to ALL entity users (TO) with holding users (CC once)
-            // This is more efficient and aligns with documentation:
-            // "Send email to entity users with CC to holding users"
-            if ($entityUsers->isNotEmpty()) {
-                // All entity users as TO recipients
-                $toEmails = $entityUsers->pluck('email')->toArray();
+            // ⭐ BUILD TO RECIPIENTS:
+            // 1. Case owner
+            // 2. Case owner's manager (same entity, role "Manager")
+            $toEmails = [];
+            
+            // Add case owner (always included)
+            $caseOwner = $case->user;
+            if ($caseOwner && $caseOwner->email) {
+                $toEmails[] = $caseOwner->email;
+            }
+            
+            // Add case owner's manager(s) from same entity
+            $caseOwnerEntityId = $caseOwner?->entity_id;
+            if ($caseOwnerEntityId) {
+                $managers = User::where('entity_id', $caseOwnerEntityId)
+                    ->whereHas('role', function ($query) {
+                        $query->where('name', 'Manager');
+                    })
+                    ->pluck('email')
+                    ->toArray();
                 
+                $toEmails = array_merge($toEmails, $managers);
+            }
+
+            // ⭐ BUILD CC RECIPIENTS:
+            // Users from Holding Affiliates with roles: "Coordinator", "General Manager", "Vice President"
+            $ccEmails = [];
+            
+            // Get holding entity (parent of current entity if AFFILIATE, or self if HOLDING)
+            $holdingEntity = null;
+            if ($case->entity->entity_type === 'AFFILIATE') {
+                $holdingEntity = $case->entity->parentEntity;
+            } elseif ($case->entity->entity_type === 'HOLDING') {
+                $holdingEntity = $case->entity;
+            }
+            
+            // Get all users from holding with specific roles
+            if ($holdingEntity) {
+                $ccEmails = User::where('entity_id', $holdingEntity->id)
+                    ->whereHas('role', function ($query) {
+                        $query->whereIn('name', ['Coordinator', 'General Manager', 'Vice President']);
+                    })
+                    ->pluck('email')
+                    ->toArray();
+            }
+
+            // ⭐ Deduplicate recipients (remove duplicates between TO and CC)
+            $toEmails = array_unique(array_filter($toEmails));
+            $ccEmails = array_unique(array_filter($ccEmails));
+            
+            // Remove CC emails that are already in TO
+            $ccEmails = array_values(array_diff($ccEmails, $toEmails));
+
+            // Send email
+            if (!empty($toEmails)) {
                 Mail::to($toEmails)
                     ->cc($ccEmails)
                     ->send(new KianReminderMail($this->taxCaseId, $this->stageName, $this->reason, $this->stageId));
-                    
+                
                 $sentTo = $toEmails;
             } else {
-                // Fallback: send to case owner if no entity users
-                Mail::to($case->user->email)
-                    ->cc($ccEmails)
-                    ->send(new KianReminderMail($this->taxCaseId, $this->stageName, $this->reason, $this->stageId));
-                    
-                $sentTo = [$case->user->email];
+                Log::warning('No TO recipients found for KIAN reminder', [
+                    'tax_case_id' => $this->taxCaseId,
+                    'stage' => $this->stageName,
+                    'case_owner_id' => $caseOwner?->id,
+                ]);
+                return;
             }
 
             // Log to audit_logs with complete recipient information
             // Wrap in try-catch since custom action values might not be in enum
-            $allRecipients = collect($sentTo)->merge($ccEmails)->unique()->values()->toArray();
+            $allRecipients = array_merge($sentTo, $ccEmails);
+            $allRecipients = array_unique($allRecipients);
             
             try {
                 \App\Models\AuditLog::create([

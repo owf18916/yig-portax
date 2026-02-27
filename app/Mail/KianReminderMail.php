@@ -59,7 +59,7 @@ class KianReminderMail extends Mailable
             with: [
                 'caseNumber' => $taxCase->case_number,
                 'caseType' => $taxCase->case_type,
-                'caseYear' => $taxCase->fiscal_year?->name,
+                'caseYear' => $taxCase->fiscalYear?->name,
                 'entityName' => $taxCase->entity?->name,
                 'lossAmount' => $lossAmount,
                 'currencyCode' => $currencyCode,

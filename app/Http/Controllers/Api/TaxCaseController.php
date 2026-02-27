@@ -322,6 +322,50 @@ class TaxCaseController extends ApiController
     }
 
     /**
+     * Create workflow history entry (used for Preliminary Refund to unlock Stage 2 access)
+     */
+    public function storeWorkflowHistory(Request $request, TaxCase $taxCase): JsonResponse
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        try {
+            $validated = $request->validate([
+                'stage_id' => 'required|integer',
+                'stage_from' => 'nullable|integer',
+                'stage_to' => 'required|integer',
+                'action' => 'required|in:submitted,approved,routed,skipped,rejected',
+                'status' => 'required|in:draft,submitted,approved,rejected,completed',
+                'decision_value' => 'nullable|string',
+                'notes' => 'nullable|string',
+            ]);
+
+            // Create workflow history entry
+            $workflowHistory = $taxCase->workflowHistories()->create([
+                'stage_id' => $validated['stage_id'],
+                'stage_from' => $validated['stage_from'],
+                'stage_to' => $validated['stage_to'],
+                'action' => $validated['action'],
+                'status' => $validated['status'],
+                'decision_value' => $validated['decision_value'],
+                'user_id' => $user->id,
+                'notes' => $validated['notes'],
+            ]);
+
+            return $this->success($workflowHistory, 'Workflow history created successfully', 201);
+        } catch (\Exception $e) {
+            Log::error('Create workflow history error', [
+                'error' => $e->getMessage(),
+                'case_id' => $taxCase->id,
+                'trace' => $e->getTraceAsString()
+            ]);
+            return $this->error($e->getMessage(), 400);
+        }
+    }
+
+    /**
      * Get all documents for a tax case
      */
     public function documents(TaxCase $taxCase, Request $request): JsonResponse

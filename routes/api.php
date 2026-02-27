@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\SphpRecordController;
 use App\Http\Controllers\Api\SpuhRecordController;
 use App\Http\Controllers\Api\AnnouncementController;
 use App\Http\Controllers\Api\RefundProcessController;
+use App\Http\Controllers\Api\RefundStageController;
 use App\Http\Controllers\Api\BankTransferRequestController;
 use App\Http\Controllers\Api\PreliminaryRefundRequestController;
 use App\Http\Controllers\Api\AppealDecisionController;
@@ -141,6 +142,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         Route::get('/', [TaxCaseController::class, 'show'])->name('tax-cases.show');
         Route::put('/', [TaxCaseController::class, 'update'])->name('tax-cases.update');
         Route::get('/workflow-history', [TaxCaseController::class, 'workflowHistory'])->name('tax-cases.workflow-history');
+        Route::post('/workflow-history', [TaxCaseController::class, 'storeWorkflowHistory'])->name('tax-cases.store-workflow-history');
         Route::get('/documents', [TaxCaseController::class, 'documents'])->name('tax-cases.documents');
         Route::post('/complete', [TaxCaseController::class, 'complete'])->name('tax-cases.complete');
         Route::post('/close', [TaxCaseController::class, 'close'])->name('tax-cases.close');
@@ -784,28 +786,58 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         Route::get('/supreme-court-decisions', [SupremeCourtDecisionController::class, 'show'])->name('supreme-court-decisions.show');
         Route::post('/supreme-court-decisions/{supremeCourtDecision}/approve', [SupremeCourtDecisionController::class, 'approve'])->name('supreme-court-decisions.approve');
         
-        // Refund Stages - Workflow stages 13, 14, 15
-        // GET stage data
+        // ============================================================================
+        // REFUND PROCESS ROUTES - Independent Parallel Track (NOT continuation of stages 1-12)
+        // ============================================================================
+        // Refund Stages 1-4 (replaces old confusing naming of stages 13-15)
+        // - Stage 1: Refund Initiated
+        // - Stage 2: Bank Transfer Request
+        // - Stage 3: Transfer Instruction Received
+        // - Stage 4: Refund Completed/Received
+        
+        // Refund Stage 1: Create & view refund process
+        Route::get('/refund-stages/1', [RefundStageController::class, 'showRefundStage1'])->name('refund-stages.1.show');
+        Route::post('/refund-stages/1', [RefundStageController::class, 'createRefundStage1'])->name('refund-stages.1.store');
+        
+        // Refund Stage 2: Create & view bank transfer request
+        Route::get('/refund-stages/2', [RefundStageController::class, 'showRefundStage2'])->name('refund-stages.2.show');
+        Route::post('/refund-stages/2', [RefundStageController::class, 'createRefundStage2'])->name('refund-stages.2.store');
+        
+        // Refund Stage 3: View & update transfer instruction details
+        Route::get('/refund-stages/3', [RefundStageController::class, 'showRefundStage3'])->name('refund-stages.3.show');
+        Route::post('/refund-stages/3', [RefundStageController::class, 'updateRefundStage3'])->name('refund-stages.3.update');
+        
+        // Refund Stage 4: View & complete refund (final stage)
+        Route::get('/refund-stages/4', [RefundStageController::class, 'showRefundStage4'])->name('refund-stages.4.show');
+        Route::post('/refund-stages/4', [RefundStageController::class, 'completeRefundStage4'])->name('refund-stages.4.complete');
+        
+        // Refund-scoped Routes: Specify which refund process to operate on
+        // Useful when multiple refunds exist for preliminary stage (stage_id=0)
+        Route::get('/refunds/{refundId}/refund-stages/1', [RefundStageController::class, 'showRefundStage1'])->name('refunds.refund-stages.1.show');
+        Route::get('/refunds/{refundId}/refund-stages/2', [RefundStageController::class, 'showRefundStage2'])->name('refunds.refund-stages.2.show');
+        Route::post('/refunds/{refundId}/refund-stages/2', [RefundStageController::class, 'createRefundStage2'])->name('refunds.refund-stages.2.store');
+        Route::get('/refunds/{refundId}/refund-stages/3', [RefundStageController::class, 'showRefundStage3'])->name('refunds.refund-stages.3.show');
+        Route::post('/refunds/{refundId}/refund-stages/3', [RefundStageController::class, 'updateRefundStage3'])->name('refunds.refund-stages.3.update');
+        Route::get('/refunds/{refundId}/refund-stages/4', [RefundStageController::class, 'showRefundStage4'])->name('refunds.refund-stages.4.show');
+        Route::post('/refunds/{refundId}/refund-stages/4', [RefundStageController::class, 'completeRefundStage4'])->name('refunds.refund-stages.4.complete');
+        
+        // ⚠️ DEPRECATED: Old routes (stages 13-15) - Kept for backward compatibility
+        // These will be removed in a future version. Use /refund-stages/* instead.
         Route::get('/workflow/13', [BankTransferRequestController::class, 'show'])->name('workflow.stage-13.show');
         Route::get('/workflow/14', [BankTransferRequestController::class, 'showTransferInstruction'])->name('workflow.stage-14.show');
         Route::get('/workflow/15', [BankTransferRequestController::class, 'showRefundReceipt'])->name('workflow.stage-15.show');
-        
-        // POST stage data
         Route::post('/workflow/13', [BankTransferRequestController::class, 'createTransferRequest'])->name('workflow.stage-13.store');
         Route::post('/workflow/14', [BankTransferRequestController::class, 'updateTransferInstruction'])->name('workflow.stage-14.store');
         Route::post('/workflow/15', [BankTransferRequestController::class, 'completeRefund'])->name('workflow.stage-15.store');
         
-        // Refund-scoped Workflow Routes (Stages 13-15) - Support multiple refunds per decision point
-        // GET stage data with specific refund
         Route::get('/refunds/{refundId}/workflow/13', [BankTransferRequestController::class, 'show'])->name('workflow.refund.stage-13.show');
         Route::get('/refunds/{refundId}/workflow/14', [BankTransferRequestController::class, 'showTransferInstruction'])->name('workflow.refund.stage-14.show');
         Route::get('/refunds/{refundId}/workflow/15', [BankTransferRequestController::class, 'showRefundReceipt'])->name('workflow.refund.stage-15.show');
-        
-        // POST stage data with specific refund
         Route::post('/refunds/{refundId}/workflow/13', [BankTransferRequestController::class, 'createTransferRequest'])->name('workflow.refund.stage-13.store');
         Route::post('/refunds/{refundId}/workflow/14', [BankTransferRequestController::class, 'updateTransferInstruction'])->name('workflow.refund.stage-14.store');
         Route::post('/refunds/{refundId}/workflow/15', [BankTransferRequestController::class, 'completeRefund'])->name('workflow.refund.stage-15.store');
         
+        // Other refund utilities
         Route::get('/refund-processes', [RefundProcessController::class, 'index'])->name('refund-processes.index');
         Route::post('/refund-processes', [RefundProcessController::class, 'store'])->name('refund-processes.store');
         Route::get('/refund-processes/{refundProcess}', [RefundProcessController::class, 'show'])->name('refund-processes.show');

@@ -26,6 +26,11 @@ const SuratInstruksiTransferForm = defineAsyncComponent(() => import('../pages/S
 const RefundReceivedForm = defineAsyncComponent(() => import('../pages/RefundReceivedForm.vue'))
 const KianSubmissionForm = defineAsyncComponent(() => import('../pages/KianSubmissionForm.vue'))
 const KianForm = () => import('../pages/KianForm.vue')
+const PreliminaryRefundForm = defineAsyncComponent(() => import('../pages/PreliminaryRefundForm.vue'))
+const RefundStage1Form = defineAsyncComponent(() => import('../pages/RefundStage1Form.vue'))
+const RefundStage2Form = defineAsyncComponent(() => import('../pages/RefundStage2Form.vue'))
+const RefundStage3Form = defineAsyncComponent(() => import('../pages/RefundStage3Form.vue'))
+const RefundStage4Form = defineAsyncComponent(() => import('../pages/RefundStage4Form.vue'))
 
 const routes = [
   {
@@ -165,6 +170,62 @@ const routes = [
     path: '/tax-cases/:id',
     name: 'TaxCaseDetail',
     component: TaxCaseDetail,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/tax-cases/:id/refund-preliminary',
+    name: 'PreliminaryRefundForm',
+    component: PreliminaryRefundForm,
+    meta: { requiresAuth: true }
+  },
+  // ✅ NEW: Refund Stage Forms (1-4) - Main refund progression
+  {
+    path: '/tax-cases/:id/refund-stages/1',
+    name: 'RefundStage1Form',
+    component: RefundStage1Form,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/tax-cases/:id/refund-stages/2',
+    name: 'RefundStage2Form',
+    component: RefundStage2Form,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/tax-cases/:id/refund-stages/3',
+    name: 'RefundStage3Form',
+    component: RefundStage3Form,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/tax-cases/:id/refund-stages/4',
+    name: 'RefundStage4Form',
+    component: RefundStage4Form,
+    meta: { requiresAuth: true }
+  },
+  // ✅ NEW: Refund Stage Forms with specific refund ID (for updating existing refunds)
+  {
+    path: '/tax-cases/:id/refunds/:refundId/refund-stages/1',
+    name: 'RefundStage1FormWithId',
+    component: RefundStage1Form,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/tax-cases/:id/refunds/:refundId/refund-stages/2',
+    name: 'RefundStage2FormWithId',
+    component: RefundStage2Form,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/tax-cases/:id/refunds/:refundId/refund-stages/3',
+    name: 'RefundStage3FormWithId',
+    component: RefundStage3Form,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/tax-cases/:id/refunds/:refundId/refund-stages/4',
+    name: 'RefundStage4FormWithId',
+    component: RefundStage4Form,
     meta: { requiresAuth: true }
   },
   {

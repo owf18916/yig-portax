@@ -15,11 +15,17 @@ class RefundProcess extends Model
     protected $table = 'refund_processes';
 
     // ✅ Stage ID constants (align with TaxCase stages)
-    const STAGE_ID_PRELIMINARY = 0;      // Special: Preliminary Refund
-    const STAGE_ID_SKP = 4;               // SKP Decision
-    const STAGE_ID_OBJECTION = 7;         // Objection Decision
-    const STAGE_ID_APPEAL = 10;           // Appeal Decision
-    const STAGE_ID_SUPREME_COURT = 12;    // Supreme Court Decision
+    const STAGE_ID_PRELIMINARY = 0;      // Special: Preliminary Refund (allows multiple)
+    const STAGE_ID_SKP = 4;               // SKP Decision (single refund)
+    const STAGE_ID_OBJECTION = 7;         // Objection Decision (single refund)
+    const STAGE_ID_APPEAL = 10;           // Appeal Decision (single refund)
+    const STAGE_ID_SUPREME_COURT = 12;    // Supreme Court Decision (single refund)
+
+    // ✅ Refund Stage constants for internal flow tracking (Refund Stage 1-4)
+    const REFUND_STAGE_INITIATED = 'initiated';        // Refund Stage 1: Process initiated
+    const REFUND_STAGE_TRANSFER_REQUEST = 'transfer_request';  // Refund Stage 2: Transfer request sent
+    const REFUND_STAGE_INSTRUCTION = 'instruction';    // Refund Stage 3: Instruction received
+    const REFUND_STAGE_COMPLETED = 'completed';        // Refund Stage 4: Refund completed
 
     // ⚠️ DEPRECATED: stage_source will be removed in future migration
     const STAGE_SOURCE_PRELIMINARY = 'PRELIMINARY';
@@ -27,6 +33,16 @@ class RefundProcess extends Model
     const STAGE_SOURCE_OBJECTION = 'OBJECTION';
     const STAGE_SOURCE_APPEAL = 'APPEAL';
     const STAGE_SOURCE_SUPREME_COURT = 'SUPREME_COURT';
+
+    /**
+     * Valid stage IDs for refund processes
+     */
+    const VALID_STAGE_IDS = [0, 4, 7, 10, 12];
+
+    /**
+     * Decision stages (NOT preliminary) where only 1 refund is allowed per tax_case
+     */
+    const DECISION_STAGE_IDS = [4, 7, 10, 12];
 
     protected $fillable = [
         'tax_case_id',
@@ -63,6 +79,34 @@ class RefundProcess extends Model
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',
     ];
+
+    /**
+     * ✅ BOOT: Hook into model lifecycle to validate uniqueness constraints
+     * Enforces: Only ONE refund per tax_case for decision stages (4,7,10,12)
+     *           MULTIPLE refunds allowed for PRELIMINARY stage (0)
+     */
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($model) {
+            // Validate that decision stages can only have 1 refund per tax_case
+            if (in_array($model->stage_id, self::DECISION_STAGE_IDS)) {
+                $existingRefund = self::where('tax_case_id', $model->tax_case_id)
+                    ->where('stage_id', $model->stage_id)
+                    ->whereNull('deleted_at')  // Exclude soft-deleted records
+                    ->exists();
+
+                if ($existingRefund) {
+                    throw new \Illuminate\Database\Eloquent\ModelNotFoundException(
+                        "A refund already exists for this stage. Only one refund per decision stage is allowed. "
+                        . "Stage ID: {$model->stage_id}, Tax Case ID: {$model->tax_case_id}"
+                    );
+                }
+            }
+            // Note: Preliminary (stage_id=0) allows multiple refunds - no validation needed
+        });
+    }
 
     // Relationships
     public function taxCase(): BelongsTo
@@ -181,6 +225,78 @@ class RefundProcess extends Model
             ->first();
         
         return ($lastRefund?->sequence_number ?? 0) + 1;
+    }
+
+    /**
+     * ✅ NEW: Determine current Refund Stage (1-4) based on bank_transfer_requests status
+     * 
+     * Refund Stage 1 (INITIATED): refund_processes created, no bank transfer request yet
+     * Refund Stage 2: bank_transfer_requests created with transfer_status='pending'
+     * Refund Stage 3: transfer_status='processing' or instruction received
+     * Refund Stage 4: transfer_status='completed' and received_date is set
+     * 
+     * @return int Stage number (1-4)
+     */
+    public function getCurrentRefundStage(): int
+    {
+        $latestTransfer = $this->bankTransferRequests()
+            ->latest()
+            ->first();
+
+        // Stage 1: No bank transfer request yet
+        if (!$latestTransfer) {
+            return 1;
+        }
+
+        // Stage 4: Transfer completed
+        if ($latestTransfer->transfer_status === 'completed' && $latestTransfer->received_date) {
+            return 4;
+        }
+
+        // Stage 3: Instruction received (processing status + instruction_received_date)
+        if ($latestTransfer->transfer_status === 'processing' && $latestTransfer->instruction_received_date) {
+            return 3;
+        }
+
+        // Stage 2: Transfer request created (pending or processing without instruction yet)
+        if ($latestTransfer->transfer_status === 'pending' || $latestTransfer->transfer_status === 'processing') {
+            return 2;
+        }
+
+        // Default to stage 1 if status is unclear
+        return 1;
+    }
+
+    /**
+     * ✅ NEW: Check if refund is currently in Refund Stage 1
+     */
+    public function isRefundStage1(): bool
+    {
+        return $this->getCurrentRefundStage() === 1;
+    }
+
+    /**
+     * ✅ NEW: Check if refund is currently in Refund Stage 2
+     */
+    public function isRefundStage2(): bool
+    {
+        return $this->getCurrentRefundStage() === 2;
+    }
+
+    /**
+     * ✅ NEW: Check if refund is currently in Refund Stage 3
+     */
+    public function isRefundStage3(): bool
+    {
+        return $this->getCurrentRefundStage() === 3;
+    }
+
+    /**
+     * ✅ NEW: Check if refund is currently in Refund Stage 4 (Completed)
+     */
+    public function isRefundStage4(): bool
+    {
+        return $this->getCurrentRefundStage() === 4;
     }
 }
 
