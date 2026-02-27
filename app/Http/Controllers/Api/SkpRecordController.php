@@ -152,7 +152,8 @@ class SkpRecordController extends ApiController
             ]);
             
             // ✅ UPDATED: Dispatch with stage_id = 4
-            dispatch(new SendKianReminderJob($taxCase->id, 'Stage 4 - SKP (Surat Ketetapan Pajak)', $reason, 4));
+            $caseId = (int) $taxCase->id;
+            dispatch(new SendKianReminderJob($caseId, 'Stage 4 - SKP (Surat Ketetapan Pajak)', $reason, 4));
             
             Log::info('[SKP] KIAN CHECK - Job dispatched successfully for Stage 4');
         } else {

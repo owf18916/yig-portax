@@ -333,7 +333,8 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                     if ($taxCase->needsKianAtStage(4)) {
                         $reason = $taxCase->getKianEligibilityReasonForStage(4);
                         if ($reason) {
-                            dispatch(new \App\Jobs\SendKianReminderJob($taxCase->id, 'Stage 4 - SKP (Surat Ketetapan Pajak)', $reason, 4));
+                            $caseId = (int) $taxCase->id;
+                            dispatch(new \App\Jobs\SendKianReminderJob($caseId, 'Stage 4 - SKP (Surat Ketetapan Pajak)', $reason, 4));
                         }
                     }
 
@@ -689,17 +690,20 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                 // Trigger KIAN whenever loss exists, not conditional on next stage choice
                 if ($stage == 7 && $taxCase->needsKianAtStage(7)) {
                     $reason = $taxCase->getKianEligibilityReasonForStage(7);
-                    dispatch(new \App\Jobs\SendKianReminderJob($taxCase->id, 'Stage 7 - Objection Decision (Keputusan Keberatan)', $reason, 7));
+                    $caseId = (int) $taxCase->id;
+                    dispatch(new \App\Jobs\SendKianReminderJob($caseId, 'Stage 7 - Objection Decision (Keputusan Keberatan)', $reason, 7));
                 }
                 
                 if ($stage == 10 && $taxCase->needsKianAtStage(10)) {
                     $reason = $taxCase->getKianEligibilityReasonForStage(10);
-                    dispatch(new \App\Jobs\SendKianReminderJob($taxCase->id, 'Stage 10 - Appeal Decision (Keputusan Banding)', $reason, 10));
+                    $caseId = (int) $taxCase->id;
+                    dispatch(new \App\Jobs\SendKianReminderJob($caseId, 'Stage 10 - Appeal Decision (Keputusan Banding)', $reason, 10));
                 }
                 
                 if ($stage == 12 && $taxCase->needsKianAtStage(12)) {
                     $reason = $taxCase->getKianEligibilityReasonForStage(12);
-                    dispatch(new \App\Jobs\SendKianReminderJob($taxCase->id, 'Stage 12 - Supreme Court Decision (Keputusan Peninjauan Kembali)', $reason, 12));
+                    $caseId = (int) $taxCase->id;
+                    dispatch(new \App\Jobs\SendKianReminderJob($caseId, 'Stage 12 - Supreme Court Decision (Keputusan Peninjauan Kembali)', $reason, 12));
                 }
                 
                 return response()->json([

@@ -96,7 +96,8 @@ class ObjectionDecisionController extends ApiController
         // KIAN is needed WHENEVER loss exists at Stage 7, REGARDLESS of next stage choice
         if ($taxCase->needsKianAtStage(7)) {
             $reason = $taxCase->getKianEligibilityReasonForStage(7);
-            dispatch(new SendKianReminderJob($taxCase->id, 'Stage 7 - Objection Decision (Keputusan Keberatan)', $reason, 7));
+            $caseId = (int) $taxCase->id;
+            dispatch(new SendKianReminderJob($caseId, 'Stage 7 - Objection Decision (Keputusan Keberatan)', $reason, 7));
         }
 
         return $this->success(
