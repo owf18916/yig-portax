@@ -135,7 +135,7 @@ class SendKianReminderJob implements ShouldQueue
                     'auditable_id' => $this->taxCaseId,
                     'user_id' => $case->user_id,
                     'action' => 'submitted', // Use standard action value
-                    'description' => "KIAN reminder sent for stage: {$this->stageName} (Stage {$this->stageId})",
+                    'model_name' => 'TaxCase',
                     'old_values' => null,
                     'new_values' => json_encode([
                         'stage_id' => $this->stageId,
@@ -147,6 +147,7 @@ class SendKianReminderJob implements ShouldQueue
                         'all_recipients' => $allRecipients,
                     ]),
                     'ip_address' => request()?->ip(),
+                    'performed_at' => now(),
                 ]);
             } catch (\Exception $auditError) {
                 // Log audit failure but don't fail the entire job

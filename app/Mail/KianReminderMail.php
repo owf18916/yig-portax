@@ -59,12 +59,12 @@ class KianReminderMail extends Mailable
             with: [
                 'caseNumber' => $taxCase->case_number,
                 'caseType' => $taxCase->case_type,
-                'caseYear' => $taxCase->fiscalYear?->name,
+                'caseYear' => $taxCase->case_type === 'CIT' ? $taxCase->fiscalYear?->year : $taxCase->period?->period_code,
                 'entityName' => $taxCase->entity?->name,
                 'lossAmount' => $lossAmount,
                 'currencyCode' => $currencyCode,
                 'stageName' => $this->stageName,
-                'caseUrl' => route('tax-cases.show', $taxCase->id),
+                'caseUrl' => url('/tax-cases/' . $taxCase->id),
             ],
         );
     }
