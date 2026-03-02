@@ -25,17 +25,27 @@ class SendKianReminderJob implements ShouldQueue
     /**
      * Create a new job instance.
      * 
-     * @param int $taxCaseId The tax case ID
+     * @param int|TaxCase $taxCaseId The tax case ID (or TaxCase model as fallback)
      * @param string $stageName Human-readable stage name (e.g., "Stage 4 - SKP")
      * @param string $reason Eligibility reason for KIAN
      * @param int $stageId The stage ID that triggered KIAN (4, 7, 10, 12)
      */
-    public function __construct(int $taxCaseId, string $stageName, string $reason, int $stageId = 12)
+    public function __construct(int|TaxCase $taxCaseId, string $stageName, string $reason, int $stageId = 12)
     {
-        $this->taxCaseId = $taxCaseId;
+        // DEFENSIVE: Handle case where model is passed instead of ID (due to serialization issues)
+        if ($taxCaseId instanceof TaxCase) {
+            Log::warning('SendKianReminderJob received TaxCase model instead of ID - converting', [
+                'tax_case_id' => $taxCaseId->id,
+                'stage' => $stageName,
+            ]);
+            $this->taxCaseId = (int) $taxCaseId->id;
+        } else {
+            $this->taxCaseId = (int) $taxCaseId;
+        }
+        
         $this->stageName = $stageName;
         $this->reason = $reason;
-        $this->stageId = $stageId;
+        $this->stageId = (int) $stageId;
     }
 
     /**

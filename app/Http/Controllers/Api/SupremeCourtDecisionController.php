@@ -86,8 +86,10 @@ class SupremeCourtDecisionController extends ApiController
             // KIAN is needed WHENEVER loss exists at Stage 12, REGARDLESS of decision type
             if ($taxCase->needsKianAtStage(12)) {
                 $reason = $taxCase->getKianEligibilityReasonForStage(12);
-                $caseId = (int) $taxCase->id;
-                dispatch(new SendKianReminderJob($caseId, 'Stage 12 - Supreme Court Decision (Keputusan Peninjauan Kembali)', $reason, 12));
+                if ($reason) {
+                    $caseId = (int) $taxCase->id;
+                    dispatch(new SendKianReminderJob($caseId, 'Stage 12 - Supreme Court Decision (Keputusan Peninjauan Kembali)', $reason, 12));
+                }
             }
 
             // Mark case as completed (Supreme Court is final stage)
