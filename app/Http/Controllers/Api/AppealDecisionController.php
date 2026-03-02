@@ -108,8 +108,10 @@ class AppealDecisionController extends ApiController
         // KIAN is needed WHENEVER loss exists at Stage 10, REGARDLESS of next stage choice
         if ($taxCase->needsKianAtStage(10)) {
             $reason = $taxCase->getKianEligibilityReasonForStage(10);
-            $caseId = (int) $taxCase->id;
-            dispatch(new SendKianReminderJob($caseId, 'Stage 10 - Appeal Decision (Keputusan Banding)', $reason, 10));
+            if ($reason) {
+                $caseId = (int) $taxCase->id;
+                dispatch(new SendKianReminderJob($caseId, 'Stage 10 - Appeal Decision (Keputusan Banding)', $reason, 10));
+            }
         }
 
         return $this->success(

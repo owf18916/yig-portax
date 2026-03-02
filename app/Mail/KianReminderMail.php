@@ -21,12 +21,18 @@ class KianReminderMail extends Mailable
     /**
      * Create a new message instance.
      */
-    public function __construct(int $taxCaseId, string $stageName, string $reason, int $stageId)
+    public function __construct(int|TaxCase $taxCaseId, string $stageName, string $reason, int $stageId)
     {
-        $this->taxCaseId = $taxCaseId;
+        // DEFENSIVE: Handle case where model is passed instead of ID
+        if ($taxCaseId instanceof TaxCase) {
+            $this->taxCaseId = (int) $taxCaseId->id;
+        } else {
+            $this->taxCaseId = (int) $taxCaseId;
+        }
+        
         $this->stageName = $stageName;
         $this->reason = $reason;
-        $this->stageId = $stageId;
+        $this->stageId = (int) $stageId;
     }
 
     /**
