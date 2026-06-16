@@ -151,8 +151,8 @@ class ObjectionDecisionController extends ApiController
         ]);
 
         $stageMapping = [
-            8 => 'Appeal',
-            12 => 'Refund',
+            8 => 'Appeal Submission',
+            13 => 'Bank Transfer Request',
         ];
         $stageName = $stageMapping[$nextStage] ?? 'Unknown';
 

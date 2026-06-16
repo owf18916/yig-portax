@@ -430,11 +430,11 @@ const expandedSections = ref({
 const workflowStages = ref([
   // Main Flow - Sequential Stages (1-12)
   { id: 1, name: 'SPT Filing', description: 'Surat Pemberitahuan Tahunan - Initial tax return submission', branch: 'main', completed: false, accessible: true },
-  { id: 2, name: 'SP2 Receipt', description: 'Surat Pemberitahuan Pemeriksaan - Audit notification', branch: 'main', completed: false, accessible: false },
-  { id: 3, name: 'SPHP Receipt', description: 'Surat Pemberitahuan Hasil Pemeriksaan - Audit findings notification', branch: 'main', completed: false, accessible: false },
-  { id: 4, name: 'SKP Receipt', description: 'Surat Ketetapan Pajak - Tax assessment letter (Decision Point)', branch: 'main', completed: false, accessible: false },
+  { id: 2, name: 'SP2 Audit Notice', description: 'Surat Pemberitahuan Pemeriksaan - Audit notification', branch: 'main', completed: false, accessible: false },
+  { id: 3, name: 'SPHP Audit Findings', description: 'Surat Pemberitahuan Hasil Pemeriksaan - Audit findings notification', branch: 'main', completed: false, accessible: false },
+  { id: 4, name: 'SKP Assessment', description: 'Surat Ketetapan Pajak - Tax assessment letter (Decision Point)', branch: 'main', completed: false, accessible: false },
   { id: 5, name: 'Objection Submission', description: 'Surat Keberatan - Filing objection to SKP', branch: 'main', completed: false, accessible: false },
-  { id: 6, name: 'SPUH Receipt', description: 'Surat Pemberitahuan Untuk Hadir - Summon letter', branch: 'main', completed: false, accessible: false },
+  { id: 6, name: 'SPUH Record', description: 'Surat Pemberitahuan Untuk Hadir - Summon letter', branch: 'main', completed: false, accessible: false },
   { id: 7, name: 'Objection Decision', description: 'Keputusan Keberatan - Decision on objection (Decision Point)', branch: 'main', completed: false, accessible: false },
   { id: 8, name: 'Appeal Submission', description: 'Surat Banding - Filing appeal to tax court', branch: 'main', completed: false, accessible: false },
   { id: 9, name: 'Appeal Explanation Request', description: 'Permintaan Penjelasan Banding - Tax court explanation request', branch: 'main', completed: false, accessible: false },

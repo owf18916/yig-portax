@@ -26,7 +26,7 @@
           + New CIT Case
         </Button>
         <Button @click="$router.push('/tax-cases/create/vat')" variant="primary">
-          + New VAT Case
+          + New VAT SPT
         </Button>
       </div>
 
@@ -251,23 +251,13 @@ import Button from '../components/Button.vue'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
 import ConfirmationDialog from '../components/ConfirmationDialog.vue'
 import Toast from '../components/Toast.vue'
+import { workflowStageLabels } from '../constants/workflowStages'
 
 const router = useRouter()
 
 // Stage name mapping
 const stageNames = {
-  1: 'SPT Filing',
-  2: 'SP2',
-  3: 'SPHP',
-  4: 'SKP',
-  5: 'Objection Submission',
-  6: 'SPUH',
-  7: 'Objection Decision',
-  8: 'Appeal Submission',
-  9: 'Appeal Explanation',
-  10: 'Appeal Decision',
-  11: 'Supreme Court Submission',
-  12: 'Supreme Court Decision',
+  ...workflowStageLabels,
   13: 'Bank Transfer Request',
   14: 'Transfer Instruction',
   15: 'Refund Received',

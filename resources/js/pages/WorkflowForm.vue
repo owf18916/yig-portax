@@ -144,8 +144,8 @@ const workflowStages = {
   },
   2: {
     id: 2,
-    name: 'SP2 Record',
-    description: 'Second Level Tax Record - Follow-up Notification',
+    name: 'SP2 Audit Notice',
+    description: 'Audit notification from the tax authority',
     endpoint: '/api/workflows/sp2/submit',
     documentation: 'Submit SP2 record with amendments if needed.',
     fields: [
@@ -156,8 +156,8 @@ const workflowStages = {
   },
   3: {
     id: 3,
-    name: 'SPHP Record',
-    description: 'Tax Correction Notification - Self-correction',
+    name: 'SPHP Audit Findings',
+    description: 'Audit findings notification',
     endpoint: '/api/workflows/sphp/submit',
     documentation: 'Self-correct your tax report before audit.',
     fields: [
@@ -168,8 +168,8 @@ const workflowStages = {
   },
   4: {
     id: 4,
-    name: 'SKP Record',
-    description: 'Tax Audit Report - Official Assessment',
+    name: 'SKP Assessment',
+    description: 'Tax assessment letter',
     endpoint: '/api/workflows/skp/submit',
     documentation: 'Audit report results and assessment details.',
     fields: [
@@ -180,7 +180,7 @@ const workflowStages = {
   },
   5: {
     id: 5,
-    name: 'Objection',
+    name: 'Objection Submission',
     description: 'Formal Objection - Administrative Remedy',
     endpoint: '/api/workflows/objection/submit',
     documentation: 'File objection against tax assessment.',
@@ -192,8 +192,8 @@ const workflowStages = {
   },
   6: {
     id: 6,
-    name: 'Appeal',
-    description: 'Administrative Appeal - Higher Level Review',
+    name: 'SPUH Record',
+    description: 'Objection hearing notice and attendance record',
     endpoint: '/api/workflows/appeal/submit',
     documentation: 'Appeal to higher tax authority if objection rejected.',
     fields: [
@@ -204,8 +204,8 @@ const workflowStages = {
   },
   7: {
     id: 7,
-    name: 'Supreme Court',
-    description: 'Cassation to Supreme Court',
+    name: 'Objection Decision',
+    description: 'Decision on the submitted objection',
     endpoint: '/api/workflows/supreme-court/submit',
     documentation: 'Final legal remedy through cassation.',
     fields: [
@@ -216,8 +216,8 @@ const workflowStages = {
   },
   8: {
     id: 8,
-    name: 'Refund',
-    description: 'Tax Refund Process - Final Settlement',
+    name: 'Appeal Submission',
+    description: 'Tax court appeal filing',
     endpoint: '/api/workflows/refund/submit',
     documentation: 'Process and settle tax refund.',
     fields: [

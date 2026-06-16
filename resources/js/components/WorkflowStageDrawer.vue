@@ -129,7 +129,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import { findWorkflowStage } from '../constants/workflowStages'
 
 const props = defineProps({
   isOpen: {
@@ -147,161 +148,14 @@ const emit = defineEmits(['close'])
 const cases = ref([])
 const loading = ref(false)
 
-// Stage definitions with info
-const stageDefinitions = {
-  1: {
-    name: 'SPT Filing',
-    subtitle: 'Initial Tax Return Submission',
-    emoji: '📋',
-    description: 'File your initial tax return (SPT - Tax Return Notification) with the tax authority. This is the first step in the tax dispute resolution process.',
-    requiredDocs: [
-      'SPT (Tax Return) form',
-      'Supporting financial statements',
-      'Entity registration documents',
-      'Period documentation'
-    ],
-    inputFields: [
-      'Entity Name',
-      'Fiscal Period',
-      'Currency',
-      'Disputed Amount',
-      'Filing Decision (Filed/Not Filed)'
-    ]
-  },
-  2: {
-    name: 'SP2 Record',
-    subtitle: 'Second Level Tax Record',
-    emoji: '📑',
-    description: 'Record the SP2 - the tax authority notification indicating initiation of tax audit examination.',
-    requiredDocs: [
-      'SP2 letter from tax authority',
-      'Auditor details',
-      'Examination schedule'
-    ],
-    inputFields: [
-      'SP2 Number',
-      'Issue Date',
-      'Receipt Date',
-      'Auditor Name',
-      'Auditor Contact Information'
-    ]
-  },
-  3: {
-    name: 'SPHP Record',
-    subtitle: 'Audit Findings Notification',
-    emoji: '✏️',
-    description: 'Record the SPHP - the notification of audit findings and tax correction requirements.',
-    requiredDocs: [
-      'SPHP letter from tax authority',
-      'Audit findings breakdown',
-      'Correction details'
-    ],
-    inputFields: [
-      'SPHP Number',
-      'Issue Date',
-      'Receipt Date',
-      'Royalty Correction Amount',
-      'Service Correction Amount',
-      'Other Correction Amount'
-    ]
-  },
-  4: {
-    name: 'SKP Record',
-    subtitle: 'Tax Assessment Letter',
-    emoji: '🔍',
-    description: 'Record the SKP - the tax assessment letter that determines the final tax amount and classification.',
-    requiredDocs: [
-      'SKP letter from tax authority',
-      'Tax assessment details',
-      'SKP type classification'
-    ],
-    inputFields: [
-      'SKP Number',
-      'Issue Date',
-      'Receipt Date',
-      'SKP Type (Overpaid/Neutral/Underpaid)',
-      'SKP Amount',
-      'Audit Corrections Breakdown'
-    ]
-  },
-  5: {
-    name: 'Objection',
-    subtitle: 'Formal Objection Filing',
-    emoji: '⚠️',
-    description: 'File a formal objection against the tax authority\'s decision if you disagree with the assessment.',
-    requiredDocs: [
-      'Objection Letter',
-      'Supporting evidence',
-      'Legal basis for objection'
-    ],
-    inputFields: [
-      'Objection Letter Number',
-      'Submission Date',
-      'Objection Amount',
-      'Objection Grounds'
-    ]
-  },
-  6: {
-    name: 'Appeal',
-    subtitle: 'Administrative Appeal',
-    emoji: '⚖️',
-    description: 'File an appeal (Surat Banding) to the tax court if the objection is rejected or partially granted but you wish to pursue further.',
-    requiredDocs: [
-      'Surat Banding (Appeal Letter)',
-      'Court filing documents',
-      'Legal arguments'
-    ],
-    inputFields: [
-      'Appeal Letter Number',
-      'Submission Date',
-      'Appeal Amount',
-      'Appeal Grounds'
-    ]
-  },
-  7: {
-    name: 'Supreme Court',
-    subtitle: 'Cassation to Supreme Court',
-    emoji: '⚖️',
-    description: 'Request a cassation (review) to the Supreme Court if you wish to challenge the tax court\'s decision on points of law.',
-    requiredDocs: [
-      'Permohonan Peninjauan Kembali',
-      'Supreme Court filing forms',
-      'Legal memorandum'
-    ],
-    inputFields: [
-      'Cassation Request Number',
-      'Submission Date',
-      'Legal Points in Question',
-      'Amount in Dispute'
-    ]
-  },
-  8: {
-    name: 'Refund',
-    subtitle: 'Process Refund',
-    emoji: '💰',
-    description: 'Process the refund if your case has been approved. Choose refund method and provide banking details.',
-    requiredDocs: [
-      'Bank account details',
-      'Refund authorization',
-      'Tax office confirmation'
-    ],
-    inputFields: [
-      'Refund Method (Bank Transfer/Check/Offset)',
-      'Bank Name (if applicable)',
-      'Account Number (if applicable)',
-      'Refund Amount',
-      'Expected Processing Timeline'
-    ]
-  }
-}
 
 const stageInfo = computed(() => {
-  return stageDefinitions[props.stageId] || {}
+  return findWorkflowStage(props.stageId) || {}
 })
 
 const stageName = computed(() => stageInfo.value.name || 'Unknown Stage')
 const stageSubtitle = computed(() => stageInfo.value.subtitle || '')
-const stageEmoji = computed(() => stageInfo.value.emoji || '📋')
+const stageEmoji = computed(() => stageInfo.value.emoji || '')
 
 const closeDrawer = () => {
   emit('close')
@@ -370,7 +224,6 @@ onMounted(() => {
   }
 })
 
-import { watch } from 'vue'
 </script>
 
 <style scoped>

@@ -2,7 +2,7 @@
   <div class="space-y-6 max-w-2xl">
     <div class="flex items-center space-x-4">
       <Button @click="$router.back()" variant="secondary">← Back</Button>
-      <h1 class="text-3xl font-bold text-gray-900">Create New VAT Case</h1>
+      <h1 class="text-3xl font-bold text-gray-900">Create New VAT SPT</h1>
     </div>
 
     <Alert

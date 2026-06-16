@@ -193,8 +193,8 @@ class AppealDecisionController extends ApiController
         ]);
 
         $stageMapping = [
-            11 => 'Supreme Court (Peninjauan Kembali)',
-            13 => 'Refund (Bank Transfer)',
+            11 => 'Supreme Court Submission',
+            13 => 'Bank Transfer Request',
         ];
         $stageName = $stageMapping[$nextStage] ?? 'Unknown';
 

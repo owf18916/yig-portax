@@ -34,7 +34,7 @@
                   <p class="text-xs text-gray-600 mt-1">Completed</p>
                 </div>
                 <div class="text-center">
-                  <p class="text-2xl font-bold text-blue-700">13</p>
+                  <p class="text-2xl font-bold text-blue-700">12</p>
                   <p class="text-xs text-gray-600 mt-1">Workflow Stages</p>
                 </div>
               </div>
@@ -54,13 +54,13 @@
             <svg class="inline w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
             </svg>
-            New CIT
+            New SPT CIT
           </Button>
           <Button @click="$router.push('/tax-cases/create/vat')" variant="secondary" block>
             <svg class="inline w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
             </svg>
-            New VAT
+            New SPT VAT
           </Button>
           <Button @click="refreshData" variant="secondary" block>
             <svg class="inline w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -236,6 +236,7 @@ import DisputedAmountChart from '../components/charts/DisputedAmountChart.vue'
 import AnnouncementModal from '../components/AnnouncementModal.vue'
 import ExchangeRateModal from '../components/ExchangeRateModal.vue'
 import ExchangeRateTable from '../components/ExchangeRateTable.vue'
+import { mainWorkflowStages } from '../constants/workflowStages'
 
 const selectedStageId = ref(null)
 const allCases = ref([])
@@ -257,125 +258,8 @@ const completedCases = ref(0)
 const openCasesData = ref([])
 const disputedAmountData = ref([])
 
-const workflowStages = [
-  {
-    id: 1,
-    name: 'SPT Filing',
-    subtitle: 'Initial Tax Return Submission',
-    emoji: '📋',
-    description: 'File your initial tax return (SPT - Surat Pemberitahuan) with the tax authority.',
-    requiredDocs: ['SPT (Tax Return) form', 'Supporting financial statements', 'Entity registration documents'],
-    inputFields: ['Entity', 'Period', 'Currency', 'Dispute Amount']
-  },
-  {
-    id: 2,
-    name: 'SP2 Record',
-    subtitle: 'Second Level Tax Record',
-    emoji: '📝',
-    description: 'Record the SP2 (Surat Pemberitahuan Koreksi) - the notification of tax corrections.',
-    requiredDocs: ['SP2 letter', 'Amendments if needed'],
-    inputFields: ['SP2 Number', 'Issued Date', 'Amended Amount']
-  },
-  {
-    id: 3,
-    name: 'SPHP Record',
-    subtitle: 'Audit Findings Notification',
-    emoji: '🔍',
-    description: 'Record the SPHP (Surat Pemberitahuan Hasil Pemeriksaan) - audit findings and corrections.',
-    requiredDocs: ['SPHP letter', 'Audit findings breakdown'],
-    inputFields: ['SPHP Number', 'Issue Date', 'Royalty Correction', 'Service Correction']
-  },
-  {
-    id: 4,
-    name: 'SKP Record',
-    subtitle: 'Tax Assessment Letter',
-    emoji: '🔬',
-    description: 'Record the SKP (Surat Ketetapan Pajak) - the tax assessment letter.',
-    requiredDocs: ['SKP letter', 'Tax assessment details'],
-    inputFields: ['SKP Number', 'Issue Date', 'SKP Type (LB/NIHIL/KB)', 'Amount']
-  },
-  {
-    id: 5,
-    name: 'Objection',
-    subtitle: 'Formal Objection Filing',
-    emoji: '⚠️',
-    description: 'File a formal objection (Surat Keberatan) against the tax authority decision.',
-    requiredDocs: ['Objection Letter', 'Supporting evidence'],
-    inputFields: ['Objection Number', 'Submission Date', 'Objection Amount']
-  },
-  {
-    id: 6,
-    name: 'SPUH Record',
-    subtitle: 'Administrative Appeal',
-    emoji: '⚖️',
-    description: 'Record the SPUH (Surat Pemberitahuan Usulan Harga) summon letter.',
-    requiredDocs: ['SPUH letter', 'Reply letter'],
-    inputFields: ['SPUH Number', 'Issue Date', 'Response']
-  },
-  {
-    id: 7,
-    name: 'Objection Decision',
-    subtitle: 'Objection Review Decision',
-    emoji: '✍️',
-    description: 'Record the decision on the filed objection.',
-    requiredDocs: ['Decision letter', 'Objection findings'],
-    inputFields: ['Decision Number', 'Decision Date', 'Decision Type']
-  },
-  {
-    id: 8,
-    name: 'Appeal',
-    subtitle: 'Court Appeal Filing',
-    emoji: '📜',
-    description: 'File an appeal (Surat Banding) to the tax court.',
-    requiredDocs: ['Appeal Letter', 'Legal basis'],
-    inputFields: ['Appeal Number', 'Filing Date', 'Appeal Amount']
-  },
-  {
-    id: 9,
-    name: 'Appeal Explanation',
-    subtitle: 'Additional Appeal Documents',
-    emoji: '📚',
-    description: 'Provide additional explanation for the appeal case.',
-    requiredDocs: ['Explanation letter', 'Additional evidence'],
-    inputFields: ['Explanation Content', 'Supporting Documents']
-  },
-  {
-    id: 10,
-    name: 'Appeal Decision',
-    subtitle: 'Appeal Court Decision',
-    emoji: '🏛️',
-    description: 'Record the court decision on the appeal.',
-    requiredDocs: ['Court decision letter'],
-    inputFields: ['Decision Number', 'Decision Date', 'Decision Result']
-  },
-  {
-    id: 11,
-    name: 'Supreme Court Review',
-    subtitle: 'Peninjauan Kembali (Cassation)',
-    emoji: '⚡',
-    description: 'File for Peninjauan Kembali (Supreme Court review) if needed.',
-    requiredDocs: ['Cassation request', 'Legal basis'],
-    inputFields: ['Request Number', 'Filing Date', 'Reasons']
-  },
-  {
-    id: 12,
-    name: 'Supreme Court Decision',
-    subtitle: 'Final Supreme Court Ruling',
-    emoji: '📋',
-    description: 'Record the Supreme Court decision - final and binding.',
-    requiredDocs: ['Supreme Court decision'],
-    inputFields: ['Decision Number', 'Decision Date', 'Final Ruling']
-  },
-  {
-    id: 13,
-    name: 'Refund',
-    subtitle: 'Tax Refund Processing',
-    emoji: '💰',
-    description: 'Process and settle the tax refund based on the final decision.',
-    requiredDocs: ['Refund approval', 'Bank details'],
-    inputFields: ['Refund Amount', 'Bank Account', 'Transfer Date']
-  }
-]
+const workflowStages = mainWorkflowStages
+
 
 const selectedStageInfo = computed(() => {
   return workflowStages.find(s => s.id === selectedStageId.value) || {}
