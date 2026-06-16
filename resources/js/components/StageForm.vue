@@ -126,6 +126,11 @@
                 :required="field.required"
                 :error="formErrors[field.key]"
                 :disabled="field.readonly || submissionComplete || fieldsDisabled"
+                :decimal-places="field.decimalPlaces ?? field.decimal_places"
+                :integer-only="field.integerOnly ?? field.integer_only ?? false"
+                :allow-negative="field.allowNegative ?? field.allow_negative ?? false"
+                :min="field.min ?? 0"
+                :max="field.max"
               />
 
               <!-- Email Input -->

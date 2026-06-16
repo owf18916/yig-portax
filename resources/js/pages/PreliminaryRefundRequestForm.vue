@@ -72,9 +72,10 @@
           </label>
           <div class="relative">
             <span class="absolute left-4 top-2 text-gray-500">Rp</span>
-            <input 
-              v-model.number="formData.requested_amount" 
-              type="number" 
+            <FormField
+              v-model="formData.requested_amount"
+              type="formatted-number"
+              integer-only
               step="1"
               required
               :max="availableAmount"
@@ -157,6 +158,7 @@ import Card from '../components/Card.vue'
 import Button from '../components/Button.vue'
 import Alert from '../components/Alert.vue'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
+import FormField from '../components/FormField.vue'
 
 const route = useRoute()
 const router = useRouter()

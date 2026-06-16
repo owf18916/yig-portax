@@ -62,17 +62,17 @@
             <label class="form-label">
               <span class="required">*</span> Jumlah Kerugian yang Diklaim (Rp):
             </label>
-            <input 
+            <FormField
               v-model="form.loss_amount"
-              type="number"
+              type="formatted-number"
               placeholder="0"
               class="form-control"
-              step="1"
+              integer-only
               min="1"
               :max="lossAmount"
               required
               @blur="validateLossAmount"
-            >
+            />
             <p v-if="errors.loss_amount" class="error-message">{{ errors.loss_amount }}</p>
             <p class="text-xs text-gray-500 mt-1">
               Maksimal: Rp {{ formatAmount(lossAmount) }}
@@ -183,6 +183,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useTaxCaseApi } from '../composables/useTaxCaseApi'
+import FormField from './FormField.vue'
 
 const props = defineProps({
   taxCase: {

@@ -173,9 +173,10 @@
 
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Transfer Amount</label>
-              <input
-                v-model.number="formData.transfer_amount"
-                type="number"
+              <FormField
+                v-model="formData.transfer_amount"
+                type="formatted-number"
+                :decimal-places="2"
                 step="0.01"
                 min="0"
                 placeholder="Amount to transfer (if different from refund amount)"
@@ -232,6 +233,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useToast } from '@/composables/useToast'
+import FormField from '@/components/FormField.vue'
 
 const { showSuccess, showError } = useToast()
 

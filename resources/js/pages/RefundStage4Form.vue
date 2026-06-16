@@ -108,9 +108,10 @@
             <label class="block text-sm font-medium text-gray-700 mb-2">Received Amount *</label>
             <div class="relative">
               <span class="absolute left-4 top-2.5 text-gray-500">Rp</span>
-              <input
-                v-model.number="formData.received_amount"
-                type="number"
+              <FormField
+                v-model="formData.received_amount"
+                type="formatted-number"
+                :decimal-places="2"
                 step="0.01"
                 min="0"
                 placeholder="0.00"
@@ -178,6 +179,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useToast } from '@/composables/useToast'
+import FormField from '@/components/FormField.vue'
 
 const { showSuccess, showError } = useToast()
 

@@ -109,10 +109,11 @@
             <!-- Number Fields -->
             <div v-if="selectedFields.includes('disputed_amount')" class="form-group">
               <label class="form-label">{{ fieldLabel('disputed_amount') }}</label>
-              <input 
-                v-model.number="revisedData.disputed_amount"
-                type="number"
+              <FormField
+                v-model="revisedData.disputed_amount"
+                type="formatted-number"
                 class="form-control"
+                :decimal-places="2"
                 step="0.01"
                 required
               />
@@ -120,10 +121,11 @@
 
             <div v-if="selectedFields.includes('skp_amount')" class="form-group">
               <label class="form-label">{{ fieldLabel('skp_amount') }}</label>
-              <input 
-                v-model.number="revisedData.skp_amount"
-                type="number"
+              <FormField
+                v-model="revisedData.skp_amount"
+                type="formatted-number"
                 class="form-control"
+                :decimal-places="2"
                 step="0.01"
                 required
               />
@@ -252,6 +254,7 @@
 import { ref, computed } from 'vue'
 import { useRevisionFields } from '@/composables/useRevisionFields'
 import { useToast } from '@/composables/useToast'
+import FormField from './FormField.vue'
 
 const props = defineProps({
   caseId: { type: Number, required: true },

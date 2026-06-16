@@ -55,11 +55,11 @@
               <!-- Rate Input Field -->
               <div class="flex-shrink-0 w-32">
                 <div class="relative">
-                  <input
+                  <FormField
                     :id="`rate-${currency.id}`"
-                    v-model.number="formData.rates[index].exchange_rate"
-                    type="number"
-                    step="0.01"
+                    v-model="formData.rates[index].exchange_rate"
+                    type="formatted-number"
+                    :decimal-places="6"
                     min="0.01"
                     placeholder="0.00"
                     class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -106,6 +106,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import axios from 'axios'
 import { useToast } from '../composables/useToast'
+import FormField from './FormField.vue'
 
 const props = defineProps({
   isOpen: {

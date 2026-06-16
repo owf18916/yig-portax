@@ -95,9 +95,10 @@
             <!-- Disputed Amount -->
             <div v-if="selectedFields.includes('disputed_amount')" class="mb-3">
               <label class="form-label text-sm">Disputed Amount (Nilai Sengketa)</label>
-              <input 
-                v-model.number="proposedValues.disputed_amount"
-                type="number"
+              <FormField
+                v-model="proposedValues.disputed_amount"
+                type="formatted-number"
+                :decimal-places="2"
                 min="0"
                 placeholder="Enter new amount"
                 class="form-control"
@@ -145,9 +146,10 @@
               <!-- Number Input -->
               <div v-if="getFieldType(field) === 'number' && field !== 'disputed_amount'" class="mb-3">
                 <label class="form-label text-sm">{{ fieldLabel(field) }}</label>
-                <input 
-                  v-model.number="proposedValues[field]"
-                  type="number"
+                <FormField
+                  v-model="proposedValues[field]"
+                  type="formatted-number"
+                  :decimal-places="2"
                   min="0"
                   step="0.01"
                   :placeholder="`Enter new amount for ${fieldLabel(field)}`"
@@ -327,6 +329,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useToast } from '@/composables/useToast'
+import FormField from './FormField.vue'
 
 const props = defineProps({
   caseId: { type: Number, required: true },
