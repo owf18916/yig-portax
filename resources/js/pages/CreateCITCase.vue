@@ -110,7 +110,7 @@
       </form>
     </Card>
 
-    <Card title="Auto-Generated Case Number" subtitle="This will be generated when you create the case">
+    <Card title="Auto-Generated Case Number" subtitle="Final number is assigned when the case is created">
       <div class="p-4 bg-gray-50 rounded-lg border border-gray-200 font-mono text-lg">
         {{ previewCaseNumber || '——————' }}
       </div>
@@ -169,7 +169,7 @@ const formErrors = reactive({
 })
 
 const previewCaseNumber = computed(() => {
-  if (!selectedEntityId.value || !formData.fiscal_year || !formData.amount) {
+  if (!selectedEntityId.value || !formData.fiscal_year) {
     return ''
   }
   const entity = currentEntity.value
@@ -435,21 +435,12 @@ const submitForm = async () => {
   document.body.style.cursor = 'wait'
 
   try {
-    const entity = currentEntity.value
-    
     // Find the selected March period
     const marchPeriod = availableMarchPeriods.value.find(p => p.fiscal_year_id === formData.fiscal_year)
     
     if (!marchPeriod) {
       throw new Error('March period not found for selected fiscal year')
     }
-    
-    const yearCode = String(marchPeriod.year).slice(-2)
-    
-    // Extract first 2 letters from entity code (uppercase)
-    const entityCode = entity.code.substring(0, 2).toUpperCase()
-    const caseNumber = `${entityCode}${yearCode}MarC`
-
     // Get CSRF token from meta tag
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
 
@@ -463,7 +454,6 @@ const submitForm = async () => {
       credentials: 'include',
       body: JSON.stringify({
         entity_id: selectedEntityId.value,
-        case_number: caseNumber,
         case_type: 'CIT',
         fiscal_year_id: marchPeriod.fiscal_year_id,
         period_id: marchPeriod.id,

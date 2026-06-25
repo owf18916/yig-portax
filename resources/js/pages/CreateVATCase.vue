@@ -391,15 +391,6 @@ const submitForm = async () => {
       throw new Error('Selected period not found')
     }
     
-    const year = selectedPeriod.year
-    const month = String(selectedPeriod.month).padStart(2, '0')
-    const yearCode = String(year).slice(-2)
-    const monthCode = monthCodes[month]
-    
-    // Extract first 2 letters from entity code (uppercase)
-    const entityCode = company.value.code.substring(0, 2).toUpperCase()
-    const caseNumber = `${entityCode}${yearCode}${monthCode}V`
-
     // Get CSRF token from meta tag
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
 
@@ -413,7 +404,6 @@ const submitForm = async () => {
       credentials: 'include',
       body: JSON.stringify({
         entity_id: company.value.id,
-        case_number: caseNumber,
         case_type: 'VAT',
         fiscal_year_id: selectedPeriod.fiscal_year_id,  // CHANGED: use fiscal_year_id dari period
         period_id: selectedPeriod.id,  // CHANGED: kirim period_id, bukan period string

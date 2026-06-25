@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Models\Entity;
+use App\Models\Period;
 use App\Models\TaxCase;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -89,9 +91,9 @@ class TaxCaseController extends ApiController
         $validated = $request->validate([
             'entity_id' => 'required|exists:entities,id',
             'case_type' => 'required|in:CIT,VAT',
-            'fiscal_year_id' => 'nullable|exists:fiscal_years,id',
+            'fiscal_year_id' => 'required|exists:fiscal_years,id',
             'period' => 'nullable|string',
-            'case_number' => 'required|string|unique:tax_cases',
+            'case_number' => 'nullable|string',
             'disputed_amount' => 'required|numeric|min:0',
             'spt_number' => 'nullable|string|unique:tax_cases,spt_number',
             'filing_date' => 'nullable|date',
@@ -99,7 +101,7 @@ class TaxCaseController extends ApiController
             'reported_amount' => 'nullable|numeric|min:0',
             'vat_in_amount' => 'nullable|numeric|min:0',
             'vat_out_amount' => 'nullable|numeric|min:0',
-            'period_id' => 'nullable|exists:periods,id',
+            'period_id' => 'required|exists:periods,id',
             'currency_id' => 'nullable|exists:currencies,id',
             'description' => 'nullable|string',
             // ✅ NEW: Support Preliminary Refund (Pengembalian Pendahuluan)
@@ -112,47 +114,100 @@ class TaxCaseController extends ApiController
             return $this->error('You can only create cases for your assigned entity', 403);
         }
 
-        // Auto-generate SPT number if not provided
-        if (!isset($validated['spt_number']) || empty($validated['spt_number'])) {
-            $validated['spt_number'] = $this->generateSptNumber($validated['entity_id'], $validated['case_type']);
+        try {
+            $taxCase = DB::transaction(function () use ($validated, $user) {
+                $period = Period::whereKey($validated['period_id'])->lockForUpdate()->firstOrFail();
+
+                if ((int) $period->fiscal_year_id !== (int) $validated['fiscal_year_id']) {
+                    throw new \InvalidArgumentException('Selected period does not belong to the selected fiscal year');
+                }
+
+                if ($validated['case_type'] === 'CIT' && (int) $period->month !== 3) {
+                    throw new \InvalidArgumentException('CIT cases must use the March filing period');
+                }
+
+                $existingCase = TaxCase::where('entity_id', $validated['entity_id'])
+                    ->where('case_type', $validated['case_type'])
+                    ->where('period_id', $validated['period_id'])
+                    ->lockForUpdate()
+                    ->exists();
+
+                if ($existingCase) {
+                    throw new \InvalidArgumentException("A {$validated['case_type']} case already exists for this company and period");
+                }
+
+                // The backend owns the final case number; ignore any client-supplied value.
+                $validated['case_number'] = $this->generateCaseNumber(
+                    $validated['entity_id'],
+                    $period,
+                    $validated['case_type']
+                );
+
+                // Auto-generate SPT number if not provided
+                if (!isset($validated['spt_number']) || empty($validated['spt_number'])) {
+                    $validated['spt_number'] = $this->generateSptNumber($validated['entity_id'], $validated['case_type']);
+                }
+
+                // Set filing date to today if not provided
+                if (!isset($validated['filing_date']) || empty($validated['filing_date'])) {
+                    $validated['filing_date'] = now()->toDateString();
+                }
+
+                // Set reported amount to disputed amount if not provided
+                if (!isset($validated['reported_amount']) || empty($validated['reported_amount'])) {
+                    $validated['reported_amount'] = $validated['disputed_amount'];
+                }
+
+                // Set user and system defaults
+                $validated['user_id'] = $user->id;
+                $validated['current_stage'] = 1;
+                $validated['case_status_id'] = 1; // OPEN status
+                
+                // Set currency_id to IDR default hanya jika tidak dikirim dari frontend
+                if (!isset($validated['currency_id']) || empty($validated['currency_id'])) {
+                    $validated['currency_id'] = 1; // IDR default
+                }
+
+                // Remove fields that don't belong to the table
+                unset($validated['period']);
+
+                $taxCase = TaxCase::create($validated);
+
+                // Create initial workflow history entry for Stage 1 (SPT Filing) with 'draft' status
+                // Status will be changed to 'submitted' when user clicks "Submit & Continue"
+                $taxCase->workflowHistories()->create([
+                    'stage_id' => 1,
+                    'stage_from' => null,
+                    'stage_to' => 2,
+                    'action' => 'submitted',
+                    'status' => 'draft',
+                    'user_id' => $user->id,
+                    'notes' => 'Initial tax case submission at Stage 1 (SPT Filing)',
+                ]);
+
+                return $taxCase;
+            });
+        } catch (\InvalidArgumentException $e) {
+            return $this->error($e->getMessage(), 422);
+        } catch (QueryException $e) {
+            Log::warning('Tax case creation uniqueness failure', [
+                'entity_id' => $validated['entity_id'] ?? null,
+                'case_type' => $validated['case_type'] ?? null,
+                'period_id' => $validated['period_id'] ?? null,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $this->error('A tax case already exists for this company and period', 422);
+        } catch (\Throwable $e) {
+            Log::error('Tax case creation failed', [
+                'entity_id' => $validated['entity_id'] ?? null,
+                'case_type' => $validated['case_type'] ?? null,
+                'period_id' => $validated['period_id'] ?? null,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $this->error('Failed to create tax case', 500);
         }
-
-        // Set filing date to today if not provided
-        if (!isset($validated['filing_date']) || empty($validated['filing_date'])) {
-            $validated['filing_date'] = now()->toDateString();
-        }
-
-        // Set reported amount to disputed amount if not provided
-        if (!isset($validated['reported_amount']) || empty($validated['reported_amount'])) {
-            $validated['reported_amount'] = $validated['disputed_amount'];
-        }
-
-        // Set user and system defaults
-        $validated['user_id'] = $user->id;
-        $validated['current_stage'] = 1;
-        $validated['case_status_id'] = 1; // OPEN status
-        
-        // Set currency_id to IDR default hanya jika tidak dikirim dari frontend
-        if (!isset($validated['currency_id']) || empty($validated['currency_id'])) {
-            $validated['currency_id'] = 1; // IDR default
-        }
-
-        // Remove fields that don't belong to the table
-        unset($validated['period']);
-
-        $taxCase = TaxCase::create($validated);
-
-        // Create initial workflow history entry for Stage 1 (SPT Filing) with 'draft' status
-        // Status will be changed to 'submitted' when user clicks "Submit & Continue"
-        $taxCase->workflowHistories()->create([
-            'stage_id' => 1,
-            'stage_from' => null,
-            'stage_to' => 2,
-            'action' => 'submitted',
-            'status' => 'draft',
-            'user_id' => $user->id,
-            'notes' => 'Initial tax case submission at Stage 1 (SPT Filing)',
-        ]);
 
         // ✅ NEW: Load refundProcesses and add Preliminary Refund info
         $taxCase->load(['entity', 'fiscalYear', 'period', 'status', 'workflowHistories', 'refundProcesses']);
@@ -415,19 +470,30 @@ class TaxCaseController extends ApiController
     /**
      * Generate unique case number
      */
-    private function generateCaseNumber(int $entityId): string
+    private function generateCaseNumber(int $entityId, Period $period, string $caseType): string
     {
-        $entity = Entity::find($entityId);
-        $year = date('Y');
-        $count = TaxCase::where('entity_id', $entityId)
-            ->whereYear('created_at', $year)
-            ->count() + 1;
+        $entity = Entity::findOrFail($entityId);
+        $monthCodes = [
+            1 => 'Jan',
+            2 => 'Feb',
+            3 => 'Mar',
+            4 => 'Apr',
+            5 => 'May',
+            6 => 'Jun',
+            7 => 'Jul',
+            8 => 'Aug',
+            9 => 'Sep',
+            10 => 'Oct',
+            11 => 'Nov',
+            12 => 'Dec',
+        ];
 
-        return sprintf(
-            'TAX-%s-%04d',
-            $entity->code,
-            $count
-        );
+        $entityCode = strtoupper(substr($entity->code, 0, 2));
+        $yearCode = substr((string) $period->year, -2);
+        $monthCode = $monthCodes[(int) $period->month];
+        $typeCode = $caseType === 'CIT' ? 'C' : 'V';
+
+        return "{$entityCode}{$yearCode}{$monthCode}{$typeCode}";
     }
 
     /**
