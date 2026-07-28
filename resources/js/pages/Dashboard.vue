@@ -192,6 +192,8 @@
       </div>
     </div>
 
+    <TaxWorkflowMatrixCard />
+
     <!-- Workflow Stages -->
     <div class="space-y-4">
       <h2 class="text-2xl font-bold text-gray-900">Workflow Stages</h2>
@@ -236,6 +238,7 @@ import DisputedAmountChart from '../components/charts/DisputedAmountChart.vue'
 import AnnouncementModal from '../components/AnnouncementModal.vue'
 import ExchangeRateModal from '../components/ExchangeRateModal.vue'
 import ExchangeRateTable from '../components/ExchangeRateTable.vue'
+import TaxWorkflowMatrixCard from '../components/dashboard/TaxWorkflowMatrixCard.vue'
 import { mainWorkflowStages } from '../constants/workflowStages'
 
 const selectedStageId = ref(null)

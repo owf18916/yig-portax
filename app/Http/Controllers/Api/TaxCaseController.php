@@ -108,9 +108,10 @@ class TaxCaseController extends ApiController
             'spt_type' => 'nullable|in:SPT,Pengembalian Pendahuluan',
         ]);
 
-        // Verify user can create case for this entity
-        // Admin dapat membuat untuk entity apapun, non-admin hanya untuk entity mereka
-        if ($user->role_id !== 1 && $validated['entity_id'] != $user->entity_id) {
+        // Verify user can create case for this entity.
+        // Admin and holding users may create for authorized entities; affiliates remain scoped to their own entity.
+        $isHoldingUser = $user->entity && strtoupper((string) $user->entity->entity_type) === 'HOLDING';
+        if ($user->role_id !== 1 && !$isHoldingUser && $validated['entity_id'] != $user->entity_id) {
             return $this->error('You can only create cases for your assigned entity', 403);
         }
 
@@ -124,6 +125,10 @@ class TaxCaseController extends ApiController
 
                 if ($validated['case_type'] === 'CIT' && (int) $period->month !== 3) {
                     throw new \InvalidArgumentException('CIT cases must use the March filing period');
+                }
+
+                if ($period->end_date && $period->end_date->isFuture()) {
+                    throw new \InvalidArgumentException('Future periods cannot be used to create tax cases');
                 }
 
                 $existingCase = TaxCase::where('entity_id', $validated['entity_id'])

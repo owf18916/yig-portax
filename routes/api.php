@@ -26,6 +26,7 @@ use App\Http\Controllers\Api\KianSubmissionController;
 use App\Http\Controllers\Api\AppealSubmissionController;
 use App\Http\Controllers\Api\ObjectionDecisionController;
 use App\Http\Controllers\Api\DashboardAnalyticsController;
+use App\Http\Controllers\Api\DashboardWorkflowMatrixController;
 use App\Http\Controllers\Api\ObjectionSubmissionController;
 use App\Http\Controllers\Api\SupremeCourtDecisionController;
 use App\Http\Controllers\Api\SupremeCourtSubmissionController;
@@ -886,8 +887,13 @@ Route::middleware('auth')->group(function () {
     Route::get('/entities', [EntityController::class, 'index']);
     Route::get('/fiscal-years', [FiscalYearController::class, 'index']);
     
-    Route::get('/periods', function () {
-        return response()->json(\App\Models\Period::where('is_closed', false)->orderBy('year')->orderBy('month')->get());
+    Route::get('/periods', function (Request $request) {
+        $query = \App\Models\Period::query();
+        if (!$request->boolean('include_closed')) {
+            $query->where('is_closed', false);
+        }
+
+        return response()->json($query->orderBy('year')->orderBy('month')->get());
     });
 
     Route::get('/currencies', function () {
@@ -920,6 +926,7 @@ Route::middleware('auth')->group(function () {
     // DASHBOARD ANALYTICS ROUTES
     // ============================================================================
     Route::prefix('dashboard')->group(function () {
+        Route::get('/workflow-matrix', DashboardWorkflowMatrixController::class);
         Route::get('/charts', [DashboardAnalyticsController::class, 'dashboardCharts']);
         Route::get('/open-cases', [DashboardAnalyticsController::class, 'openCasesPerEntity']);
         Route::get('/disputed-amounts', [DashboardAnalyticsController::class, 'disputedAmountPerEntity']);

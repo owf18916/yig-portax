@@ -121,13 +121,19 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import Card from '../components/Card.vue'
 import Button from '../components/Button.vue'
 import FormField from '../components/FormField.vue'
 import Alert from '../components/Alert.vue'
 
 const router = useRouter()
+const route = useRoute()
+const prefill = {
+  entity_id: route.query.entity_id ? Number(route.query.entity_id) : null,
+  period_id: route.query.period_id ? Number(route.query.period_id) : null,
+  fiscal_year_id: route.query.fiscal_year_id ? Number(route.query.fiscal_year_id) : null
+}
 
 const submitting = ref(false)
 const apiError = ref('')
@@ -205,14 +211,14 @@ const loadCurrentUser = () => {
     const user = JSON.parse(userStr)
     
     if (user && user.entity_id) {
-      selectedEntityId.value = user.entity_id
+      selectedEntityId.value = prefill.entity_id || user.entity_id
       
       // Use entity data from user object if available
-      if (user.entity) {
+      if (user.entity && (!prefill.entity_id || prefill.entity_id === user.entity.id)) {
         entities.value = [user.entity]
       } else {
         // Otherwise fetch entity details
-        fetchEntityDetails(user.entity_id)
+        fetchEntityDetails(selectedEntityId.value)
       }
     } else {
       console.warn('No entity_id found in user:', user)
@@ -230,7 +236,7 @@ const fetchEntityDetails = async (entityId) => {
   try {
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
     
-    const response = await fetch(`/api/entities/${entityId}`, {
+    const response = await fetch('/api/entities', {
       credentials: 'include',
       headers: {
         'Accept': 'application/json',
@@ -240,8 +246,13 @@ const fetchEntityDetails = async (entityId) => {
     
     if (response.ok) {
       const result = await response.json()
-      const entityData = result.data || result
-      entities.value = [entityData]
+      const scopedEntities = result.data || result
+      const entityData = Array.isArray(scopedEntities) ? scopedEntities.find(entity => entity.id === entityId) : null
+      if (entityData) {
+        entities.value = [entityData]
+      } else {
+        apiError.value = 'Selected company is not available for your user'
+      }
     } else {
       console.error('Failed to fetch entity:', response.status)
     }
@@ -254,7 +265,7 @@ const fetchAvailableMarchPeriods = async () => {
   loadingAvailablePeriods.value = true
   try {
     // Fetch all periods first
-    const periodResponse = await fetch('/api/periods')
+    const periodResponse = await fetch('/api/periods?include_closed=1')
     if (!periodResponse.ok) throw new Error('Failed to fetch periods')
     const periodData = await periodResponse.json()
     const allPeriods = Array.isArray(periodData) ? periodData : periodData.data || []
@@ -332,6 +343,26 @@ const fetchAvailableMarchPeriods = async () => {
     })
     
     availableMarchPeriods.value = Array.from(uniqueYearMap.values()).sort((a, b) => b.year - a.year)
+    if (prefill.period_id && prefill.fiscal_year_id) {
+      const prefilledPeriod = allPeriods.find(p =>
+        p.id === prefill.period_id &&
+        p.fiscal_year_id === prefill.fiscal_year_id &&
+        p.month === 3
+      )
+
+      if (prefilledPeriod && !usedPeriodIds.value.includes(prefilledPeriod.id)) {
+        const existing = availableMarchPeriods.value.find(p => p.id === prefilledPeriod.id)
+        if (!existing) {
+          availableMarchPeriods.value.unshift({
+            id: prefilledPeriod.id,
+            fiscal_year_id: prefilledPeriod.fiscal_year_id,
+            year: prefilledPeriod.year,
+            month: prefilledPeriod.month
+          })
+        }
+        formData.fiscal_year = prefilledPeriod.fiscal_year_id
+      }
+    }
     console.log('Final available March periods:', availableMarchPeriods.value)
   } catch (error) {
     console.error('Error fetching available March periods:', error)
@@ -342,7 +373,7 @@ const fetchAvailableMarchPeriods = async () => {
 
 const fetchPeriods = async () => {
   try {
-    const response = await fetch('/api/periods')
+    const response = await fetch('/api/periods?include_closed=1')
     if (!response.ok) throw new Error('Failed to fetch periods')
     const data = await response.json()
     periods.value = Array.isArray(data) ? data : data.data || []
