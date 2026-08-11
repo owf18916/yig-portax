@@ -94,7 +94,7 @@
 
             <!-- Disputed Amount -->
             <div v-if="selectedFields.includes('disputed_amount')" class="mb-3">
-              <label class="form-label text-sm">Disputed Amount (Nilai Sengketa)</label>
+              <label class="form-label text-sm">{{ disputedAmountLabel }}</label>
               <FormField
                 v-model="proposedValues.disputed_amount"
                 type="formatted-number"
@@ -388,6 +388,10 @@ const canSubmit = computed(() => {
          uploadProgress.value === 0
 })
 
+const disputedAmountLabel = computed(() =>
+  String(props.stageId) === '1' ? 'Nilai SPT' : 'Disputed Amount (Nilai Sengketa)'
+)
+
 const fieldLabel = (field) => {
   // Special cases for decision checkboxes
   if (field === 'create_refund') return 'Create Refund Process'
@@ -406,7 +410,7 @@ const fieldLabel = (field) => {
   const labels = {
     'period_id': 'Fiscal Period',
     'currency_id': 'Currency',
-    'disputed_amount': 'Disputed Amount (Nilai Sengketa)',
+    'disputed_amount': disputedAmountLabel.value,
     'sp2_number': 'Nomor SP2 (SP2 Number)',
     'issue_date': 'Tanggal Diterbitkan (Issue Date)',
     'receipt_date': 'Tanggal Diterima (Receipt Date)',

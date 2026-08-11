@@ -6,8 +6,8 @@
     <!-- Close Confirmation Dialog -->
     <ConfirmationDialog
       :is-open="showCloseConfirmation"
-      title="Close Tax Case"
-      :message="`Are you sure you want to close tax case ${selectedCaseForClose?.case_number}? This action cannot be undone.`"
+      title="Close Tax SPT"
+      :message="`Are you sure you want to close Tax SPT ${selectedCaseForClose?.case_number}? This action cannot be undone.`"
       confirm-label="Close Case"
       cancel-label="Cancel"
       variant="warning"
@@ -15,7 +15,7 @@
       @cancel="cancelCloseCase"
     />
 
-    <Card title="Tax Cases" subtitle="View and manage your tax cases">
+    <Card title="Tax SPT" subtitle="View and manage your Tax SPTs">
       <!-- Action Buttons -->
       <div class="mb-6 flex justify-end space-x-2">
         <Button @click="exportToExcel" :disabled="isExporting" variant="secondary">
@@ -30,7 +30,7 @@
         </Button>
       </div>
 
-      <LoadingSpinner v-if="loading" message="Loading tax cases..." />
+      <LoadingSpinner v-if="loading" message="Loading Tax SPTs..." />
 
       <div v-else class="overflow-x-auto">
         <table class="w-full text-sm">
@@ -222,7 +222,7 @@
                     v-if="!taxCase.is_completed"
                     @click="openCloseConfirmation(taxCase)"
                     class="px-3 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors duration-200"
-                    title="Close this tax case"
+                    title="Close this Tax SPT"
                   >
                     ✓
                   </button>
@@ -236,7 +236,7 @@
         </table>
 
         <div v-if="filteredCases.length === 0" class="text-center py-8 text-gray-500">
-          <p>No tax cases found</p>
+          <p>No Tax SPTs found</p>
         </div>
       </div>
     </Card>
@@ -568,7 +568,7 @@ const exportToExcel = async () => {
     
     if (!response.ok) {
       const error = await response.json()
-      throw new Error(error.message || 'Failed to export tax cases')
+      throw new Error(error.message || 'Failed to export Tax SPTs')
     }
     
     // Create blob and download
@@ -595,7 +595,7 @@ const exportToExcel = async () => {
     
   } catch (error) {
     console.error('Export error:', error)
-    alert('Error exporting tax cases: ' + error.message)
+    alert('Error exporting Tax SPTs: ' + error.message)
   } finally {
     isExporting.value = false
   }
@@ -637,7 +637,7 @@ const confirmCloseCase = async () => {
     console.log('Close response:', { status: response.status, data: responseData })
     
     if (!response.ok) {
-      const errorMessage = responseData.message || responseData.error || 'Failed to close tax case'
+      const errorMessage = responseData.message || responseData.error || 'Failed to close Tax SPT'
       throw new Error(errorMessage)
     }
     
@@ -652,7 +652,7 @@ const confirmCloseCase = async () => {
     // Show success message using toast
     toastRef.value?.addToast(
       'Success',
-      `Tax case ${caseNumber} has been closed successfully`,
+      `Tax SPT ${caseNumber} has been closed successfully`,
       'success',
       3000
     )
@@ -665,7 +665,7 @@ const confirmCloseCase = async () => {
     console.error('Error closing tax case:', error)
     toastRef.value?.addToast(
       'Error',
-      error.message || 'Failed to close tax case',
+      error.message || 'Failed to close Tax SPT',
       'error',
       4000
     )

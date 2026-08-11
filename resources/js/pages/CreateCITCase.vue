@@ -79,9 +79,9 @@
           <p class="text-xs text-gray-500">CIT must be filed in March as closing date</p>
         </div>
 
-        <!-- Disputed Amount -->
+        <!-- SPT Amount -->
         <FormField
-          label="Disputed Amount"
+          label="SPT Amount"
           type="number"
           v-model="formData.amount"
           placeholder="e.g., 5000000000"
@@ -89,9 +89,9 @@
           :error="formErrors.amount"
         />
 
-        <!-- Case Type Badge -->
+        <!-- SPT Type Badge -->
         <div class="p-3 bg-blue-50 rounded-lg">
-          <p class="text-sm text-gray-600">Case Type</p>
+          <p class="text-sm text-gray-600">SPT Type</p>
           <span class="inline-block px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
             CIT (Corporate Income Tax)
           </span>
@@ -101,7 +101,7 @@
         <div class="flex space-x-4 pt-4">
           <Button type="submit" variant="primary" :disabled="submitting">
             <span v-if="submitting" class="inline-block animate-spin mr-2">⏳</span>
-            {{ submitting ? 'Creating...' : 'Create Case' }}
+            {{ submitting ? 'Creating...' : 'Create SPT' }}
           </Button>
           <Button @click="$router.back()" variant="secondary" :disabled="submitting">
             Cancel
@@ -110,7 +110,7 @@
       </form>
     </Card>
 
-    <Card title="Auto-Generated Case Number" subtitle="Final number is assigned when the case is created">
+    <Card title="Auto-Generated SPT Reference Number" subtitle="Final number is assigned when the SPT is created">
       <div class="p-4 bg-gray-50 rounded-lg border border-gray-200 font-mono text-lg">
         {{ previewCaseNumber || '——————' }}
       </div>

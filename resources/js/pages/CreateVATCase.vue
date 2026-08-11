@@ -73,7 +73,7 @@
         <div class="p-3 bg-gray-50 rounded-lg border border-gray-200">
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <p class="text-xs text-gray-600">Disputed Amount</p>
+              <p class="text-xs text-gray-600">SPT Amount</p>
               <p class="text-lg font-bold text-gray-900">IDR {{ calculateDispute().toLocaleString() }}</p>
             </div>
             <div>
@@ -85,9 +85,9 @@
           </div>
         </div>
 
-        <!-- Case Type Badge -->
+        <!-- SPT Type Badge -->
         <div class="p-3 bg-purple-50 rounded-lg">
-          <p class="text-sm text-gray-600">Case Type</p>
+          <p class="text-sm text-gray-600">SPT Type</p>
           <span class="inline-block px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-800">
             VAT (Value Added Tax)
           </span>
@@ -97,7 +97,7 @@
         <div class="flex space-x-4 pt-4">
           <Button type="submit" variant="primary" :disabled="submitting">
             <span v-if="submitting" class="inline-block animate-spin mr-2">⏳</span>
-            {{ submitting ? 'Creating...' : 'Create Case' }}
+            {{ submitting ? 'Creating...' : 'Create SPT' }}
           </Button>
           <Button @click="$router.back()" variant="secondary" :disabled="submitting">
             Cancel
@@ -106,7 +106,7 @@
       </form>
     </Card>
 
-    <Card title="Auto-Generated Case Number" subtitle="This will be generated when you create the case">
+    <Card title="Auto-Generated SPT Reference Number" subtitle="Final number is assigned when the SPT is created">
       <div class="p-4 bg-gray-50 rounded-lg border border-gray-200 font-mono text-lg">
         {{ previewCaseNumber || '——————' }}
       </div>

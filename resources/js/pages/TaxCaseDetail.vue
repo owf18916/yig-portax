@@ -12,7 +12,7 @@
       :message="apiError"
     />
 
-    <LoadingSpinner v-if="loading" message="Loading tax case..." />
+    <LoadingSpinner v-if="loading" message="Loading Tax SPT..." />
 
     <div v-else class="space-y-6">
       <!-- Case Overview -->

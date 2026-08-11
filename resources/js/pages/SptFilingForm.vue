@@ -96,12 +96,13 @@ const fields = ref([
     id: 4,
     type: 'select',
     key: 'spt_type',
-    label: 'SPT Type (Jenis Pengembalian)',
+    label: 'SPT Type',
     required: true,
     options: [
       { value: 'Pengembalian Pendahuluan', label: 'Pengembalian Pendahuluan (Preliminary Refund)' },
       { value: 'Restitusi', label: 'Restitusi (Restitution)' },
-      { value: 'Kompensasi', label: 'Kompensasi (Compensation)' }
+      { value: 'Kompensasi', label: 'Kompensasi (Compensation)' },
+      { value: 'Kurang Bayar', label: 'Kurang Bayar' }
     ],
     description: 'Select "Pengembalian Pendahuluan" to skip audit stages (SP2, SPHP) and go directly to SKP'
   },
@@ -109,7 +110,7 @@ const fields = ref([
     id: 5,
     type: 'number',
     key: 'disputed_amount',
-    label: 'Nilai Sengketa (Disputed Amount)',
+    label: 'Nilai SPT',
     required: true,
     readonly: false
   }

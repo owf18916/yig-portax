@@ -105,7 +105,7 @@ class TaxCaseController extends ApiController
             'currency_id' => 'nullable|exists:currencies,id',
             'description' => 'nullable|string',
             // ✅ NEW: Support Preliminary Refund (Pengembalian Pendahuluan)
-            'spt_type' => 'nullable|in:SPT,Pengembalian Pendahuluan',
+            'spt_type' => 'nullable|in:SPT,Pengembalian Pendahuluan,Kurang Bayar',
         ]);
 
         // Verify user can create case for this entity.

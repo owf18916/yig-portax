@@ -22,7 +22,7 @@
                 :class="['px-3 py-2 rounded-md text-sm font-medium transition-colors',
                   $route.path.startsWith('/tax-cases') ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:text-gray-900']"
               >
-                Tax Cases
+                Tax SPT
               </router-link>
             </div>
           </div>
@@ -52,7 +52,7 @@
     <!-- Footer (hanya tampil saat bukan login) -->
     <footer v-if="$route.path !== '/login'" class="bg-gray-100 border-t mt-12">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 text-center text-sm text-gray-600">
-        <p>PORTAX Tax Case Management System | Vue.js 3 + Laravel REST API</p>
+        <p>PORTAX Tax SPT Management System | Vue.js 3 + Laravel REST API</p>
       </div>
     </footer>
 

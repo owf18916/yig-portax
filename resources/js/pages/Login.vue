@@ -7,7 +7,7 @@
           <img :src="logoUrl" alt="PorTax Logo" class="h-16 w-16 drop-shadow-lg">
         </div>
         <h1 class="text-3xl font-bold text-white mb-2">PorTax</h1>
-        <p class="text-blue-100">Tax Case Management System</p>
+        <p class="text-blue-100">Tax SPT Management System</p>
       </div>
 
       <!-- Login Card -->

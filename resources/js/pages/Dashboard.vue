@@ -1,7 +1,7 @@
 <template>
   <div class="space-y-6">
     <!-- Welcome Section with System Definition -->
-    <Card title="Welcome to PORTAX" subtitle="Integrated Tax Case Management System">
+    <Card title="Welcome to PORTAX" subtitle="Integrated Tax SPT Management System">
       <div class="space-y-6">
         <!-- System Definition -->
         <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-6 border border-blue-100">
@@ -16,7 +16,7 @@
             <div class="flex-1">
               <h3 class="text-lg font-semibold text-gray-900">About PORTAX</h3>
               <p class="mt-2 text-gray-700">
-                PORTAX is an integrated tax case management system designed to manage the complete lifecycle of tax cases, 
+                PORTAX is an integrated Tax SPT management system designed to manage the complete lifecycle of Tax SPTs,
                 from SPT (Tax Return) submissions to resolution through various administrative and judicial stages. 
                 The system facilitates collaboration among multiple stakeholders in the tax dispute resolution process.
               </p>
@@ -161,7 +161,7 @@
     <!-- Analytics Charts Section -->
     <div class="space-y-4">
       <h2 class="text-2xl font-bold text-gray-900">Case Analytics</h2>
-      <p class="text-gray-600">Real-time visualization of tax case data by type and entity</p>
+      <p class="text-gray-600">Real-time visualization of Tax SPT data by type and entity</p>
       
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Open Cases Chart -->

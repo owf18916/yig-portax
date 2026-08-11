@@ -168,7 +168,7 @@
       <!-- Info Box -->
       <div class="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
         <p class="text-sm text-blue-900">
-          <strong>Stage 4 - Final Stage:</strong> Confirm receipt of the refund. Once completed, the refund process will be marked as finished and the tax case status will be updated.
+          <strong>Stage 4 - Final Stage:</strong> Confirm receipt of the refund. Once completed, the refund process will be marked as finished and the Tax SPT status will be updated.
         </p>
       </div>
     </div>

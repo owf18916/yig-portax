@@ -75,7 +75,7 @@
 
         <!-- Tax Cases Table -->
         <div class="space-y-4">
-          <h3 class="text-lg font-semibold text-gray-900">📊 Tax Cases in This Stage</h3>
+          <h3 class="text-lg font-semibold text-gray-900">📊 Tax SPTs in This Stage</h3>
           
           <div v-if="cases.length === 0" class="text-center py-8 text-gray-500">
             <p class="text-lg">No Data Available</p>
