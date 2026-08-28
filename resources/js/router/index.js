@@ -31,6 +31,7 @@ const RefundStage1Form = defineAsyncComponent(() => import('../pages/RefundStage
 const RefundStage2Form = defineAsyncComponent(() => import('../pages/RefundStage2Form.vue'))
 const RefundStage3Form = defineAsyncComponent(() => import('../pages/RefundStage3Form.vue'))
 const RefundStage4Form = defineAsyncComponent(() => import('../pages/RefundStage4Form.vue'))
+const NotificationLogs = defineAsyncComponent(() => import('../pages/NotificationLogs.vue'))
 
 const routes = [
   {
@@ -61,6 +62,12 @@ const routes = [
     path: '/tax-cases/create/vat',
     name: 'CreateVATCase',
     component: CreateVATCase,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/notification-logs',
+    name: 'NotificationLogs',
+    component: NotificationLogs,
     meta: { requiresAuth: true }
   },
   {

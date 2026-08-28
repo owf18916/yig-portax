@@ -74,10 +74,10 @@ class UsersSeeder extends Seeder
         // Add user PASI
         $users[] = [
             'id' => $userId + 1,
-            'name' => 'Nur Elita',
-            'email' => 'nur.elita@id.yazaki.com',
+            'name' => 'Novia',
+            'email' => 'novia.hardianti@id.yazaki.com',
             'email_verified_at' => now(),
-            'password' => Hash::make('admin123'),
+            'password' => Hash::make('PASI@p0rt4x'),
             'entity_id' => 1,
             'role_id' => 2, // manager
             'phone' => '',
@@ -96,11 +96,29 @@ class UsersSeeder extends Seeder
             'name' => 'Intan Saraswati',
             'email' => 'intan.saraswati@id.yazaki.com',
             'email_verified_at' => now(),
-            'password' => Hash::make('jai123'),
+            'password' => Hash::make('JAI@p0rt4x'),
             'entity_id' => 6,
-            'role_id' => 2, // manager
+            'role_id' => 3, // staff
             'phone' => '',
             'position' => 'Supervisor',
+            'department' => 'Tax',
+            'last_login_at' => now(),
+            'is_active' => true,
+            'remember_token' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+        
+        $users[] = [
+            'id' => $userId + 3,
+            'name' => 'Dedy',
+            'email' => 'dedy.hariawan@id.yazaki.com',
+            'email_verified_at' => now(),
+            'password' => Hash::make('JAI@p0rt4x'),
+            'entity_id' => 6,
+            'role_id' => 2, // staff
+            'phone' => '',
+            'position' => 'Manager',
             'department' => 'Tax',
             'last_login_at' => now(),
             'is_active' => true,

@@ -624,6 +624,11 @@ class TaxCase extends Model
         return $this->hasMany(WorkflowHistory::class);
     }
 
+    public function notificationLogs(): HasMany
+    {
+        return $this->hasMany(NotificationLog::class);
+    }
+
     // Accessors
     public function getEntityNameAttribute()
     {

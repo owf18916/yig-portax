@@ -171,6 +171,12 @@
                       </span>
                     </div>
                     <p class="text-sm text-gray-600">{{ stage.description }}</p>
+                    <div v-if="[4, 7, 10, 12].includes(stage.id) && caseData.notification_summary?.[stage.id]" class="mt-2 text-xs text-gray-700">
+                      <span class="font-semibold">KIAN Notification:</span>
+                      <span :class="notificationBadgeClass(caseData.notification_summary[stage.id].current_status)" class="ml-1 px-2 py-0.5 rounded">{{ notificationLabel(caseData.notification_summary[stage.id].current_status) }}</span>
+                      <span v-if="caseData.notification_summary[stage.id].attempts?.[0]" class="ml-2">{{ recipientSummary(caseData.notification_summary[stage.id].attempts[0]) }}</span>
+                      <button @click="viewNotification(caseData.notification_summary[stage.id].id)" class="ml-2 text-blue-700 hover:underline">View Notification</button>
+                    </div>
                   </div>
                   <div class="flex items-center gap-2">
                     <Button
@@ -1040,6 +1046,11 @@ const navigateToKianSubmission = (stageId) => {
     params: { id: caseData.value.id, stageId }
   })
 }
+
+const notificationLabel = (status) => ({ SENT: 'Sent', QUEUED: 'Queued', PROCESSING: 'Queued', NOT_ELIGIBLE: 'Not Eligible', SKIPPED_NO_RECIPIENT: 'No Recipient', FAILED: 'Failed' }[status] || status)
+const notificationBadgeClass = (status) => ({ SENT: 'bg-green-100 text-green-800', FAILED: 'bg-red-100 text-red-800', SKIPPED_NO_RECIPIENT: 'bg-amber-100 text-amber-800', NOT_ELIGIBLE: 'bg-gray-100 text-gray-700', QUEUED: 'bg-blue-100 text-blue-800', PROCESSING: 'bg-blue-100 text-blue-800' }[status] || 'bg-gray-100')
+const recipientSummary = (attempt) => `${(attempt.to_recipients || []).length} TO / ${(attempt.cc_recipients || []).length} CC`
+const viewNotification = (id) => router.push({ name: 'NotificationLogs', query: { selected: id } })
 
 // ✅ Navigate to Refund workflow - Smart logic for existing vs new refunds
 const navigateToRefund = (triggerStageId) => {

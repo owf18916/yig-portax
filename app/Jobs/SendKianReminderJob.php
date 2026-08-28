@@ -1,8 +1,9 @@
 <?php
-
 namespace App\Jobs;
 
 use App\Mail\KianReminderMail;
+use App\Models\NotificationAttempt;
+use App\Models\NotificationLog;
 use App\Models\TaxCase;
 use App\Models\User;
 use Illuminate\Bus\Queueable;
@@ -10,171 +11,33 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
 class SendKianReminderJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
-
-    protected int $taxCaseId;
-    protected string $stageName;
-    protected string $reason;
-    protected int $stageId;
-
-    /**
-     * Create a new job instance.
-     * 
-     * @param int|TaxCase $taxCaseId The tax case ID (or TaxCase model as fallback)
-     * @param string $stageName Human-readable stage name (e.g., "Stage 4 - SKP")
-     * @param string $reason Eligibility reason for KIAN
-     * @param int $stageId The stage ID that triggered KIAN (4, 7, 10, 12)
-     */
-    public function __construct(int|TaxCase $taxCaseId, string $stageName, string $reason, int $stageId = 12)
-    {
-        // DEFENSIVE: Handle case where model is passed instead of ID (due to serialization issues)
-        if ($taxCaseId instanceof TaxCase) {
-            Log::warning('SendKianReminderJob received TaxCase model instead of ID - converting', [
-                'tax_case_id' => $taxCaseId->id,
-                'stage' => $stageName,
-            ]);
-            $this->taxCaseId = (int) $taxCaseId->id;
-        } else {
-            $this->taxCaseId = (int) $taxCaseId;
-        }
-        
-        $this->stageName = $stageName;
-        $this->reason = $reason;
-        $this->stageId = (int) $stageId;
-    }
-
-    /**
-     * Execute the job.
-     */
+    public function __construct(public int $notificationAttemptId) {}
     public function handle(): void
     {
+        $attempt=NotificationAttempt::with('notificationLog')->findOrFail($this->notificationAttemptId); $log=$attempt->notificationLog;
+        if ($attempt->status !== NotificationLog::QUEUED) return;
+        $attempt->update(['status'=>NotificationLog::PROCESSING,'started_at'=>now()]); $log->update(['current_status'=>NotificationLog::PROCESSING]);
         try {
-            // Get tax case with relationships
-            $case = TaxCase::with(['entity', 'entity.parentEntity', 'user', 'user.role'])->find($this->taxCaseId);
-            
-            if (!$case) {
-                Log::warning('Tax case not found for KIAN reminder', [
-                    'tax_case_id' => $this->taxCaseId,
-                    'stage' => $this->stageName,
-                ]);
-                return;
-            }
-
-            // ⭐ BUILD TO RECIPIENTS:
-            // 1. Case owner
-            // 2. Case owner's manager (same entity, role "Manager")
-            $toEmails = [];
-            
-            // Add case owner (always included)
-            $caseOwner = $case->user;
-            if ($caseOwner && $caseOwner->email) {
-                $toEmails[] = $caseOwner->email;
-            }
-            
-            // Add case owner's manager(s) from same entity
-            $caseOwnerEntityId = $caseOwner?->entity_id;
-            if ($caseOwnerEntityId) {
-                $managers = User::where('entity_id', $caseOwnerEntityId)
-                    ->whereHas('role', function ($query) {
-                        $query->where('name', 'Manager');
-                    })
-                    ->pluck('email')
-                    ->toArray();
-                
-                $toEmails = array_merge($toEmails, $managers);
-            }
-
-            // ⭐ BUILD CC RECIPIENTS:
-            // Users from Holding Affiliates with roles: "Coordinator", "General Manager", "Vice President"
-            $ccEmails = [];
-            
-            // Get holding entity (parent of current entity if AFFILIATE, or self if HOLDING)
-            $holdingEntity = null;
-            if ($case->entity->entity_type === 'AFFILIATE') {
-                $holdingEntity = $case->entity->parentEntity;
-            } elseif ($case->entity->entity_type === 'HOLDING') {
-                $holdingEntity = $case->entity;
-            }
-            
-            // Get all users from holding with specific roles
-            if ($holdingEntity) {
-                $ccEmails = User::where('entity_id', $holdingEntity->id)
-                    ->whereHas('role', function ($query) {
-                        $query->whereIn('name', ['Coordinator', 'General Manager', 'Vice President']);
-                    })
-                    ->pluck('email')
-                    ->toArray();
-            }
-
-            // ⭐ Deduplicate recipients (remove duplicates between TO and CC)
-            $toEmails = array_unique(array_filter($toEmails));
-            $ccEmails = array_unique(array_filter($ccEmails));
-            
-            // Remove CC emails that are already in TO
-            $ccEmails = array_values(array_diff($ccEmails, $toEmails));
-
-            // Send email
-            if (!empty($toEmails)) {
-                Mail::to($toEmails)
-                    ->cc($ccEmails)
-                    ->send(new KianReminderMail($this->taxCaseId, $this->stageName, $this->reason, $this->stageId));
-                
-                $sentTo = $toEmails;
-            } else {
-                Log::warning('No TO recipients found for KIAN reminder', [
-                    'tax_case_id' => $this->taxCaseId,
-                    'stage' => $this->stageName,
-                    'case_owner_id' => $caseOwner?->id,
-                ]);
-                return;
-            }
-
-            // Log to audit_logs with complete recipient information
-            // Wrap in try-catch since custom action values might not be in enum
-            $allRecipients = array_merge($sentTo, $ccEmails);
-            $allRecipients = array_unique($allRecipients);
-            
-            try {
-                \App\Models\AuditLog::create([
-                    'auditable_type' => TaxCase::class,
-                    'auditable_id' => $this->taxCaseId,
-                    'user_id' => $case->user_id,
-                    'action' => 'submitted', // Use standard action value
-                    'model_name' => 'TaxCase',
-                    'old_values' => null,
-                    'new_values' => json_encode([
-                        'stage_id' => $this->stageId,
-                        'stage_name' => $this->stageName,
-                        'reason' => $this->reason,
-                        'to_recipients' => $sentTo,
-                        'cc_recipients' => $ccEmails,
-                        'total_recipients' => count($allRecipients),
-                        'all_recipients' => $allRecipients,
-                    ]),
-                    'ip_address' => request()?->ip(),
-                    'performed_at' => now(),
-                ]);
-            } catch (\Exception $auditError) {
-                // Log audit failure but don't fail the entire job
-                Log::warning('Failed to create audit log for KIAN reminder', [
-                    'tax_case_id' => $this->taxCaseId,
-                    'stage' => $this->stageName,
-                    'audit_error' => $auditError->getMessage(),
-                ]);
-            }
-        } catch (\Exception $e) {
-            Log::error('Failed to send KIAN reminder', [
-                'tax_case_id' => $this->taxCaseId,
-                'stage' => $this->stageName,
-                'error' => $e->getMessage(),
-            ]);
-            
-            throw $e;
-        }
+            $case=TaxCase::with(['entity.parentEntity','user'])->findOrFail($log->tax_case_id); [$to,$cc]=$this->recipients($case);
+            $attempt->update(['to_recipients'=>$to,'cc_recipients'=>$cc,'bcc_recipients'=>[]]);
+            if (!$to) { $this->finish($attempt,$log,NotificationLog::SKIPPED_NO_RECIPIENT,'No valid TO recipient is currently configured.'); return; }
+            Mail::to($to)->cc($cc)->send(new KianReminderMail($case->id,$this->stageName($log->stage_id),$log->reason ?? '',$log->stage_id));
+            $this->finish($attempt,$log,NotificationLog::SENT);
+            try { \App\Models\AuditLog::create(['auditable_type'=>TaxCase::class,'auditable_id'=>$case->id,'user_id'=>$case->user_id,'action'=>'submitted','model_name'=>'TaxCase','new_values'=>json_encode(['notification_log_id'=>$log->id,'attempt'=>$attempt->attempt_number,'stage_id'=>$log->stage_id]),'performed_at'=>now()]); } catch (\Throwable) { /* delivery state remains authoritative */ }
+        } catch (\Throwable $e) { $this->finish($attempt,$log,NotificationLog::FAILED,null,mb_substr($e->getMessage(),0,1000)); throw $e; }
     }
+    private function recipients(TaxCase $case): array {
+        $to=[]; if(filter_var($case->user?->email,FILTER_VALIDATE_EMAIL))$to[]=$case->user->email;
+        if($case->user?->entity_id)$to=array_merge($to,User::where('entity_id',$case->user->entity_id)->whereHas('role',fn($q)=>$q->where('name','Manager'))->pluck('email')->all());
+        $holding=$case->entity?->entity_type==='AFFILIATE'?$case->entity?->parentEntity:$case->entity;
+        $cc=$holding?User::where('entity_id',$holding->id)->whereHas('role',fn($q)=>$q->whereIn('name',['Coordinator','General Manager','Vice President']))->pluck('email')->all():[];
+        $valid=fn($emails)=>array_values(array_unique(array_filter($emails,fn($email)=>filter_var($email,FILTER_VALIDATE_EMAIL)))); $to=$valid($to); return [$to,array_values(array_diff($valid($cc),$to))];
+    }
+    private function finish(NotificationAttempt $attempt, NotificationLog $log, string $status, ?string $reason=null, ?string $error=null): void { $now=now();$attempt->update(['status'=>$status,'reason'=>$reason??$attempt->reason,'error_message'=>$error,'finished_at'=>$now]);$data=['current_status'=>$status,'last_attempt_at'=>$now];if($status===NotificationLog::SENT)$data['sent_at']=$now;$log->update($data); }
+    private function stageName(int $stage): string { return [4=>'Stage 4 - SKP (Surat Ketetapan Pajak)',7=>'Stage 7 - Objection Decision (Keputusan Keberatan)',10=>'Stage 10 - Appeal Decision (Keputusan Banding)',12=>'Stage 12 - Supreme Court Decision (Keputusan Peninjauan Kembali)'][$stage]??"Stage $stage"; }
 }

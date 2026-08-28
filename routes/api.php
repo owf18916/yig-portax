@@ -32,6 +32,7 @@ use App\Http\Controllers\Api\SupremeCourtDecisionController;
 use App\Http\Controllers\Api\SupremeCourtSubmissionController;
 use App\Http\Controllers\Api\AppealExplanationRequestController;
 use App\Http\Controllers\Api\ExchangeRateController;
+use App\Http\Controllers\Api\NotificationLogController;
 
 // ============================================================================
 // AUTHENTICATION ROUTES - Public
@@ -39,6 +40,13 @@ use App\Http\Controllers\Api\ExchangeRateController;
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth');
 Route::get('/me', [AuthController::class, 'me'])->middleware('auth');
+
+Route::middleware('auth')->group(function () {
+    Route::get('/notification-logs', [NotificationLogController::class, 'index']);
+    Route::get('/notification-logs/{notificationLog}', [NotificationLogController::class, 'show']);
+    Route::post('/notification-logs/{notificationLog}/retry', [NotificationLogController::class, 'retry']);
+    Route::get('/tax-cases/{taxCase}/notification-summary', [NotificationLogController::class, 'summary']);
+});
 
 // Development: Quick login for testing
 if (config('app.debug')) {
@@ -330,14 +338,6 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                     );
                     
                     // ⭐ KIAN REMINDER TRIGGER - FIXED to trigger whenever loss exists
-                    $taxCase->refresh();
-                    if ($taxCase->needsKianAtStage(4)) {
-                        $reason = $taxCase->getKianEligibilityReasonForStage(4);
-                        if ($reason) {
-                            $caseId = (int) $taxCase->id;
-                            dispatch(new \App\Jobs\SendKianReminderJob($caseId, 'Stage 4 - SKP (Surat Ketetapan Pajak)', $reason, 4));
-                        }
-                    }
 
                 } elseif ($stage == 5) {
                     $objectionData = $request->only([
@@ -689,28 +689,8 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                 
                 // ✅ NEW: KIAN REMINDER TRIGGERS for Stages 7, 10, 12
                 // Trigger KIAN whenever loss exists, not conditional on next stage choice
-                if ($stage == 7 && $taxCase->needsKianAtStage(7)) {
-                    $reason = $taxCase->getKianEligibilityReasonForStage(7);
-                    if ($reason) {
-                        $caseId = (int) $taxCase->id;
-                        dispatch(new \App\Jobs\SendKianReminderJob($caseId, 'Stage 7 - Objection Decision (Keputusan Keberatan)', $reason, 7));
-                    }
-                }
-                
-                if ($stage == 10 && $taxCase->needsKianAtStage(10)) {
-                    $reason = $taxCase->getKianEligibilityReasonForStage(10);
-                    if ($reason) {
-                        $caseId = (int) $taxCase->id;
-                        dispatch(new \App\Jobs\SendKianReminderJob($caseId, 'Stage 10 - Appeal Decision (Keputusan Banding)', $reason, 10));
-                    }
-                }
-                
-                if ($stage == 12 && $taxCase->needsKianAtStage(12)) {
-                    $reason = $taxCase->getKianEligibilityReasonForStage(12);
-                    if ($reason) {
-                        $caseId = (int) $taxCase->id;
-                        dispatch(new \App\Jobs\SendKianReminderJob($caseId, 'Stage 12 - Supreme Court Decision (Keputusan Peninjauan Kembali)', $reason, 12));
-                    }
+                if (in_array($stage, [4, 7, 10, 12], true)) {
+                    app(\App\Services\KianNotificationService::class)->evaluateFinalSubmit($taxCase->fresh(), $stage);
                 }
                 
                 return response()->json([

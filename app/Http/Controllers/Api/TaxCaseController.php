@@ -289,6 +289,10 @@ class TaxCaseController extends ApiController
 
         // ✅ NEW: ADD COMPREHENSIVE KIAN STATUS BY STAGE (Multiple KIAN per case concept)
         $taxCase->kian_status_by_stage = $taxCase->getKianStatusByStage();
+        $taxCase->notification_summary = \App\Models\NotificationLog::where('tax_case_id', $taxCase->id)
+            ->whereIn('stage_id', [4, 7, 10, 12])
+            ->with(['attempts' => fn ($query) => $query->latest('attempt_number')->limit(1)])
+            ->latest('id')->get()->keyBy('stage_id');
 
         // ✅ NEW: ADD PRELIMINARY REFUND INFO FOR STAGE 1
         if ($taxCase->isPengembalianPendahuluan()) {
