@@ -43,6 +43,10 @@
         No workflow periods match the selected filters.
       </div>
 
+      <div v-else-if="hasNoTaxCases" class="rounded-lg border border-gray-200 bg-gray-50 p-8 text-center text-gray-600">
+        No tax cases are available yet.
+      </div>
+
       <TaxWorkflowMatrixTable
         v-else
         :rows="matrix.rows"
@@ -96,6 +100,7 @@ const filters = reactive({
 })
 
 const showEntityColumn = computed(() => matrix.value?.meta?.show_entity_column || false)
+const hasNoTaxCases = computed(() => matrix.value?.rows?.length > 0 && matrix.value.rows.every((row) => !row.tax_case))
 const formatMonth = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
 const defaultVatRange = () => {
   const to = new Date()

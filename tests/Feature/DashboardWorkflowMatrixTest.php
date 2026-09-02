@@ -18,7 +18,7 @@ class DashboardWorkflowMatrixTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_affiliate_sees_only_own_entity_and_missing_cit_case_has_create_action(): void
+    public function test_zero_tax_cases_returns_json_and_missing_cit_case_has_create_action(): void
     {
         [$affiliate, $other] = $this->entities();
         $user = $this->user($affiliate);
@@ -27,7 +27,9 @@ class DashboardWorkflowMatrixTest extends TestCase
         $response = $this->actingAs($user)->getJson('/api/dashboard/workflow-matrix?tax_category=CIT&per_page=20');
 
         $response->assertOk()
+            ->assertHeader('content-type', 'application/json')
             ->assertJsonPath('data.rows.0.entity.id', $affiliate->id)
+            ->assertJsonPath('data.rows.0.tax_case', null)
             ->assertJsonPath('data.rows.0.stages.spt.action.name', 'CreateCITCase')
             ->assertJsonPath('data.rows.0.stages.spt.action.query.entity_id', $affiliate->id)
             ->assertJsonPath('data.rows.0.stages.spt.action.query.period_id', $period->id);

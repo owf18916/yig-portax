@@ -67,6 +67,26 @@ export function extractMatrixError(error) {
   }
 }
 
+export async function parseMatrixResponse(response) {
+  const body = await response.text()
+
+  if (!body) {
+    return {}
+  }
+
+  try {
+    return JSON.parse(body)
+  } catch {
+    const responseError = new Error('The workflow matrix service returned an unexpected response.')
+    responseError.data = {
+      message: response.ok
+        ? 'The workflow matrix data could not be read. Please try again.'
+        : 'The workflow matrix service is unavailable. Please try again.'
+    }
+    throw responseError
+  }
+}
+
 export function useDashboardWorkflowMatrixApi() {
   const data = ref(null)
   const loading = ref(false)
@@ -83,7 +103,7 @@ export function useDashboardWorkflowMatrixApi() {
         headers: { Accept: 'application/json' },
         credentials: 'include'
       })
-      const payload = await response.json()
+      const payload = await parseMatrixResponse(response)
 
       if (!response.ok) {
         const requestError = new Error(payload.message || 'Failed to load workflow matrix')
