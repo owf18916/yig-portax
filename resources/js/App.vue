@@ -30,6 +30,13 @@
               >
                 Notification Logs
               </router-link>
+              <router-link
+                v-if="canManageUsers"
+                to="/admin/users"
+                :class="['px-3 py-2 rounded-md text-sm font-medium transition-colors', $route.path.startsWith('/admin/users') ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:text-gray-900']"
+              >
+                User Management
+              </router-link>
             </div>
           </div>
           <div class="flex items-center space-x-4">
@@ -68,17 +75,19 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import Toast from './components/Toast.vue'
 import { setToastComponent } from './composables/useToast'
+import { useCurrentUser } from './composables/useCurrentUser'
 
 const logoUrl = '/images/portax-logo.webp'
 
 const router = useRouter()
 const route = useRoute()
-const currentUser = ref(null)
+const { currentUser, clearCurrentUser } = useCurrentUser()
 const toastRef = ref(null)
+const canManageUsers = computed(() => currentUser.value?.role?.permissions?.includes('manage_users') === true)
 
 // Check if current route should be full-screen (no max-width constraint)
 const isFullScreenRoute = () => {
@@ -110,14 +119,11 @@ onMounted(() => {
   // Initialize toast component reference
   setToastComponent(toastRef)
 
-  // Get user from localStorage
-  const userStr = localStorage.getItem('user')
-  if (userStr) {
-    currentUser.value = JSON.parse(userStr)
-  }
 })
 
 const handleLogout = async () => {
+  clearCurrentUser()
+
   try {
     await fetch('/api/logout', {
       method: 'POST',
@@ -130,8 +136,6 @@ const handleLogout = async () => {
   } catch (err) {
     console.error('Logout error:', err)
   } finally {
-    // Clear local storage and redirect
-    localStorage.removeItem('user')
     await router.push('/login')
   }
 }

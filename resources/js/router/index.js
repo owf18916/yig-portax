@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { defineAsyncComponent } from 'vue'
+import { useCurrentUser } from '../composables/useCurrentUser'
 
 // Lazy load all page components for better code splitting
 const Login = defineAsyncComponent(() => import('../pages/Login.vue'))
@@ -32,6 +33,7 @@ const RefundStage2Form = defineAsyncComponent(() => import('../pages/RefundStage
 const RefundStage3Form = defineAsyncComponent(() => import('../pages/RefundStage3Form.vue'))
 const RefundStage4Form = defineAsyncComponent(() => import('../pages/RefundStage4Form.vue'))
 const NotificationLogs = defineAsyncComponent(() => import('../pages/NotificationLogs.vue'))
+const UserManagement = defineAsyncComponent(() => import('../pages/UserManagement.vue'))
 
 const routes = [
   {
@@ -69,6 +71,12 @@ const routes = [
     name: 'NotificationLogs',
     component: NotificationLogs,
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/admin/users',
+    name: 'UserManagement',
+    component: UserManagement,
+    meta: { requiresAuth: true, permission: 'manage_users' }
   },
   {
     path: '/tax-cases/:id/workflow/1',
@@ -251,7 +259,8 @@ const router = createRouter({
 // Auth guard
 router.beforeEach(async (to, from, next) => {
   const requiresAuth = to.meta.requiresAuth !== false
-  const isLoggedIn = localStorage.getItem('user')
+  const { currentUser } = useCurrentUser()
+  const isLoggedIn = Boolean(currentUser.value)
 
   console.log('Router guard check:', { 
     toPath: to.path, 
@@ -263,6 +272,8 @@ router.beforeEach(async (to, from, next) => {
     // Redirect to login if not authenticated
     console.log('Not authenticated, redirecting to login')
     next('/login')
+  } else if (to.meta.permission && !currentUser.value?.role?.permissions?.includes(to.meta.permission)) {
+    next('/')
   } else if (to.path === '/login' && isLoggedIn) {
     // Redirect to dashboard if already logged in
     console.log('Already logged in, redirecting to dashboard')

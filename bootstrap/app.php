@@ -12,6 +12,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->alias([
+            'manage-users' => \App\Http\Middleware\EnsureCanManageUsers::class,
+        ]);
+
         // For API routes: use token-based auth (no CSRF needed)
         $middleware->api(prepend: [
             \Illuminate\Cookie\Middleware\EncryptCookies::class,

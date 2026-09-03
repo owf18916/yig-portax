@@ -78,10 +78,12 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useCurrentUser } from '../composables/useCurrentUser'
 
 const logoUrl = '/images/portax-logo.webp'
 
 const router = useRouter()
+const { setCurrentUser } = useCurrentUser()
 
 const email = ref('admin@portax.co.id')
 const password = ref('admin123')
@@ -121,17 +123,9 @@ const handleLogin = async () => {
       throw new Error(data.message || 'Login response invalid')
     }
     
-    // Store user info in localStorage
     const userToStore = data.data.user
-    console.log('Storing user:', userToStore)
-    localStorage.setItem('user', JSON.stringify(userToStore))
-    
-    console.log('User stored, verifying localStorage:', localStorage.getItem('user'))
-    
-    // Small delay to ensure localStorage is written before redirect
-    await new Promise(resolve => setTimeout(resolve, 100))
-    
-    console.log('Redirecting to dashboard...')
+    setCurrentUser(userToStore)
+
     // Redirect to dashboard
     await router.push('/')
   } catch (err) {

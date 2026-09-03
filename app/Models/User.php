@@ -108,4 +108,16 @@ class User extends Authenticatable
 
         return false;
     }
+
+    /**
+     * Check whether the user's assigned role grants a permission.
+     */
+    public function hasPermission(string $permission): bool
+    {
+        $role = $this->relationLoaded('role') ? $this->role : $this->role()->first();
+
+        return $role !== null
+            && $role->is_active
+            && in_array($permission, $role->permissions ?? [], true);
+    }
 }

@@ -33,6 +33,8 @@ use App\Http\Controllers\Api\SupremeCourtSubmissionController;
 use App\Http\Controllers\Api\AppealExplanationRequestController;
 use App\Http\Controllers\Api\ExchangeRateController;
 use App\Http\Controllers\Api\NotificationLogController;
+use App\Http\Controllers\Api\RoleController;
+use App\Http\Controllers\Api\UserController;
 
 // ============================================================================
 // AUTHENTICATION ROUTES - Public
@@ -46,6 +48,19 @@ Route::middleware('auth')->group(function () {
     Route::get('/notification-logs/{notificationLog}', [NotificationLogController::class, 'show']);
     Route::post('/notification-logs/{notificationLog}/retry', [NotificationLogController::class, 'retry']);
     Route::get('/tax-cases/{taxCase}/notification-summary', [NotificationLogController::class, 'summary']);
+});
+
+// ============================================================================
+// USER MANAGEMENT ROUTES - Requires manage_users permission
+// ============================================================================
+Route::middleware(['auth', 'manage-users'])->group(function () {
+    Route::get('/roles', [RoleController::class, 'index']);
+    Route::get('/user-management/entities', [UserController::class, 'entities']);
+    Route::get('/users', [UserController::class, 'index']);
+    Route::post('/users', [UserController::class, 'store']);
+    Route::get('/users/{user}', [UserController::class, 'show']);
+    Route::match(['put', 'patch'], '/users/{user}', [UserController::class, 'update']);
+    Route::patch('/users/{user}/status', [UserController::class, 'updateStatus']);
 });
 
 // Development: Quick login for testing
