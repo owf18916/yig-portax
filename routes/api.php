@@ -276,6 +276,29 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
             $isDraft = ($action === 'draft') || ($action === null && $request->boolean('is_draft', false));
             $user = auth()->user();
             
+            // Validate changed fields before the catch block so invalid input returns 422.
+            if ($stage === 2) {
+                $request->validate([
+                    'auditor_position' => 'nullable|string|max:255',
+                    'auditor_email' => 'nullable|string|max:255',
+                ]);
+            } elseif ($stage === 4) {
+                $request->validate(['skp_due_date' => 'nullable|date']);
+            }
+
+            // StageForm requires supporting documents only for final submission.
+            // The optional SPHP notes attachment cannot satisfy this requirement.
+            if (!$isDraft && $stage >= 1 && $stage <= 16 && !\App\Models\Document::query()
+                ->where('tax_case_id', $taxCase->id)
+                ->where('stage_code', (string) $stage)
+                ->where('document_type', '!=', \App\Models\Document::SPHP_OTHER_FINDINGS)
+                ->whereIn('status', ['DRAFT', 'ACTIVE', 'ARCHIVED'])
+                ->exists()) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'supporting_docs' => 'Please upload at least one supporting document before submitting.',
+                ]);
+            }
+
             // Variable to store decision point value for workflow history
             $decisionValue = null;
             
@@ -298,7 +321,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                 if ($stage == 2) {
                     $sp2Data = $request->only([
                         'sp2_number', 'issue_date', 'receipt_date',
-                        'auditor_name', 'auditor_phone', 'auditor_email', 'notes'
+                        'auditor_name', 'auditor_position', 'auditor_phone', 'auditor_email', 'notes'
                     ]);
                     $sp2Data['tax_case_id'] = $taxCase->id;
                     \App\Models\Sp2Record::updateOrCreate(
@@ -317,7 +340,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                     );
                 } elseif ($stage == 4) {
                     $skpData = $request->only([
-                        'skp_number', 'issue_date', 'receipt_date', 'skp_type',
+                        'skp_number', 'issue_date', 'receipt_date', 'skp_due_date', 'skp_type',
                         'skp_amount', 'royalty_correction', 'service_correction', 'other_correction', 'notes',
                         'correction_notes', 'user_routing_choice', 'create_refund', 'refund_amount', 'continue_to_next_stage'
                     ]);

@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Document extends Model
 {
+    public const SPHP_OTHER_FINDINGS = 'sphp_other_findings_attachment';
+
     use SoftDeletes;
 
     protected $table = 'documents';

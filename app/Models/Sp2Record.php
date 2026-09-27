@@ -18,6 +18,7 @@ class Sp2Record extends Model
         'issue_date',
         'receipt_date',
         'auditor_name',
+        'auditor_position',
         'auditor_phone',
         'auditor_email',
         'notes',

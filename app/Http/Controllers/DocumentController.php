@@ -26,9 +26,16 @@ class DocumentController extends Controller
      */
     public function store(Request $request)
     {
+        $isSupplementary = $request->input('document_type') === Document::SPHP_OTHER_FINDINGS;
+        // Office containers may be detected as ZIP, including XLSB/XLSM.
+        // Check both the filename extension and detected MIME; keep PDF rules unchanged.
+        $fileRules = $isSupplementary
+            ? 'required|file|extensions:doc,docx,xls,xlsx,xlsb,xlsm|mimetypes:application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.binary.macroEnabled.12,application/vnd.ms-excel.sheet.macroEnabled.12,application/vnd.ms-office,application/x-ole-storage,application/CDFV2,application/zip|max:10240'
+            : 'required|file|mimes:pdf|max:10240';
+
         // Validate input
         $validated = $request->validate([
-            'file' => 'required|file|mimes:pdf|max:10240', // Max 10MB
+            'file' => $fileRules, // Max 10MB
             'tax_case_id' => 'required|integer|exists:tax_cases,id',
             'documentable_type' => 'required|string',
             'documentable_id' => 'required|integer',
@@ -36,6 +43,15 @@ class DocumentController extends Controller
             'document_type' => 'required|string',
             'description' => 'nullable|string|max:1000',
         ]);
+
+        if ($isSupplementary) {
+            // Use the same case/stage association as existing workflow uploads.
+            $request->validate([
+                'stage_code' => 'in:3',
+                'documentable_type' => 'in:App\\Models\\WorkflowHistory',
+                'documentable_id' => 'in:3',
+            ]);
+        }
 
         $file = $request->file('file');
         $taxCaseId = $validated['tax_case_id'];

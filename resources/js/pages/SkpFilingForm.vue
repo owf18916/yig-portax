@@ -83,6 +83,7 @@ const availableFields = [
   'skp_number',
   'issue_date',
   'receipt_date',
+  'skp_due_date',
   'skp_type',
   'skp_amount',
   'royalty_correction',
@@ -117,6 +118,14 @@ const fields = ref([
     key: 'receipt_date',
     label: 'Tanggal Diterima (Receipt Date)',
     required: true,
+    readonly: false
+  },
+  {
+    id: 10,
+    type: 'date',
+    key: 'skp_due_date',
+    label: 'Tanggal Jatuh Tempo SKP',
+    required: false,
     readonly: false
   },
   {
@@ -179,6 +188,7 @@ const prefillData = ref({
   skp_number: '',
   issue_date: null,
   receipt_date: null,
+  skp_due_date: null,
   skp_type: '',
   skp_amount: 0,
   royalty_correction: 0,
@@ -366,6 +376,7 @@ onMounted(async () => {
         skp_number: skpRecord.skp_number || '',
         issue_date: formatDateForInput(skpRecord.issue_date),
         receipt_date: formatDateForInput(skpRecord.receipt_date),
+        skp_due_date: formatDateForInput(skpRecord.skp_due_date),
         skp_type: skpRecord.skp_type || '',
         skp_amount: skpRecord.skp_amount || 0,
         royalty_correction: skpRecord.royalty_correction || 0,
@@ -466,6 +477,7 @@ const refreshTaxCase = async () => {
           skp_number: skpRecord.skp_number || '',
           issue_date: formatDateForInput(skpRecord.issue_date),
           receipt_date: formatDateForInput(skpRecord.receipt_date),
+          skp_due_date: formatDateForInput(skpRecord.skp_due_date),
           skp_type: skpRecord.skp_type || '',
           skp_amount: skpRecord.skp_amount || 0,
           royalty_correction: skpRecord.royalty_correction || 0,

@@ -79,6 +79,7 @@ const availableFields = [
   'issue_date',
   'receipt_date',
   'auditor_name',
+  'auditor_position',
   'auditor_phone',
   'auditor_email',
   'supporting_docs'
@@ -118,6 +119,14 @@ const fields = ref([
     readonly: false
   },
   {
+    id: 7,
+    type: 'text',
+    key: 'auditor_position',
+    label: 'Auditor Position',
+    required: false,
+    readonly: false
+  },
+  {
     id: 5,
     type: 'text',
     key: 'auditor_phone',
@@ -127,7 +136,7 @@ const fields = ref([
   },
   {
     id: 6,
-    type: 'email',
+    type: 'text',
     key: 'auditor_email',
     label: 'Auditor Email',
     required: false,
@@ -141,6 +150,7 @@ const prefillData = ref({
   issue_date: null,
   receipt_date: null,
   auditor_name: '',
+  auditor_position: '',
   auditor_phone: '',
   auditor_email: '',
   workflowHistories: []
@@ -174,6 +184,7 @@ onMounted(async () => {
         issue_date: formatDateForInput(sp2Record.issue_date),
         receipt_date: formatDateForInput(sp2Record.receipt_date),
         auditor_name: sp2Record.auditor_name || '',
+        auditor_position: sp2Record.auditor_position || '',
         auditor_phone: sp2Record.auditor_phone || '',
         auditor_email: sp2Record.auditor_email || '',
         workflowHistories: caseFetchedData.workflow_histories || []
@@ -262,6 +273,7 @@ const refreshTaxCase = async () => {
           issue_date: formatDateForInput(sp2Record.issue_date),
           receipt_date: formatDateForInput(sp2Record.receipt_date),
           auditor_name: sp2Record.auditor_name || '',
+          auditor_position: sp2Record.auditor_position || '',
           auditor_phone: sp2Record.auditor_phone || '',
           auditor_email: sp2Record.auditor_email || '',
           workflowHistories: caseFetchedData.workflow_histories || []

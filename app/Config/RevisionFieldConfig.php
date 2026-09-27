@@ -22,6 +22,7 @@ class RevisionFieldConfig
             ],
             'SKP' => [
                 'skp_number' => 'SKP Number',
+                'skp_due_date' => 'Tanggal Jatuh Tempo SKP',
                 'issue_date' => 'Issue Date',
                 'receipt_date' => 'Receipt Date',
                 'skp_type' => 'SKP Type',
@@ -71,6 +72,7 @@ class RevisionFieldConfig
             ],
             'SKP' => [
                 'skp_number',
+                'skp_due_date',
                 'issue_date',
                 'receipt_date',
                 'skp_type',

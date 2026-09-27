@@ -181,6 +181,18 @@
                   rows="4"
                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                 />
+                <div v-if="stageId === 3 && field.key === 'other_finding_notes'" class="mt-2 space-y-1">
+                  <label for="other-findings-attachment" class="block text-sm font-medium text-gray-700 mb-1">Attachment for Notes for Other Findings (Optional)</label>
+                  <input id="other-findings-attachment" type="file" accept=".doc,.docx,.xls,.xlsx,.xlsb,.xlsm"
+                    :disabled="uploadProgress > 0 || supplementaryUploading || submissionComplete || fieldsDisabled"
+                    @change="handleSupplementaryUpload"
+                    class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 disabled:opacity-50" />
+                  <p class="text-xs text-gray-500">DOC, DOCX, XLS, XLSX, XLSB, XLSM; maximum 10MB. {{ supplementaryUploading ? 'Uploading...' : '' }}</p>
+                  <div v-for="file in supplementaryFiles" :key="file.id" class="flex items-center justify-between p-1.5 bg-gray-50 rounded border border-gray-200 text-xs">
+                    <a :href="`/api/documents/${file.id}/download`" class="text-blue-700 truncate">{{ file.name }} ({{ file.size }} MB)</a>
+                    <button v-if="!fieldsDisabled && !submissionComplete" type="button" @click="removeFile(file.id)" class="px-1.5 py-0.5 text-xs bg-red-50 text-red-700 rounded">Remove</button>
+                  </div>
+                </div>
                 <p v-if="formErrors[field.key]" class="text-red-500 text-sm mt-1">
                   {{ formErrors[field.key] }}
                 </p>
@@ -326,7 +338,7 @@
 
             <!-- Document Upload Section -->
             <div class="border-t pt-2 mt-2">
-              <h3 class="text-sm font-medium text-gray-900 mb-1">📎 Supporting Documents</h3>
+              <h3 class="text-sm font-medium text-gray-900 mb-1">📎 Supporting Documents <span class="text-red-500">*</span></h3>
               
               <!-- Loading indicator -->
               <div v-if="loadingDocuments" class="flex items-center space-x-2 mb-1 text-gray-500">
@@ -338,8 +350,9 @@
                 <input
                   type="file"
                   multiple
+                  accept=".pdf"
                   @change="handleFileUpload"
-                  :disabled="uploadProgress > 0 || submissionComplete || fieldsDisabled"
+                  :disabled="uploadProgress > 0 || supplementaryUploading || submissionComplete || fieldsDisabled"
                   class="block w-full text-sm text-gray-500
                     file:mr-4 file:py-2 file:px-4
                     file:rounded-lg file:border-0
@@ -364,9 +377,9 @@
                 </div>
                 
                 <!-- Uploaded Files List (Click to view in PDF viewer) -->
-                <div v-if="uploadedFiles.length > 0" class="mt-1 space-y-0.5">
-                  <p class="text-xs font-medium text-gray-700">{{ uploadedFiles.length }} file(s):</p>
-                  <div v-for="file in uploadedFiles" :key="file.id" class="flex items-center justify-between p-1.5 bg-gray-50 rounded border border-gray-200 hover:bg-blue-50 cursor-pointer transition text-xs" @click="viewDocument(file.id, file.name)">
+                <div v-if="supportingFiles.length > 0" class="mt-1 space-y-0.5">
+                  <p class="text-xs font-medium text-gray-700">{{ supportingFiles.length }} file(s):</p>
+                  <div v-for="file in supportingFiles" :key="file.id" class="flex items-center justify-between p-1.5 bg-gray-50 rounded border border-gray-200 hover:bg-blue-50 cursor-pointer transition text-xs" @click="viewDocument(file.id, file.name)">
                     <div class="flex items-center space-x-1.5 flex-1 min-w-0">
                       <span class="text-base shrink-0">📄</span>
                       <div class="flex-1 min-w-0">
@@ -404,10 +417,10 @@
 
             <!-- Submit Buttons -->
             <div class="flex gap-1 pt-2 border-t">
-              <Button type="submit" variant="primary" :disabled="submitting || isLoading || fieldsDisabled || submissionComplete" class="text-xs px-2 py-1.5">
+              <Button type="submit" variant="primary" :disabled="submitting || isLoading || supplementaryUploading || uploadProgress > 0 || fieldsDisabled || submissionComplete" class="text-xs px-2 py-1.5">
                 {{ submitting ? 'Submitting...' : 'Submit & Continue' }}
               </Button>
-              <Button type="button" @click="saveDraft" variant="secondary" :disabled="submitting || isLoading || fieldsDisabled || submissionComplete" class="text-xs px-2 py-1.5">
+              <Button type="button" @click="saveDraft" variant="secondary" :disabled="submitting || isLoading || supplementaryUploading || uploadProgress > 0 || fieldsDisabled || submissionComplete" class="text-xs px-2 py-1.5">
                 Save as Draft
               </Button>
               <Button type="button" @click="viewCaseDetail" variant="secondary" :disabled="isLoading" class="text-xs px-2 py-1.5">
@@ -567,6 +580,10 @@ const formData = reactive({
 })
 const formErrors = reactive({})
 const uploadedFiles = ref([])
+const supplementaryType = 'sphp_other_findings_attachment'
+const supplementaryUploading = ref(false)
+const supplementaryFiles = computed(() => uploadedFiles.value.filter(file => file.documentType === supplementaryType))
+const supportingFiles = computed(() => uploadedFiles.value.filter(file => file.documentType !== supplementaryType))
 const loadingDocuments = ref(false)
 const uploadProgress = ref(0)
 const uploadingFiles = ref({}) // Track progress per file: { fileId: percentage }
@@ -856,6 +873,7 @@ const fetchDocuments = async () => {
         size: (doc.file_size / 1024 / 1024).toFixed(2), // Convert to MB
         uploadedAt: doc.uploaded_at,
         status: doc.status,
+        documentType: doc.document_type,
         isUploaded: true
       }))
     }
@@ -864,6 +882,25 @@ const fetchDocuments = async () => {
     // Don't show error toast, silently fail
   } finally {
     loadingDocuments.value = false
+  }
+}
+
+const handleSupplementaryUpload = async (event) => {
+  const file = event.target.files?.[0]
+  if (!file) return
+  supplementaryUploading.value = true
+  try {
+    if (!/\.(doc|docx|xls|xlsx|xlsb|xlsm)$/i.test(file.name)) throw new Error('Only DOC, DOCX, XLS, XLSX, XLSB and XLSM files are allowed')
+    if (file.size > 10 * 1024 * 1024) throw new Error('Maximum file size is 10MB')
+    await uploadFile(file, supplementaryType)
+    // Only a successful new attachment can prefill an empty note. Loading files never does.
+    if (!String(formData.other_finding_notes || '').trim()) formData.other_finding_notes = 'As attched'
+  } catch (error) {
+    toastRef.value?.addToast('Upload Error', error.message, 'error', 5000)
+  } finally {
+    supplementaryUploading.value = false
+    uploadProgress.value = 0
+    event.target.value = ''
   }
 }
 
@@ -885,14 +922,19 @@ const handleFileUpload = async (event) => {
     }
 
     // Upload file via API
-    await uploadFile(file)
+    try {
+      await uploadFile(file)
+    } catch (error) {
+      uploadProgress.value = 0
+      toastRef.value?.addToast('Upload Error', error.message, 'error', 5000)
+    }
   }
 
   // Reset input
   event.target.value = ''
 }
 
-const uploadFile = async (file) => {
+const uploadFile = async (file, documentType = 'supporting_document') => {
   return new Promise((resolve, reject) => {
     try {
       const formData = new FormData()
@@ -912,7 +954,7 @@ const uploadFile = async (file) => {
       }
       
       formData.append('stage_code', props.stageId.toString())
-      formData.append('document_type', 'supporting_document')
+      formData.append('document_type', documentType)
 
       // Get CSRF token from meta tag
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
@@ -943,6 +985,7 @@ const uploadFile = async (file) => {
               name: result.data.original_filename,
               size: (result.data.file_size / 1024 / 1024).toFixed(2), // MB
               uploadedAt: result.data.uploaded_at,
+              documentType,
               status: result.data.status, // Include status (DRAFT)
               isUploaded: true // Mark as successfully uploaded
             })
@@ -1163,7 +1206,7 @@ const submitForm = async () => {
   }
 
   // Validate that at least one document is uploaded
-  if (uploadedFiles.value.length === 0) {
+  if (supportingFiles.value.length === 0) {
     toastRef.value?.addToast('Missing Documents', 'Please upload at least one supporting document before submitting', 'error', 5000)
     return
   }

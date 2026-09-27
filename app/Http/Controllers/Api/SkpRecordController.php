@@ -27,6 +27,7 @@ class SkpRecordController extends ApiController
             'skp_number' => 'required|string|unique:skp_records',
             'issue_date' => 'required|date',
             'receipt_date' => 'nullable|date',
+            'skp_due_date' => 'nullable|date',
             'skp_type' => 'required|in:LB,NIHIL,KB',
             'skp_amount' => 'required|numeric|min:0',
             'royalty_correction' => 'nullable|numeric|min:0',

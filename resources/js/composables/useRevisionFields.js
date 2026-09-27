@@ -26,12 +26,14 @@ const FIELD_CONFIGURATIONS = {
   'skp-records': {
     labels: {
       'skp_number': 'SKP Number',
+      'skp_due_date': 'Tanggal Jatuh Tempo SKP',
       'skp_date': 'SKP Date',
       'amount': 'Amount',
       'attachments': 'Attachments'
     },
     availableFields: [
       'skp_number',
+      'skp_due_date',
       'skp_date',
       'amount',
       'attachments'

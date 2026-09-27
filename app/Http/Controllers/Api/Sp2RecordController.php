@@ -20,7 +20,8 @@ class Sp2RecordController extends ApiController
             'receipt_date' => 'nullable|date',
             'auditor_name' => 'nullable|string',
             'auditor_phone' => 'nullable|string',
-            'auditor_email' => 'nullable|email',
+            'auditor_email' => 'nullable|string|max:255',
+            'auditor_position' => 'nullable|string|max:255',
             'notes' => 'nullable|string',
         ]);
 
