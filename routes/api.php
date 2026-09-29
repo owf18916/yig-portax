@@ -35,6 +35,7 @@ use App\Http\Controllers\Api\ExchangeRateController;
 use App\Http\Controllers\Api\NotificationLogController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\UserController;
+use App\Services\MainWorkflowTransitionGuard;
 
 // ============================================================================
 // AUTHENTICATION ROUTES - Public
@@ -47,7 +48,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/notification-logs', [NotificationLogController::class, 'index']);
     Route::get('/notification-logs/{notificationLog}', [NotificationLogController::class, 'show']);
     Route::post('/notification-logs/{notificationLog}/retry', [NotificationLogController::class, 'retry']);
-    Route::get('/tax-cases/{taxCase}/notification-summary', [NotificationLogController::class, 'summary']);
+    Route::get('/tax-cases/{taxCase}/notification-summary', [NotificationLogController::class, 'summary'])
+        ->middleware('can:view,taxCase');
 });
 
 // ============================================================================
@@ -112,7 +114,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
     // ============================================================================
     // NEXT ACTION ROUTES - Update next_action fields for any stage record
     // ============================================================================
-    Route::put('{taxCaseId}/next-action/{modelType}/{recordId}', function (Request $request, $taxCaseId, $modelType, $recordId) {
+    Route::put('{taxCase}/next-action/{modelType}/{recordId}', function (Request $request, TaxCase $taxCase, $modelType, $recordId) {
         $modelMap = [
             'tax-cases' => 'App\Models\TaxCase',
             'sp2-records' => 'App\Models\Sp2Record',
@@ -137,7 +139,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         $modelClass = $modelMap[$modelType];
         
         // For tax-cases model type, verify the record ID matches the taxCaseId
-        if ($modelType === 'tax-cases' && $recordId != $taxCaseId) {
+        if ($modelType === 'tax-cases' && (int) $recordId !== (int) $taxCase->id) {
             return response()->json(['error' => 'Record ID does not match tax case ID'], 400);
         }
         
@@ -145,6 +147,11 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         
         if (!$record) {
             return response()->json(['error' => 'Record not found'], 404);
+        }
+
+        $recordTaxCaseId = $record instanceof TaxCase ? $record->id : $record->tax_case_id;
+        if ((int) $recordTaxCaseId !== (int) $taxCase->id) {
+            return response()->json(['error' => 'Record not found for this tax case'], 404);
         }
         
         $validated = $request->validate([
@@ -160,9 +167,9 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
             'message' => 'Next action updated successfully',
             'data' => $record
         ]);
-    })->name('next-action.update');
+    })->middleware('can:view,taxCase')->name('next-action.update');
     
-    Route::prefix('{taxCase}')->group(function () {
+    Route::prefix('{taxCase}')->middleware('can:view,taxCase')->group(function () {
         Route::get('/', [TaxCaseController::class, 'show'])->name('tax-cases.show');
         Route::put('/', [TaxCaseController::class, 'update'])->name('tax-cases.update');
         Route::get('/workflow-history', [TaxCaseController::class, 'workflowHistory'])->name('tax-cases.workflow-history');
@@ -211,9 +218,11 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                     ]);
                 
                 // Update tax_cases.current_stage to next stage
-                $taxCase->update([
-                    'current_stage' => $validated['next_stage_id'],
-                ]);
+                if ($validated['next_stage_id'] >= 1 && $validated['next_stage_id'] <= 12) {
+                    $taxCase->update([
+                        'current_stage' => $validated['next_stage_id'],
+                    ]);
+                }
                 
                 // Create new workflow history entry for the next stage (in draft status)
                 $taxCase->workflowHistories()->create([
@@ -269,40 +278,58 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         
         // Generic workflow endpoint for all stages - save draft or submit
         Route::post('/workflow/{stage}', function (Request $request, TaxCase $taxCase, $stage) {
+            if (!ctype_digit((string) $stage) || (int) $stage < 1 || (int) $stage > 12) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Main workflow stages must be between 1 and 12.',
+                ], 422);
+            }
+
             // ⭐ CAST stage to integer (route param comes as string)
             $stage = (int) $stage;
             // Determine action from request body - must explicitly check for 'draft'
             $action = $request->input('action');
             $isDraft = ($action === 'draft') || ($action === null && $request->boolean('is_draft', false));
             $user = auth()->user();
-            
-            // Validate changed fields before the catch block so invalid input returns 422.
-            if ($stage === 2) {
-                $request->validate([
-                    'auditor_position' => 'nullable|string|max:255',
-                    'auditor_email' => 'nullable|string|max:255',
-                ]);
-            } elseif ($stage === 4) {
-                $request->validate(['skp_due_date' => 'nullable|date']);
-            }
-
-            // StageForm requires supporting documents only for final submission.
-            // The optional SPHP notes attachment cannot satisfy this requirement.
-            if (!$isDraft && $stage >= 1 && $stage <= 16 && !\App\Models\Document::query()
-                ->where('tax_case_id', $taxCase->id)
-                ->where('stage_code', (string) $stage)
-                ->where('document_type', '!=', \App\Models\Document::SPHP_OTHER_FINDINGS)
-                ->whereIn('status', ['DRAFT', 'ACTIVE', 'ARCHIVED'])
-                ->exists()) {
-                throw \Illuminate\Validation\ValidationException::withMessages([
-                    'supporting_docs' => 'Please upload at least one supporting document before submitting.',
-                ]);
-            }
 
             // Variable to store decision point value for workflow history
             $decisionValue = null;
             
             try {
+                DB::beginTransaction();
+                $taxCase = TaxCase::query()->lockForUpdate()->findOrFail($taxCase->id);
+                $guard = app(MainWorkflowTransitionGuard::class)->inspect($taxCase, $stage);
+                if (!$guard['allowed']) {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'success' => false,
+                        'message' => $guard['message'],
+                    ], $guard['status']);
+                }
+
+                if ($stage === 2) {
+                    $request->validate([
+                        'auditor_position' => 'nullable|string|max:255',
+                        'auditor_email' => 'nullable|string|max:255',
+                    ]);
+                } elseif ($stage === 4) {
+                    $request->validate(['skp_due_date' => 'nullable|date']);
+                }
+
+                // StageForm requires supporting documents only for final submission.
+                // The optional SPHP notes attachment cannot satisfy this requirement.
+                if (!$isDraft && !\App\Models\Document::query()
+                    ->where('tax_case_id', $taxCase->id)
+                    ->where('stage_code', (string) $stage)
+                    ->where('document_type', '!=', \App\Models\Document::SPHP_OTHER_FINDINGS)
+                    ->whereIn('status', ['DRAFT', 'ACTIVE', 'ARCHIVED'])
+                    ->exists()) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'supporting_docs' => 'Please upload at least one supporting document before submitting.',
+                    ]);
+                }
+
                 // Update tax case with form data (only updatable fields)
                 $updateData = [];
                 
@@ -660,6 +687,8 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                         'notes' => 'Stage saved as draft',
                     ]);
                     
+                    DB::commit();
+
                     return response()->json([
                         'success' => true,
                         'message' => "Stage $stage draft saved successfully",
@@ -730,6 +759,8 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                 if (in_array($stage, [4, 7, 10, 12], true)) {
                     app(\App\Services\KianNotificationService::class)->evaluateFinalSubmit($taxCase->fresh(), $stage);
                 }
+
+                DB::commit();
                 
                 return response()->json([
                     'success' => true,
@@ -742,7 +773,16 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                         'supremeCourtDecision' // ⭐ For Stage 12 decision_type
                     ])
                 ]);
+            } catch (\Illuminate\Validation\ValidationException $e) {
+                if (DB::transactionLevel() > 0) {
+                    DB::rollBack();
+                }
+
+                throw $e;
             } catch (\Exception $e) {
+                if (DB::transactionLevel() > 0) {
+                    DB::rollBack();
+                }
                 Log::error('Workflow endpoint error', [
                     'stage' => $stage,
                     'error' => $e->getMessage(),

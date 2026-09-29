@@ -77,6 +77,14 @@ class RevisionController extends Controller
             ], 422);
         }
 
+        $this->ensureDocumentsBelongToTaxCase(
+            array_merge(
+                $payload['proposed_document_changes']['files_to_delete'] ?? [],
+                $payload['proposed_document_changes']['files_to_add'] ?? []
+            ),
+            $taxCase
+        );
+
         // Check if data is submitted via workflow_history (source of truth)
         $isStageSubmitted = $taxCase->workflowHistories()
             ->where('stage_id', $stageCode ?? 1)
@@ -162,6 +170,7 @@ class RevisionController extends Controller
             $documents = [];
             if (!empty($documentIds)) {
                 $documents = Document::whereIn('id', $documentIds)
+                    ->where('tax_case_id', $taxCase->id)
                     ->get(['id', 'original_filename'])
                     ->keyBy('id')
                     ->toArray();
@@ -228,6 +237,8 @@ class RevisionController extends Controller
      */
     public function submitRevisedData(Request $request, TaxCase $taxCase, Revision $revision): JsonResponse
     {
+        $this->ensureRevisionBelongsToTaxCase($revision, $taxCase);
+
         $user = auth()->user();
         
         // Ensure entity is loaded for authorization
@@ -247,16 +258,9 @@ class RevisionController extends Controller
             ], 422);
         }
 
-        // Verify revision belongs to this tax case
-        if ($revision->revisable_id !== $taxCase->id || $revision->revisable_type !== 'TaxCase') {
-            return response()->json([
-                'error' => 'Revision does not belong to this tax case',
-            ], 422);
-        }
-
         $validated = $request->validate([
             'revised_data' => 'required|array',
-            'revision_id' => 'required|integer',
+            'revision_id' => 'required|integer|in:' . $revision->id,
         ]);
 
         try {
@@ -293,6 +297,8 @@ class RevisionController extends Controller
      */
     public function decideRevision(Request $request, TaxCase $taxCase, Revision $revision): JsonResponse
     {
+        $this->ensureRevisionBelongsToTaxCase($revision, $taxCase);
+
         $user = auth()->user();
         
         // Ensure entity is loaded for authorization
@@ -330,6 +336,7 @@ class RevisionController extends Controller
      */
     public function showRevision(TaxCase $taxCase, Revision $revision): JsonResponse
     {
+        $this->ensureRevisionBelongsToTaxCase($revision, $taxCase);
         $this->authorize('view', $revision);
 
         $revision->load([
@@ -347,6 +354,7 @@ class RevisionController extends Controller
         $documents = [];
         if (!empty($documentIds)) {
             $documents = Document::whereIn('id', $documentIds)
+                ->where('tax_case_id', $taxCase->id)
                 ->get(['id', 'original_filename'])
                 ->keyBy('id')
                 ->toArray();
@@ -377,7 +385,7 @@ class RevisionController extends Controller
             ->get();
 
         // Add documents data to each revision
-        $revisions->each(function ($revision) {
+        $revisions->each(function ($revision) use ($taxCase) {
             $docChanges = $revision->proposed_document_changes ?? [];
             $documentIds = array_merge(
                 $docChanges['files_to_delete'] ?? [],
@@ -387,6 +395,7 @@ class RevisionController extends Controller
             $documents = [];
             if (!empty($documentIds)) {
                 $documents = Document::whereIn('id', $documentIds)
+                    ->where('tax_case_id', $taxCase->id)
                     ->get(['id', 'original_filename'])
                     ->keyBy('id')
                     ->toArray();
@@ -398,5 +407,30 @@ class RevisionController extends Controller
         return response()->json([
             'data' => $revisions,
         ]);
+    }
+
+    private function ensureRevisionBelongsToTaxCase(Revision $revision, TaxCase $taxCase): void
+    {
+        abort_unless(
+            in_array($revision->revisable_type, ['TaxCase', TaxCase::class], true)
+                && (int) $revision->revisable_id === (int) $taxCase->id,
+            404,
+            'Revision not found for this tax case.'
+        );
+    }
+
+    private function ensureDocumentsBelongToTaxCase(array $documentIds, TaxCase $taxCase): void
+    {
+        $documentIds = collect($documentIds)->filter()->unique()->values();
+        if ($documentIds->isEmpty()) {
+            return;
+        }
+
+        $ownedCount = Document::query()
+            ->whereIn('id', $documentIds)
+            ->where('tax_case_id', $taxCase->id)
+            ->count();
+
+        abort_unless($ownedCount === $documentIds->count(), 404, 'Document not found for this tax case.');
     }
 }

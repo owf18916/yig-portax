@@ -51,6 +51,12 @@ class TaxCaseExportController
                     'kianSubmission'
                 ]);
 
+            if (!$user->entity) {
+                $query->whereRaw('1 = 0');
+            } elseif ($user->entity->entity_type !== 'HOLDING') {
+                $query->where('entity_id', $user->entity_id);
+            }
+
             // Apply filters from request
             if ($request->filled('case_type')) {
                 $query->where('case_type', $request->case_type);
@@ -118,7 +124,7 @@ class TaxCaseExportController
                 Log::warning('No tax cases found for export', [
                     'user_id' => $user->id,
                     'filters' => $request->all(),
-                    'total_cases_in_db' => TaxCase::count()
+                    'accessible_cases' => $taxCases->count()
                 ]);
                 return response()->json([
                     'success' => false,

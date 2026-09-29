@@ -5,7 +5,9 @@ namespace App\Providers;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Gate;
 use App\Models\Revision;
+use App\Models\TaxCase;
 use App\Policies\RevisionPolicy;
+use App\Policies\TaxCasePolicy;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -14,6 +16,7 @@ class AppServiceProvider extends ServiceProvider
      */
     protected $policies = [
         Revision::class => RevisionPolicy::class,
+        TaxCase::class => TaxCasePolicy::class,
     ];
 
     /**

@@ -6,6 +6,7 @@ use App\Models\Document;
 use App\Models\TaxCase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 
 class DocumentController extends Controller
@@ -26,6 +27,9 @@ class DocumentController extends Controller
      */
     public function store(Request $request)
     {
+        $taxCase = TaxCase::findOrFail($request->integer('tax_case_id'));
+        Gate::authorize('view', $taxCase);
+
         $isSupplementary = $request->input('document_type') === Document::SPHP_OTHER_FINDINGS;
         // Office containers may be detected as ZIP, including XLSB/XLSM.
         // Check both the filename extension and detected MIME; keep PDF rules unchanged.
@@ -121,6 +125,8 @@ class DocumentController extends Controller
      */
     public function view(Document $document)
     {
+        $this->authorizeDocument($document);
+
         try {
             // Check if document exists and file is available
             $disk = config('filesystems.default');
@@ -156,6 +162,8 @@ class DocumentController extends Controller
      */
     public function download(Document $document)
     {
+        $this->authorizeDocument($document);
+
         try {
             // Check if document exists and file is available
             $disk = config('filesystems.default');
@@ -195,7 +203,16 @@ class DocumentController extends Controller
 
         // Filter by tax_case_id if provided
         if ($request->has('tax_case_id')) {
-            $query->where('tax_case_id', $request->get('tax_case_id'));
+            $taxCase = TaxCase::findOrFail($request->integer('tax_case_id'));
+            Gate::authorize('view', $taxCase);
+            $query->where('tax_case_id', $taxCase->id);
+        } else {
+            $user = $request->user();
+            if (!$user->entity) {
+                $query->whereRaw('1 = 0');
+            } elseif ($user->entity->entity_type !== 'HOLDING') {
+                $query->whereHas('taxCase', fn ($taxCases) => $taxCases->where('entity_id', $user->entity_id));
+            }
         }
 
         // Filter by stage_code if provided
@@ -244,6 +261,8 @@ class DocumentController extends Controller
      */
     public function destroy(Document $document)
     {
+        $this->authorizeDocument($document);
+
         try {
             // Soft delete the document
             $document->delete();
@@ -271,5 +290,12 @@ class DocumentController extends Controller
         $random = Str::random(8);
         
         return "{$timestamp}_{$random}.{$extension}";
+    }
+
+    private function authorizeDocument(Document $document): void
+    {
+        $taxCase = $document->taxCase;
+        abort_if($taxCase === null, 403, 'Document has no valid tax case ownership.');
+        Gate::authorize('view', $taxCase);
     }
 }

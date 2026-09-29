@@ -1,20 +1,31 @@
 <template>
   <div class="space-y-6">
     <div class="flex items-center space-x-4">
-      <Button @click="$router.back()" variant="secondary">← Back</Button>
-      <h1 class="text-3xl font-bold text-gray-900">{{ caseNumber }}</h1>
+      <Button @click="$router.push('/tax-cases')" variant="secondary">← Back to Tax Cases</Button>
+      <h1 v-if="loadState === 'success'" class="text-3xl font-bold text-gray-900">{{ caseNumber }}</h1>
     </div>
 
-    <Alert
-      v-if="apiError"
-      type="error"
-      title="Error"
-      :message="apiError"
-    />
+    <LoadingSpinner v-if="loadState === 'loading'" message="Loading Tax SPT..." />
 
-    <LoadingSpinner v-if="loading" message="Loading Tax SPT..." />
+    <div v-else-if="loadState === 'forbidden'" class="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
+      <h2 class="text-lg font-semibold text-red-900">Access denied</h2>
+      <p class="mt-2 text-red-800">You do not have permission to access this tax case.</p>
+      <Button class="mt-4" @click="$router.push('/tax-cases')" variant="secondary">Back to Tax Cases</Button>
+    </div>
 
-    <div v-else class="space-y-6">
+    <div v-else-if="loadState === 'not-found'" class="rounded-lg border border-gray-200 bg-gray-50 p-6 text-center">
+      <h2 class="text-lg font-semibold text-gray-900">Tax case not found</h2>
+      <p class="mt-2 text-gray-700">The tax case you requested could not be found.</p>
+      <Button class="mt-4" @click="$router.push('/tax-cases')" variant="secondary">Back to Tax Cases</Button>
+    </div>
+
+    <div v-else-if="loadState === 'error'" class="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
+      <h2 class="text-lg font-semibold text-red-900">Failed to load case</h2>
+      <p class="mt-2 text-red-800">Please try again.</p>
+      <Button class="mt-4" @click="loadCaseData" variant="secondary">Try again</Button>
+    </div>
+
+    <div v-else-if="loadState === 'success'" class="space-y-6">
       <!-- Case Overview -->
       <Card title="Case Overview" subtitle="Basic information">
         <div class="grid grid-cols-2 gap-6">
@@ -412,19 +423,13 @@ const router = useRouter()
 const taxCaseStore = useTaxCaseStore()
 const { showSuccess, showError } = useToast()
 
-const loading = ref(true)
-const apiError = ref('')
-const caseNumber = ref('TAX-2026-001')
-const caseData = ref({
-  case_number: '',
-  case_type: 'CIT',
-  entity_name: '',
-  amount: 0,
-  status: 'draft'
-})
+const loadState = ref('loading')
+const caseNumber = ref('')
+const caseData = ref({})
 const documents = ref([])
 const workflowHistory = ref([])
 const showKianModal = ref(false)
+let activeLoadRequest = 0
 
 // State for collapsible sections
 const expandedSections = ref({
@@ -698,6 +703,12 @@ const updateStageAccessibility = () => {
     stage.completed = isStageCompleted(stage.id)
     
     if (stage.branch === 'main') {
+      // The backend transition guard is authoritative for main-stage access.
+      if (Array.isArray(caseData.value?.accessible_stages)) {
+        stage.accessible = caseData.value.accessible_stages.includes(stage.id)
+        return
+      }
+
       // MAIN FLOW: Sequential logic
       if (stage.id === 1) {
         // Stage 1 selalu accessible
@@ -845,14 +856,34 @@ const updateStageAccessibility = () => {
   }
 }
 
-onMounted(async () => {
+const clearCaseState = () => {
+  caseData.value = {}
+  caseNumber.value = ''
+  workflowHistory.value = []
+  documents.value = []
+}
+
+const loadCaseData = async () => {
+  const requestId = ++activeLoadRequest
+  clearCaseState()
+  loadState.value = 'loading'
   try {
     const response = await fetch(`/api/tax-cases/${route.params.id}`, {
       credentials: 'include',
       headers: { 'Accept': 'application/json' }
     })
-    if (!response.ok) throw new Error('Failed to load case')
+    if (!response.ok) {
+      if (requestId !== activeLoadRequest) return
+      loadState.value = response.status === 403
+        ? 'forbidden'
+        : response.status === 404
+          ? 'not-found'
+          : 'error'
+      return
+    }
     const responseData = await response.json()
+
+    if (requestId !== activeLoadRequest) return
     
     // Handle API response wrapper: { success, message, data: {...} }
     if (responseData.data) {
@@ -886,7 +917,7 @@ onMounted(async () => {
         if (historyResponse.ok) {
           const historyData = await historyResponse.json()
           const histories = historyData.data || historyData
-          if (Array.isArray(histories)) {
+          if (Array.isArray(histories) && requestId === activeLoadRequest) {
             workflowHistory.value = histories
             console.log('[TaxCaseDetail] Loaded workflowHistory from API:', workflowHistory.value)
           }
@@ -899,70 +930,22 @@ onMounted(async () => {
     // Update stage accessibility berdasarkan SKP record user_routing_choice
     updateStageAccessibility()
     
-    caseNumber.value = caseData.value.case_number || 'TAX-2026-001'
+    if (requestId !== activeLoadRequest) return
+    caseNumber.value = caseData.value.case_number || ''
+    loadState.value = 'success'
   } catch (error) {
-    apiError.value = error.message
-    console.error('Failed to load case:', error)
-  } finally {
-    loading.value = false
+    if (requestId === activeLoadRequest) {
+      console.error('Failed to load case:', error)
+      loadState.value = 'error'
+    }
   }
-})
+}
+
+onMounted(loadCaseData)
 
 // ⭐ Reload function to refresh case data and recalculate accessibility
 const reloadCaseData = async () => {
-  loading.value = true
-  try {
-    const response = await fetch(`/api/tax-cases/${route.params.id}`, {
-      credentials: 'include',
-      headers: { 'Accept': 'application/json' }
-    })
-    if (!response.ok) throw new Error('Failed to reload case')
-    const responseData = await response.json()
-    
-    if (responseData.data) {
-      const data = responseData.data
-      if (data.id && data.case_number) {
-        caseData.value = data
-      } else if (Array.isArray(data)) {
-        caseData.value = data[0] || {}
-      } else {
-        caseData.value = data
-      }
-    } else {
-      caseData.value = responseData
-    }
-    
-    // Reload workflow history
-    if (caseData.value.workflowHistories && Array.isArray(caseData.value.workflowHistories)) {
-      workflowHistory.value = caseData.value.workflowHistories
-    }
-    
-    if (caseData.value.id) {
-      try {
-        const historyResponse = await fetch(`/api/tax-cases/${route.params.id}/workflow-history`, {
-          credentials: 'include',
-          headers: { 'Accept': 'application/json' }
-        })
-        if (historyResponse.ok) {
-          const historyData = await historyResponse.json()
-          const histories = historyData.data || historyData
-          if (Array.isArray(histories)) {
-            workflowHistory.value = histories
-          }
-        }
-      } catch (e) {
-        console.warn('Could not reload workflow history:', e)
-      }
-    }
-    
-    // Recalculate accessibility
-    updateStageAccessibility()
-  } catch (error) {
-    console.error('Failed to reload case:', error)
-    apiError.value = error.message
-  } finally {
-    loading.value = false
-  }
+  return loadCaseData()
 }
 
 // ⭐ Watch for route changes and reload data

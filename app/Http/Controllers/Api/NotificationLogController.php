@@ -5,6 +5,7 @@ use App\Models\NotificationLog;
 use App\Models\TaxCase;
 use App\Services\KianNotificationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 
 class NotificationLogController extends Controller
 {
@@ -15,19 +16,28 @@ class NotificationLogController extends Controller
         return response()->json($query->paginate($request->integer('per_page',20)));
     }
     public function show(NotificationLog $notificationLog) {
-        abort_unless($this->scoped(NotificationLog::whereKey($notificationLog->id))->exists(),403);
+        $this->authorizeTaxCase($notificationLog->taxCase);
         return response()->json($notificationLog->load(['entity:id,name','taxCase:id,case_number','attempts.initiatedBy:id,name']));
     }
     public function retry(NotificationLog $notificationLog, Request $request, KianNotificationService $service) {
+        $this->authorizeTaxCase($notificationLog->taxCase);
         abort_unless($request->user()->hasRole('Admin'),403,'Only Admin may retry notifications.');
         $attempt=$service->retry($notificationLog,$request->user());
         return response()->json(['message'=>'Notification queued. Recipients will be resolved using current configuration.','attempt'=>$attempt],202);
     }
     public function summary(TaxCase $taxCase) {
-        abort_unless($this->canViewEntity($taxCase->entity_id),403);
+        Gate::authorize('view', $taxCase);
         return response()->json(NotificationLog::where('tax_case_id',$taxCase->id)->whereIn('stage_id',[4,7,10,12])->with(['attempts'=>fn($q)=>$q->latest('attempt_number')->limit(1)])->latest('id')->get()->keyBy('stage_id'));
     }
-    private function scoped($query) { return $this->canViewAll() ? $query : $query->where('entity_id',auth()->user()->entity_id); }
-    private function canViewEntity($id): bool { return $this->canViewAll() || (int)auth()->user()->entity_id === (int)$id; }
-    private function canViewAll(): bool { $user=auth()->user(); return $user->hasRole('Admin') || $user->entity?->entity_type === 'HOLDING'; }
+    private function scoped($query) {
+        $user = auth()->user();
+        if (!$user->entity) return $query->whereRaw('1 = 0');
+        return $user->entity->entity_type === 'HOLDING'
+            ? $query
+            : $query->whereHas('taxCase', fn($cases) => $cases->where('entity_id', $user->entity_id));
+    }
+    private function authorizeTaxCase(?TaxCase $taxCase): void {
+        abort_if($taxCase === null, 403, 'Notification has no valid tax case ownership.');
+        Gate::authorize('view', $taxCase);
+    }
 }

@@ -12,6 +12,7 @@ use App\Models\Role;
 use App\Models\SkpRecord;
 use App\Models\TaxCase;
 use App\Models\User;
+use App\Models\WorkflowHistory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -36,6 +37,7 @@ class WorkflowFieldImprovementsTest extends TestCase
 
     public function test_sp2_specific_endpoint_and_workflow_save_and_reload_free_text(): void
     {
+        $this->submitHistory(1);
         $payload = ['auditor_position' => 'Senior Auditor', 'auditor_email' => 'Contact team / alice; bob'];
         $this->postJson("/api/tax-cases/{$this->case->id}/sp2-records", $payload)
             ->assertCreated()->assertJsonPath('data.auditor_position', 'Senior Auditor');
@@ -52,6 +54,9 @@ class WorkflowFieldImprovementsTest extends TestCase
 
     public function test_skp_due_date_persists_reloads_clears_and_validates(): void
     {
+        foreach ([1, 2, 3] as $stage) {
+            $this->submitHistory($stage);
+        }
         SkpRecord::create(['tax_case_id' => $this->case->id]);
         $this->getJson("/api/tax-cases/{$this->case->id}/skp-records")
             ->assertOk()->assertJsonPath('data.skp_due_date', null);
@@ -123,6 +128,9 @@ class WorkflowFieldImprovementsTest extends TestCase
 
     public function test_optional_attachment_cannot_replace_supporting_document_and_notes_persist(): void
     {
+        foreach ([1, 2] as $stage) {
+            $this->submitHistory($stage);
+        }
         $this->postJson('/api/documents', $this->attachment('findings.doc', 'application/msword'))->assertCreated();
         $url = "/api/tax-cases/{$this->case->id}/workflow/3";
         $this->postJson($url, ['action' => 'submit', 'other_finding_notes' => 'As attched'])
@@ -147,6 +155,17 @@ class WorkflowFieldImprovementsTest extends TestCase
             'documentable_id' => 3, 'stage_code' => '3',
             'document_type' => Document::SPHP_OTHER_FINDINGS,
         ];
+    }
+
+    private function submitHistory(int $stage): void
+    {
+        WorkflowHistory::create([
+            'tax_case_id' => $this->case->id,
+            'stage_id' => $stage,
+            'action' => 'submitted',
+            'status' => 'submitted',
+            'user_id' => $this->case->user_id,
+        ]);
     }
 
     private function entities(): array

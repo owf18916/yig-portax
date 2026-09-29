@@ -86,6 +86,24 @@ class UsersSeeder extends Seeder
             'updated_at' => now(),
         ];
 
+        // Add user SAI
+        $users[] = [
+            'name' => 'Faisal Gesa Ahmad',
+            'email' => 'faisalgesa.ahmad@id.yazaki.com',
+            'email_verified_at' => now(),
+            'password' => Hash::make('SAI@p0rt4x'),
+            'entity_id' => 5,
+            'role_id' => 3, // staff
+            'phone' => '',
+            'position' => 'Supervisor',
+            'department' => 'Tax',
+            'last_login_at' => now(),
+            'is_active' => true,
+            'remember_token' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+
         DB::table('users')->insert($users);
     }
 }

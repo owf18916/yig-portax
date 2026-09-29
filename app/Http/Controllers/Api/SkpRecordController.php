@@ -108,7 +108,7 @@ class SkpRecordController extends ApiController
     public function approve(Request $request, TaxCase $taxCase, SkpRecord $skpRecord): JsonResponse
     {
         if ($skpRecord->tax_case_id !== $taxCase->id) {
-            return $this->error('SKP record does not belong to this tax case', 422);
+            return $this->error('SKP record not found for this tax case', 404);
         }
 
         if ($skpRecord->status === 'approved') {

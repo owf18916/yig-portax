@@ -5,11 +5,13 @@ namespace App\Http\Controllers\Api;
 use App\Models\Entity;
 use App\Models\Period;
 use App\Models\TaxCase;
+use App\Services\MainWorkflowTransitionGuard;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Gate;
 
 class TaxCaseController extends ApiController
 {
@@ -41,6 +43,8 @@ class TaxCaseController extends ApiController
                 $query->where('entity_id', $user->entity_id);
             }
             // HOLDING users: see all entities (no filter needed)
+        } else {
+            $query->whereRaw('1 = 0');
         }
 
         // Filter by entity (multi-company support)
@@ -88,6 +92,11 @@ class TaxCaseController extends ApiController
             return $this->error('Unauthorized', 401);
         }
 
+        $requestedEntityId = $request->integer('entity_id');
+        if ($requestedEntityId > 0 && Entity::whereKey($requestedEntityId)->exists()) {
+            Gate::authorize('create', new TaxCase(['entity_id' => $requestedEntityId]));
+        }
+
         $validated = $request->validate([
             'entity_id' => 'required|exists:entities,id',
             'case_type' => 'required|in:CIT,VAT',
@@ -107,13 +116,6 @@ class TaxCaseController extends ApiController
             // ✅ NEW: Support Preliminary Refund (Pengembalian Pendahuluan)
             'spt_type' => 'nullable|in:SPT,Pengembalian Pendahuluan,Kurang Bayar',
         ]);
-
-        // Verify user can create case for this entity.
-        // Admin and holding users may create for authorized entities; affiliates remain scoped to their own entity.
-        $isHoldingUser = $user->entity && strtoupper((string) $user->entity->entity_type) === 'HOLDING';
-        if ($user->role_id !== 1 && !$isHoldingUser && $validated['entity_id'] != $user->entity_id) {
-            return $this->error('You can only create cases for your assigned entity', 403);
-        }
 
         try {
             $taxCase = DB::transaction(function () use ($validated, $user) {
@@ -279,7 +281,7 @@ class TaxCaseController extends ApiController
 
         // ⭐ ADD DECISION-BASED ROUTING INFO
         // Determine which stages are accessible based on user's routing choice at Stage 4
-        $accessibleStages = $this->getAccessibleStages($taxCase);
+        $accessibleStages = app(MainWorkflowTransitionGuard::class)->accessibleStages($taxCase);
         
         $taxCase->accessible_stages = $accessibleStages;
 
@@ -316,36 +318,6 @@ class TaxCaseController extends ApiController
         }
 
         return $this->success($taxCase);
-    }
-
-    /**
-     * ⭐ Determine which stages are accessible based on SKP decision (Stage 4)
-     */
-    private function getAccessibleStages(TaxCase $taxCase): array
-    {
-        $accessible = [];
-
-        // Stages 1-4 are always completed by this point
-        for ($i = 1; $i <= 4; $i++) {
-            $accessible[] = $i;
-        }
-
-        // Stage 4 is special - check if SKP has user_routing_choice decision
-        if ($taxCase->skpRecord && $taxCase->skpRecord->user_routing_choice) {
-            // Based on user's decision, ONLY one path is accessible
-            if ($taxCase->skpRecord->user_routing_choice === 'refund') {
-                // Refund path: Stage 13 only
-                $accessible[] = 13;
-            } elseif ($taxCase->skpRecord->user_routing_choice === 'objection') {
-                // Objection path: Stage 5
-                $accessible[] = 5;
-            }
-        } else {
-            // If no decision yet, only current stage is accessible
-            // (But this shouldn't happen if SKP is properly submitted)
-        }
-
-        return $accessible;
     }
 
     /**

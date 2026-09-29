@@ -138,7 +138,7 @@ class RefundProcessController extends ApiController
     public function show(TaxCase $taxCase, RefundProcess $refundProcess): JsonResponse
     {
         if ($refundProcess->tax_case_id !== $taxCase->id) {
-            return $this->error('Refund does not belong to this tax case', 422);
+            return $this->error('Refund not found for this tax case', 404);
         }
 
         return $this->success(
@@ -152,7 +152,7 @@ class RefundProcessController extends ApiController
     public function approve(Request $request, TaxCase $taxCase, RefundProcess $refundProcess): JsonResponse
     {
         if ($refundProcess->tax_case_id !== $taxCase->id) {
-            return $this->error('Refund does not belong to this tax case', 422);
+            return $this->error('Refund not found for this tax case', 404);
         }
 
         if ($refundProcess->status === 'approved') {
@@ -204,7 +204,7 @@ class RefundProcessController extends ApiController
     public function addBankTransfer(Request $request, TaxCase $taxCase, RefundProcess $refundProcess): JsonResponse
     {
         if ($refundProcess->tax_case_id !== $taxCase->id) {
-            return $this->error('Refund does not belong to this tax case', 422);
+            return $this->error('Refund not found for this tax case', 404);
         }
 
         if ($refundProcess->refund_method !== 'BANK_TRANSFER') {
@@ -241,11 +241,11 @@ class RefundProcessController extends ApiController
     public function processBankTransfer(Request $request, TaxCase $taxCase, RefundProcess $refundProcess, BankTransferRequest $transfer): JsonResponse
     {
         if ($refundProcess->tax_case_id !== $taxCase->id) {
-            return $this->error('Refund does not belong to this tax case', 422);
+            return $this->error('Refund not found for this tax case', 404);
         }
 
         if ($transfer->refund_process_id !== $refundProcess->id) {
-            return $this->error('Transfer does not belong to this refund', 422);
+            return $this->error('Transfer not found for this refund', 404);
         }
 
         if ($transfer->transfer_status !== 'PENDING') {
@@ -275,11 +275,11 @@ class RefundProcessController extends ApiController
     public function rejectBankTransfer(Request $request, TaxCase $taxCase, RefundProcess $refundProcess, BankTransferRequest $transfer): JsonResponse
     {
         if ($refundProcess->tax_case_id !== $taxCase->id) {
-            return $this->error('Refund does not belong to this tax case', 422);
+            return $this->error('Refund not found for this tax case', 404);
         }
 
         if ($transfer->refund_process_id !== $refundProcess->id) {
-            return $this->error('Transfer does not belong to this refund', 422);
+            return $this->error('Transfer not found for this refund', 404);
         }
 
         $validated = $request->validate([
@@ -303,7 +303,7 @@ class RefundProcessController extends ApiController
     public function bankTransfers(TaxCase $taxCase, RefundProcess $refundProcess): JsonResponse
     {
         if ($refundProcess->tax_case_id !== $taxCase->id) {
-            return $this->error('Refund does not belong to this tax case', 422);
+            return $this->error('Refund not found for this tax case', 404);
         }
 
         $transfers = $refundProcess->bankTransferRequests()

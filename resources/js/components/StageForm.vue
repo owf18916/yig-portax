@@ -189,7 +189,7 @@
                     class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 disabled:opacity-50" />
                   <p class="text-xs text-gray-500">DOC, DOCX, XLS, XLSX, XLSB, XLSM; maximum 10MB. {{ supplementaryUploading ? 'Uploading...' : '' }}</p>
                   <div v-for="file in supplementaryFiles" :key="file.id" class="flex items-center justify-between p-1.5 bg-gray-50 rounded border border-gray-200 text-xs">
-                    <a :href="`/api/documents/${file.id}/download`" class="text-blue-700 truncate">{{ file.name }} ({{ file.size }} MB)</a>
+                    <a :href="`/api/documents/${file.id}/download`" @click.prevent="downloadDocument(file.id, file.name)" class="text-blue-700 truncate">{{ file.name }} ({{ file.size }} MB)</a>
                     <button v-if="!fieldsDisabled && !submissionComplete" type="button" @click="removeFile(file.id)" class="px-1.5 py-0.5 text-xs bg-red-50 text-red-700 rounded">Remove</button>
                   </div>
                 </div>
@@ -847,6 +847,7 @@ watch(() => [props.fields, props.prefillData], ([newFields, newPrefillData]) => 
 
 const fetchDocuments = async () => {
   loadingDocuments.value = true
+  uploadedFiles.value = []
   try {
     // ✅ NEW: If this is KIAN form (has kianSubmissionStatus), filter by KIAN documentable_type
     // Otherwise, fetch all documents for this stage (for main workflow stages)
@@ -861,7 +862,14 @@ const fetchDocuments = async () => {
     const response = await fetch(documentEndpoint)
     
     if (!response.ok) {
-      throw new Error('Failed to fetch documents')
+      if (response.status === 403) {
+        toastRef.value?.addToast('Access denied', 'You do not have permission to access these documents.', 'error', 4000)
+      } else if (response.status === 404) {
+        toastRef.value?.addToast('Not Found', 'Documents not found.', 'error', 4000)
+      } else {
+        toastRef.value?.addToast('Document Error', 'Failed to load documents. Please try again.', 'error', 4000)
+      }
+      return
     }
 
     const result = await response.json()
@@ -1096,7 +1104,13 @@ const confirmDelete = async () => {
       })
 
       if (!response.ok) {
-        throw new Error('Failed to delete document')
+        if (response.status === 403) {
+          throw new Error('You do not have permission to access this document.')
+        }
+        if (response.status === 404) {
+          throw new Error('Document not found.')
+        }
+        throw new Error('Failed to delete document. Please try again.')
       }
     }
 
@@ -1137,15 +1151,54 @@ const handleConfirm = async () => {
   pendingAction.value = null
 }
 
-const viewDocument = (fileId, fileName) => {
-  // Set the PDF viewer with the document
-  selectedPdfId.value = fileId
-  selectedPdfName.value = fileName
-  pdfViewerUrl.value = `/api/documents/${fileId}/view`
+const documentRequestError = (status) => {
+  if (status === 403) return 'You do not have permission to access this document.'
+  if (status === 404) return 'Document not found.'
+  return 'Failed to load document. Please try again.'
+}
+
+const viewDocument = async (fileId, fileName) => {
+  try {
+    const response = await fetch(`/api/documents/${fileId}/view`, { credentials: 'include' })
+    if (!response.ok) {
+      toastRef.value?.addToast('Document Error', documentRequestError(response.status), 'error', 4000)
+      return
+    }
+
+    closePdfViewer()
+    selectedPdfId.value = fileId
+    selectedPdfName.value = fileName
+    pdfViewerUrl.value = URL.createObjectURL(await response.blob())
+  } catch (error) {
+    toastRef.value?.addToast('Document Error', 'Failed to load document. Please try again.', 'error', 4000)
+  }
+}
+
+const downloadDocument = async (fileId, fileName) => {
+  try {
+    const response = await fetch(`/api/documents/${fileId}/download`, { credentials: 'include' })
+    if (!response.ok) {
+      toastRef.value?.addToast('Document Error', documentRequestError(response.status), 'error', 4000)
+      return
+    }
+
+    const url = URL.createObjectURL(await response.blob())
+    const link = document.createElement('a')
+    link.href = url
+    link.download = fileName || 'document'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    toastRef.value?.addToast('Document Error', 'Failed to download document. Please try again.', 'error', 4000)
+  }
 }
 
 const closePdfViewer = () => {
-  // Close the PDF viewer
+  if (pdfViewerUrl.value.startsWith('blob:')) {
+    URL.revokeObjectURL(pdfViewerUrl.value)
+  }
   selectedPdfId.value = null
   selectedPdfName.value = ''
   pdfViewerUrl.value = ''

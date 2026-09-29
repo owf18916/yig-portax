@@ -271,18 +271,24 @@ class RevisionService
 
             // Delete marked files
             if (!empty($docChanges['files_to_delete'])) {
-                Document::whereIn('id', $docChanges['files_to_delete'])
-                    ->delete();
+                $documents = Document::whereIn('id', $docChanges['files_to_delete']);
+                if ($revisable instanceof TaxCase) {
+                    $documents->where('tax_case_id', $revisable->id);
+                }
+                $documents->delete();
             }
 
             // Link new files to the tax case
             if (!empty($docChanges['files_to_add'])) {
                 // Update existing documents to link them to this revisable
-                Document::whereIn('id', $docChanges['files_to_add'])
-                    ->update([
-                        'documentable_type' => class_basename($revisable),
-                        'documentable_id' => $revisable->id,
-                    ]);
+                $documents = Document::whereIn('id', $docChanges['files_to_add']);
+                if ($revisable instanceof TaxCase) {
+                    $documents->where('tax_case_id', $revisable->id);
+                }
+                $documents->update([
+                    'documentable_type' => class_basename($revisable),
+                    'documentable_id' => $revisable->id,
+                ]);
             }
         }
 

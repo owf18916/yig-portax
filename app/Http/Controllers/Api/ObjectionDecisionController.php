@@ -115,7 +115,7 @@ class ObjectionDecisionController extends ApiController
     public function approve(Request $request, TaxCase $taxCase, ObjectionDecision $decision): JsonResponse
     {
         if ($decision->tax_case_id !== $taxCase->id) {
-            return $this->error('Decision does not belong to this tax case', 422);
+            return $this->error('Decision not found for this tax case', 404);
         }
 
         if ($decision->status === 'approved') {
