@@ -20,6 +20,11 @@
 /storage/pail
 /vendor
 /docs
+!/docs/
+/docs/*
+!/docs/implementation/
+/docs/implementation/*
+!/docs/implementation/phase-1c3-historical-refund-backfill.md
 Homestead.json
 Homestead.yaml
 Thumbs.db
