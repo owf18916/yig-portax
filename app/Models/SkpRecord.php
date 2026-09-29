@@ -42,8 +42,6 @@ class SkpRecord extends Model
         'create_refund',
         'refund_amount',
         'continue_to_next_stage',
-        'submitted_by',
-        'status',
     ];
 
     protected $casts = [

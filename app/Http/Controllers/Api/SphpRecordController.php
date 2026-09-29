@@ -15,44 +15,43 @@ class SphpRecordController extends ApiController
      */
     public function store(Request $request, TaxCase $taxCase)
     {
-        try {
-            $validated = $request->validate([
-                'sphp_number' => 'required|string|unique:sphp_records',
-                'issued_date' => 'required|date',
-                'summary' => 'required|string',
-                'findings' => 'required|string',
-                'recommended_action' => 'nullable|string',
-                'notes' => 'nullable|string',
-            ]);
+        $validated = $request->validate([
+            'sphp_number' => 'required|string|max:255|unique:sphp_records',
+            'sphp_issue_date' => 'required|date',
+            'sphp_receipt_date' => 'nullable|date',
+            'royalty_finding' => 'nullable|numeric|between:-9999999999999.99,9999999999999.99',
+            'service_finding' => 'nullable|numeric|between:-9999999999999.99,9999999999999.99',
+            'other_finding' => 'nullable|numeric|between:-9999999999999.99,9999999999999.99',
+            'other_finding_notes' => 'nullable|string',
+            'next_action' => 'nullable|string',
+            'next_action_due_date' => 'nullable|date',
+            'status_comment' => 'nullable|string',
+        ]);
 
+        // The schema permits one record per case, including soft-deleted rows.
+        if (SphpRecord::withTrashed()->where('tax_case_id', $taxCase->id)->exists()) {
+            return $this->error('SPHP record already exists for this tax case', 422);
+        }
+
+        try {
             DB::beginTransaction();
 
-            $sphpRecord = SphpRecord::create([
-                'tax_case_id' => $taxCase->id,
-                'sphp_number' => $validated['sphp_number'],
-                'issued_date' => $validated['issued_date'],
-                'summary' => $validated['summary'],
-                'findings' => $validated['findings'],
-                'recommended_action' => $validated['recommended_action'] ?? null,
-                'notes' => $validated['notes'] ?? null,
-                'status' => 'DRAFT',
-                'received_date' => now(),
-            ]);
+            $sphpRecord = SphpRecord::create($validated + ['tax_case_id' => $taxCase->id]);
 
             // Log workflow history
             WorkflowHistory::create([
                 'tax_case_id' => $taxCase->id,
-                'stage_number' => 3,
-                'action' => 'SPHP_DRAFT_CREATED',
-                'description' => 'SPHP record created in draft status',
-                'performed_by' => auth()->id(),
-                'notes' => $validated['notes'] ?? null,
+                'stage_id' => 3,
+                'stage_from' => $taxCase->current_stage,
+                'action' => 'submitted',
+                'status' => 'draft',
+                'user_id' => $request->user()->id,
+                'notes' => 'SPHP record created in draft status',
             ]);
 
             // Update tax case status
             $taxCase->update([
                 'current_stage' => 3,
-                'status' => 'SPHP_RECEIVED'
             ]);
 
             DB::commit();
