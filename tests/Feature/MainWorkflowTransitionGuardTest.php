@@ -180,7 +180,13 @@ class MainWorkflowTransitionGuardTest extends TestCase
 
         $this->getJson("/api/tax-cases/{$this->case->id}")
             ->assertOk()
-            ->assertJsonPath('data.accessible_stages.4', 5);
+            ->assertJsonPath('data.accessible_stages.4', 5)
+            ->assertJsonPath('data.workflow_state.current_stage', 5)
+            ->assertJsonPath('data.workflow_state.terminal', false)
+            ->assertJsonPath('data.workflow_state.completed_stages', [1, 2, 3, 4])
+            ->assertJsonPath('data.workflow_state.available_stages', [5])
+            ->assertJsonPath('data.workflow_state.stages.4.status', 'available')
+            ->assertJsonPath('data.workflow_state.stages.4.submittable', true);
 
         $this->supportingDocument(5);
         $this->postJson($this->url(5), [

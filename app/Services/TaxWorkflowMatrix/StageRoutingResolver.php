@@ -3,7 +3,6 @@
 namespace App\Services\TaxWorkflowMatrix;
 
 use App\Models\TaxCase;
-use Illuminate\Support\Collection;
 
 class StageRoutingResolver
 {
@@ -77,7 +76,7 @@ class StageRoutingResolver
             return $this->unfinalized('ambiguous_route', []);
         }
 
-        return $this->resolveBooleanRoute($signals, false);
+        return $this->resolveBooleanRoute($signals, true);
     }
 
     public function resolveAfterStage10(TaxCase $taxCase): array
@@ -189,7 +188,7 @@ class StageRoutingResolver
 
     private function decodeDecisionValue(?string $value): array
     {
-        if (!$value) {
+        if (! $value) {
             return [];
         }
 

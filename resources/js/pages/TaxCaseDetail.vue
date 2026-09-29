@@ -709,14 +709,17 @@ const updateStageAccessibility = () => {
   workflowStages.value.forEach((stage) => {
     stage.accessible = false
     stage.completed = isStageCompleted(stage.id)
+
+    if (stage.branch === 'main') {
+      const canonicalStage = caseData.value?.workflow_state?.stages?.find(
+        item => item.stage === stage.id
+      )
+      stage.completed = canonicalStage?.status === 'completed'
+      stage.accessible = canonicalStage?.available === true
+      return
+    }
     
     if (stage.branch === 'main') {
-      // The backend transition guard is authoritative for main-stage access.
-      if (Array.isArray(caseData.value?.accessible_stages)) {
-        stage.accessible = caseData.value.accessible_stages.includes(stage.id)
-        return
-      }
-
       // MAIN FLOW: Sequential logic
       if (stage.id === 1) {
         // Stage 1 selalu accessible
@@ -935,7 +938,7 @@ const loadCaseData = async () => {
       }
     }
     
-    // Update stage accessibility berdasarkan SKP record user_routing_choice
+    // Project the backend-owned main workflow state into the existing timeline.
     updateStageAccessibility()
     
     if (requestId !== activeLoadRequest) return

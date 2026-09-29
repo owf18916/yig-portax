@@ -5,13 +5,13 @@ namespace App\Http\Controllers\Api;
 use App\Models\Entity;
 use App\Models\Period;
 use App\Models\TaxCase;
-use App\Services\MainWorkflowTransitionGuard;
-use Illuminate\Http\Request;
-use Illuminate\Http\JsonResponse;
+use App\Services\MainWorkflowStateResolver;
 use Illuminate\Database\QueryException;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 
 class TaxCaseController extends ApiController
 {
@@ -21,7 +21,7 @@ class TaxCaseController extends ApiController
     public function index(Request $request): JsonResponse
     {
         $user = auth()->user();
-        
+
         $query = TaxCase::with([
             'entity',
             'fiscalYear',
@@ -31,7 +31,7 @@ class TaxCaseController extends ApiController
             'user',
             'workflowHistories' => function ($query) {
                 $query->latest('created_at');
-            }
+            },
         ]);
 
         // Filter by entity_type and user permissions
@@ -72,7 +72,7 @@ class TaxCaseController extends ApiController
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('case_number', 'like', "%{$search}%")
-                  ->orWhere('spt_number', 'like', "%{$search}%");
+                    ->orWhere('spt_number', 'like', "%{$search}%");
             });
         }
 
@@ -87,8 +87,8 @@ class TaxCaseController extends ApiController
     public function store(Request $request): JsonResponse
     {
         $user = auth()->user();
-        
-        if (!$user) {
+
+        if (! $user) {
             return $this->error('Unauthorized', 401);
         }
 
@@ -151,17 +151,17 @@ class TaxCaseController extends ApiController
                 );
 
                 // Auto-generate SPT number if not provided
-                if (!isset($validated['spt_number']) || empty($validated['spt_number'])) {
+                if (! isset($validated['spt_number']) || empty($validated['spt_number'])) {
                     $validated['spt_number'] = $this->generateSptNumber($validated['entity_id'], $validated['case_type']);
                 }
 
                 // Set filing date to today if not provided
-                if (!isset($validated['filing_date']) || empty($validated['filing_date'])) {
+                if (! isset($validated['filing_date']) || empty($validated['filing_date'])) {
                     $validated['filing_date'] = now()->toDateString();
                 }
 
                 // Set reported amount to disputed amount if not provided
-                if (!isset($validated['reported_amount']) || empty($validated['reported_amount'])) {
+                if (! isset($validated['reported_amount']) || empty($validated['reported_amount'])) {
                     $validated['reported_amount'] = $validated['disputed_amount'];
                 }
 
@@ -169,9 +169,9 @@ class TaxCaseController extends ApiController
                 $validated['user_id'] = $user->id;
                 $validated['current_stage'] = 1;
                 $validated['case_status_id'] = 1; // OPEN status
-                
+
                 // Set currency_id to IDR default hanya jika tidak dikirim dari frontend
-                if (!isset($validated['currency_id']) || empty($validated['currency_id'])) {
+                if (! isset($validated['currency_id']) || empty($validated['currency_id'])) {
                     $validated['currency_id'] = 1; // IDR default
                 }
 
@@ -218,11 +218,11 @@ class TaxCaseController extends ApiController
 
         // ✅ NEW: Load refundProcesses and add Preliminary Refund info
         $taxCase->load(['entity', 'fiscalYear', 'period', 'status', 'workflowHistories', 'refundProcesses']);
-        
+
         // Prepare response data with Preliminary Refund support
         $responseData = $taxCase->toArray();
         $responseData['is_preliminary_refund'] = $taxCase->isPengembalianPendahuluan();
-        
+
         // If Preliminary Refund, include refund info and available stages for independent SP2
         if ($taxCase->isPengembalianPendahuluan()) {
             $responseData['preliminary_refund_info'] = [
@@ -236,14 +236,14 @@ class TaxCaseController extends ApiController
                 'refund_details' => [
                     'stage_id' => 0,
                     'can_create_now' => true,
-                    'existing_refunds' => $taxCase->refundProcesses->filter(fn($r) => $r->stage_id === 0)->values(),
-                ]
+                    'existing_refunds' => $taxCase->refundProcesses->filter(fn ($r) => $r->stage_id === 0)->values(),
+                ],
             ];
         }
 
         return $this->success(
             $responseData,
-            'Tax case created successfully' . ($taxCase->isPengembalianPendahuluan() ? ' (Preliminary Refund enabled)' : ''),
+            'Tax case created successfully'.($taxCase->isPengembalianPendahuluan() ? ' (Preliminary Refund enabled)' : ''),
             201
         );
     }
@@ -276,14 +276,18 @@ class TaxCaseController extends ApiController
             'kianSubmission',
             'kianSubmissions',
             'workflowHistories',
-            'documents'
+            'documents',
         ]);
 
         // ⭐ ADD DECISION-BASED ROUTING INFO
         // Determine which stages are accessible based on user's routing choice at Stage 4
-        $accessibleStages = app(MainWorkflowTransitionGuard::class)->accessibleStages($taxCase);
-        
-        $taxCase->accessible_stages = $accessibleStages;
+        $workflowState = app(MainWorkflowStateResolver::class)->resolve($taxCase);
+        $taxCase->workflow_state = $workflowState;
+        // Temporary compatibility shim for older clients. New clients consume workflow_state.
+        $taxCase->accessible_stages = array_values(array_merge(
+            $workflowState['completed_stages'],
+            $workflowState['available_stages']
+        ));
 
         // ⭐ ADD KIAN ELIGIBILITY INFO (LEGACY - kept for backward compatibility)
         $taxCase->can_create_kian = $taxCase->canCreateKian();
@@ -310,8 +314,8 @@ class TaxCaseController extends ApiController
                 'refund_details' => [
                     'stage_id' => 0,
                     'can_create_now' => true,
-                    'existing_refunds' => $taxCase->refundProcesses->filter(fn($r) => $r->stage_id === 0)->values(),
-                ]
+                    'existing_refunds' => $taxCase->refundProcesses->filter(fn ($r) => $r->stage_id === 0)->values(),
+                ],
             ];
         } else {
             $taxCase->is_preliminary_refund = false;
@@ -363,7 +367,7 @@ class TaxCaseController extends ApiController
     public function storeWorkflowHistory(Request $request, TaxCase $taxCase): JsonResponse
     {
         $user = auth()->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
         }
 
@@ -395,8 +399,9 @@ class TaxCaseController extends ApiController
             Log::error('Create workflow history error', [
                 'error' => $e->getMessage(),
                 'case_id' => $taxCase->id,
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
+
             return $this->error($e->getMessage(), 400);
         }
     }
@@ -409,13 +414,13 @@ class TaxCaseController extends ApiController
         $documents = $taxCase->documents()
             ->with(['uploadedBy'])
             ->orderBy('created_at', 'desc');
-        
+
         // Filter by stage_code if provided
         $stageCode = $request->query('stage_code');
         if ($stageCode) {
             $documents->where('stage_code', $stageCode);
         }
-        
+
         return $this->success($documents->get());
     }
 
@@ -424,22 +429,14 @@ class TaxCaseController extends ApiController
      */
     public function complete(Request $request, TaxCase $taxCase): JsonResponse
     {
-        if ($taxCase->current_stage !== 12) {
-            return $this->error('Tax case can only be completed at final stage', 422);
+        $workflowState = app(MainWorkflowStateResolver::class)->resolve($taxCase);
+        if (! in_array(12, $workflowState['completed_stages'], true)) {
+            return $this->error('Tax case can only be completed after Stage 12 is submitted', 422);
         }
 
         $taxCase->update([
             'is_completed' => true,
             'completed_date' => now(),
-        ]);
-
-        // Log workflow completion
-        $taxCase->workflowHistories()->create([
-            'stage_from' => 11,
-            'stage_to' => 12,
-            'action' => 'completed',
-            'user_id' => auth()->id(),
-            'created_at' => now(),
         ]);
 
         return $this->success(
@@ -504,15 +501,15 @@ class TaxCaseController extends ApiController
     public function close(Request $request, TaxCase $taxCase): JsonResponse
     {
         $user = auth()->user();
-        
+
         Log::info('Close case attempt', [
             'user' => $user,
             'user_id' => $user?->id,
             'role_id' => $user?->role_id,
             'case_id' => $taxCase->id,
         ]);
-        
-        if (!$user) {
+
+        if (! $user) {
             return $this->error('Unauthorized', 401);
         }
 
@@ -523,6 +520,7 @@ class TaxCaseController extends ApiController
                 'role_id' => $user->role_id,
                 'case_id' => $taxCase->id,
             ]);
+
             return $this->error('Only administrators can close tax cases', 403);
         }
 
@@ -537,17 +535,6 @@ class TaxCaseController extends ApiController
             // Update tax case to completed
             $taxCase->update([
                 'is_completed' => true,
-                'current_stage' => 17,
-            ]);
-
-            // Create workflow history entry for closure
-            $taxCase->workflowHistories()->create([
-                'stage_id' => 17,
-                'stage_from' => $taxCase->current_stage,
-                'action' => 'submitted',
-                'status' => 'completed',
-                'user_id' => $user->id,
-                'notes' => 'Tax case closed by ' . $user->name,
             ]);
 
             DB::commit();
@@ -563,7 +550,8 @@ class TaxCaseController extends ApiController
                 'case_id' => $taxCase->id,
                 'error' => $e->getMessage(),
             ]);
-            return $this->error('Failed to close tax case: ' . $e->getMessage(), 500);
+
+            return $this->error('Failed to close tax case: '.$e->getMessage(), 500);
         }
     }
 }

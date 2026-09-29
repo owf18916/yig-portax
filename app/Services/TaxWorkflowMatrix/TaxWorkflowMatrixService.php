@@ -18,14 +18,13 @@ class TaxWorkflowMatrixService
     public function __construct(
         private StageStatusResolver $stageStatusResolver,
         private RefundAggregateResolver $refundAggregateResolver,
-    ) {
-    }
+    ) {}
 
     public function build(User $user, array $filters): array
     {
         $entities = $this->authorizedEntities($user);
         if ($filters['entity_id']) {
-            if (!$entities->pluck('id')->contains((int) $filters['entity_id'])) {
+            if (! $entities->pluck('id')->contains((int) $filters['entity_id'])) {
                 throw new AuthorizationException('You are not authorized to view this entity.');
             }
             $entities = $entities->where('id', (int) $filters['entity_id'])->values();
@@ -41,6 +40,7 @@ class TaxWorkflowMatrixService
                 'entity',
                 'period.fiscalYear',
                 'workflowHistories',
+                'status',
                 'sp2Record',
                 'sphpRecord',
                 'skpRecord',
@@ -98,7 +98,7 @@ class TaxWorkflowMatrixService
             return Entity::query()->where('is_active', true)->orderBy('name')->get(['id', 'code', 'name', 'entity_type']);
         }
 
-        if (!$user->entity_id) {
+        if (! $user->entity_id) {
             return collect();
         }
 
@@ -221,7 +221,7 @@ class TaxWorkflowMatrixService
 
     private function filterRows(Collection $rows, array $filters): Collection
     {
-        if (!$filters['include_completed']) {
+        if (! $filters['include_completed']) {
             $rows = $rows->filter(fn ($row) => collect($row['stages'])->contains(fn ($stage) => $stage['status'] !== 'completed'));
         }
 
@@ -235,7 +235,7 @@ class TaxWorkflowMatrixService
 
     private function entityPayload(Entity $entity, bool $showEntity): ?array
     {
-        if (!$showEntity) {
+        if (! $showEntity) {
             return ['id' => $entity->id, 'code' => $entity->code, 'name' => $entity->name];
         }
 

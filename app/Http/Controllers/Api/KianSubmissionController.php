@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Models\TaxCase;
 use App\Models\KianSubmission;
+use App\Models\TaxCase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -12,31 +12,31 @@ class KianSubmissionController extends ApiController
     /**
      * Store KIAN submission for a specific stage (create or update if already exists)
      * Multiple KIAN per case concept (v2)
-     * 
+     *
      * Endpoint: POST /api/tax-cases/{id}/kian-submissions/{stageId}
      */
-    public function store(Request $request, TaxCase $taxCase, int $stageId = null)
+    public function store(Request $request, TaxCase $taxCase, ?int $stageId = null)
     {
         try {
             // If stageId not in route, try to get from request
-            if (!$stageId) {
+            if (! $stageId) {
                 $stageId = $request->input('stage_id', 12);
             }
 
             // Validate stage_id is one of the allowed KIAN stages
-            if (!in_array($stageId, [4, 7, 10, 12])) {
+            if (! in_array($stageId, [4, 7, 10, 12])) {
                 return $this->error('Invalid stage ID. KIAN can only be submitted at stages 4, 7, 10, or 12', 422);
             }
 
             // ✅ NEW: Check if KIAN is needed at this stage
-            if (!$taxCase->needsKianAtStage($stageId)) {
+            if (! $taxCase->needsKianAtStage($stageId)) {
                 return $this->error("KIAN is not needed at Stage {$stageId} for this tax case", 422);
             }
 
             // ✅ NEW: Check if KIAN for this stage already exists
             $existingKian = $taxCase->kianSubmissions()->where('kian_submissions.stage_id', $stageId)->first();
-            
-            // If KIAN exists but status is not 'draft', can't edit  
+
+            // If KIAN exists but status is not 'draft', can't edit
             if ($existingKian && $existingKian->status !== 'draft') {
                 return $this->error("KIAN for Stage {$stageId} already exists with status '{$existingKian->status}'. Only draft submissions can be edited.", 422);
             }
@@ -109,6 +109,7 @@ class KianSubmissionController extends ApiController
             return $this->success($kianSubmission, $message, $isUpdate ? 200 : 201);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return $this->error($e->getMessage(), 500);
         }
     }
@@ -133,7 +134,7 @@ class KianSubmissionController extends ApiController
     {
         try {
             // Validate stage is a valid KIAN stage
-            if (!in_array($stageId, [4, 7, 10, 12])) {
+            if (! in_array($stageId, [4, 7, 10, 12])) {
                 return $this->error('Invalid stage ID. KIAN can only be retrieved at stages 4, 7, 10, or 12', 422);
             }
 
@@ -142,7 +143,7 @@ class KianSubmissionController extends ApiController
                 ->where('kian_submissions.stage_id', $stageId)
                 ->first();
 
-            if (!$kianSubmission) {
+            if (! $kianSubmission) {
                 // No KIAN submission exists yet for this stage
                 // Return null or empty so frontend knows it needs to be created
                 return $this->success(null, 'No KIAN submission found for this stage (new submission will be created)', 200);
@@ -183,6 +184,7 @@ class KianSubmissionController extends ApiController
             return $this->success($kianSubmission, "KIAN for Stage {$stageId} submitted successfully", 200);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return $this->error($e->getMessage(), 500);
         }
     }
@@ -215,18 +217,12 @@ class KianSubmissionController extends ApiController
                 'responded_date' => now(),
             ]);
 
-            // Update tax case status based on response
-            $finalStatus = 'KIAN_' . $validated['response_status'];
-            $taxCase->update([
-                'current_stage' => 12,
-                'status' => $finalStatus
-            ]);
-
             DB::commit();
 
             return $this->success($kianSubmission, 'KIAN response recorded', 200);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return $this->error($e->getMessage(), 500);
         }
     }
@@ -249,17 +245,12 @@ class KianSubmissionController extends ApiController
                 'closed_by' => auth()->id(),
             ]);
 
-            // Update tax case status
-            $taxCase->update([
-                'current_stage' => 13,
-                'status' => 'CLOSED'
-            ]);
-
             DB::commit();
 
-            return $this->success($kianSubmission, 'KIAN case closed, tax case finalized', 200);
+            return $this->success($kianSubmission, 'KIAN case closed', 200);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return $this->error($e->getMessage(), 500);
         }
     }
@@ -272,7 +263,7 @@ class KianSubmissionController extends ApiController
     {
         try {
             // Validate stage is a valid KIAN stage
-            if (!in_array($stageId, [4, 7, 10, 12])) {
+            if (! in_array($stageId, [4, 7, 10, 12])) {
                 return $this->error('Invalid stage ID. KIAN can only be updated at stages 4, 7, 10, or 12', 422);
             }
 
@@ -281,7 +272,7 @@ class KianSubmissionController extends ApiController
                 ->where('kian_submissions.stage_id', $stageId)
                 ->first();
 
-            if (!$kianSubmission) {
+            if (! $kianSubmission) {
                 return $this->error("No KIAN submission found for Stage {$stageId} to update", 404);
             }
 
@@ -316,6 +307,7 @@ class KianSubmissionController extends ApiController
             return $this->success($kianSubmission, "KIAN submission updated for Stage {$stageId}", 200);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return $this->error($e->getMessage(), 500);
         }
     }
