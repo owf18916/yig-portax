@@ -28,6 +28,7 @@ class ObjectionDecision extends Model
         'decision_date',
         'decision_type',
         'decision_amount',
+        'decision_notes',
         'next_stage',
         'status',
         'next_action',
@@ -37,6 +38,7 @@ class ObjectionDecision extends Model
         'refund_amount',
         'continue_to_next_stage',
         'submitted_by',
+        'submitted_at',
     ];
 
     protected $casts = [

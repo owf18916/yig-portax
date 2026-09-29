@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Models\TaxCase;
 use App\Models\ObjectionDecision;
 use App\Jobs\SendKianReminderJob;
+use App\Services\DecisionPointRefundService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 
@@ -33,18 +34,9 @@ class ObjectionDecisionController extends ApiController
         ]);
 
         // ⭐ CHANGE 3: Validate independent actions
-        if ($validated['create_refund']) {
-            $validated['refund_amount'] = $request->input('refund_amount');
-            if (!$validated['refund_amount'] || $validated['refund_amount'] <= 0) {
-                return $this->error('Refund amount must be greater than 0 when creating refund', 422);
-            }
-            
-            // Validate refund amount doesn't exceed available amount
-            $availableAmount = max(0, $taxCase->disputed_amount - ($taxCase->getTotalRefundedAmount() ?? 0));
-            if ($validated['refund_amount'] > $availableAmount) {
-                return $this->error("Refund amount cannot exceed available amount (Rp {$availableAmount})", 422);
-            }
-        }
+        $validated['create_refund'] = $request->boolean('create_refund');
+        $validated['continue_to_next_stage'] = $request->boolean('continue_to_next_stage');
+        $validated['refund_amount'] = $validated['refund_amount'] ?? null;
 
         $validated['tax_case_id'] = $taxCase->id;
         $validated['submitted_by'] = auth()->id();
@@ -52,21 +44,14 @@ class ObjectionDecisionController extends ApiController
         $validated['status'] = 'submitted';
 
         // Determine next stage based on decision
-        $nextStage = $this->determineNextStageFromDecision($validated['decision_type']);
-        
-        // ⭐ CHANGE 3: Override next stage if continue_to_next_stage is false
-        if (!$validated['continue_to_next_stage']) {
-            $nextStage = null; // Case will end
-        }
+        $nextStage = $validated['continue_to_next_stage'] ? 8 : null;
         
         $validated['next_stage'] = $nextStage;
 
         $decision = ObjectionDecision::create($validated);
 
         // ⭐ CHANGE 3: Create refund if requested
-        if ($validated['create_refund']) {
-            $decision->createRefundIfNeeded();
-        }
+        app(DecisionPointRefundService::class)->createIfRequested($decision, 7, auth()->id());
 
         // Update tax case stage (or null if case ends)
         if ($validated['continue_to_next_stage']) {
@@ -134,10 +119,10 @@ class ObjectionDecisionController extends ApiController
         ]);
 
         // Update tax case with next stage
-        $nextStage = $decision->next_stage ?? $this->determineNextStageFromDecision($decision->decision_type);
-        $taxCase->update([
-            'current_stage' => $nextStage,
-        ]);
+        $nextStage = $decision->continue_to_next_stage ? 8 : null;
+        if ($nextStage) {
+            $taxCase->update(['current_stage' => $nextStage]);
+        }
 
         // Log workflow
         $taxCase->workflowHistories()->create([
@@ -152,7 +137,6 @@ class ObjectionDecisionController extends ApiController
 
         $stageMapping = [
             8 => 'Appeal Submission',
-            13 => 'Bank Transfer Request',
         ];
         $stageName = $stageMapping[$nextStage] ?? 'Unknown';
 

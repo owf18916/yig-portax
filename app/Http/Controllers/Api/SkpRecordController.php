@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Models\TaxCase;
 use App\Models\SkpRecord;
 use App\Services\KianNotificationService;
+use App\Services\DecisionPointRefundService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -36,7 +37,7 @@ class SkpRecordController extends ApiController
             'next_action' => 'nullable|string',
             'next_action_due_date' => 'nullable|date',
             'status_comment' => 'nullable|string',
-            'user_routing_choice' => 'required|in:refund,objection',
+            'user_routing_choice' => 'nullable|in:refund,objection',
             'create_refund' => 'nullable|boolean',
             'refund_amount' => 'nullable|numeric|min:0',
             'continue_to_next_stage' => 'nullable|boolean',
@@ -50,27 +51,16 @@ class SkpRecordController extends ApiController
         $validated['continue_to_next_stage'] = $request->boolean('continue_to_next_stage');
         $validated['refund_amount'] = $validated['refund_amount'] ?? null;
 
-        if ($validated['create_refund']) {
-            if (!$validated['refund_amount'] || $validated['refund_amount'] <= 0) {
-                return $this->error('Refund amount must be greater than 0 when creating refund', 422);
-            }
-            $availableAmount = max(0, $taxCase->disputed_amount - $validated['skp_amount']);
-            if ($validated['refund_amount'] > $availableAmount) {
-                return $this->error("Refund amount cannot exceed available amount (Rp {$availableAmount})", 422);
-            }
-        }
-
-        $nextStageId = $validated['continue_to_next_stage']
-            ? $this->determineNextStageFromUserChoice($validated['user_routing_choice'])
-            : null;
+        $nextStageId = $validated['continue_to_next_stage'] ? 5 : null;
 
         $skpRecord = DB::transaction(function () use ($request, $taxCase, $validated, $nextStageId) {
             $record = SkpRecord::create($validated + ['tax_case_id' => $taxCase->id]);
 
-            // Preserve this alternate endpoint's existing explicit routing behavior.
             if ($validated['continue_to_next_stage']) {
-                $taxCase->update(['current_stage' => $nextStageId]);
+                $taxCase->update(['current_stage' => 5]);
             }
+
+            app(DecisionPointRefundService::class)->createIfRequested($record, 4, $request->user()->id);
 
             $taxCase->workflowHistories()->create([
                 'stage_id' => 4,
@@ -126,11 +116,7 @@ class SkpRecordController extends ApiController
             'correction_notes' => $validated['correction_notes'] ?? $skpRecord->correction_notes,
         ]);
 
-        // Next stage determined by user's routing choice, NOT skp_type
-        $nextStageId = $skpRecord->next_stage_id ?? $this->determineNextStageFromUserChoice($skpRecord->user_routing_choice);
-        $taxCase->update([
-            'next_stage_id' => $nextStageId,
-        ]);
+        $nextStageId = $skpRecord->continue_to_next_stage ? 5 : null;
 
         // Log workflow
         $taxCase->workflowHistories()->create([
@@ -143,7 +129,7 @@ class SkpRecordController extends ApiController
             'created_at' => now(),
         ]);
 
-        $stageName = $nextStageId === 5 ? 'Objection (Stage 5)' : 'Refund (Stage 13)';
+        $stageName = $nextStageId === 5 ? 'Objection (Stage 5)' : 'no main-stage continuation';
 
         return $this->success(
             $skpRecord->fresh(['taxCase', 'approvedBy']),

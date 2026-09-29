@@ -276,7 +276,7 @@
 
             <!-- ⭐ DECISION ACTIONS COMPONENT - Stage 7 Objection Decision -->
             <DecisionActions
-              v-if="showObjectionDecisionOptions && formData.decision_type === 'partially_granted'"
+              v-if="showObjectionDecisionOptions && formData.decision_type"
               v-model="decisionActions"
               :available-amount="computedAvailableRefundAmount"
               :next-stage-name="`Appeal (Stage 8)`"
@@ -294,47 +294,16 @@
               @change="handleDecisionActionsChange"
             />
 
-            <!-- ⭐ DECISION OPTIONS - Show when keputusan_pk is selected (Stage 12 Supreme Court Decision) -->
-            <div v-if="showSupremeCourtDecisionOptions && formData.keputusan_pk" class="bg-red-50 border-2 border-red-200 rounded-lg p-4 space-y-3 mt-4">
-              <h3 class="font-semibold text-red-900">⭐ Select Next Action (Final Decision)</h3>
-              <p class="text-sm text-red-700">
-                Keputusan: <strong>{{ getSupremeCourtDecisionLabel(formData.keputusan_pk) }}</strong>
-              </p>
-
-              <!-- Option 1: Refund (Favorable Outcome) -->
-              <label class="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-white transition"
-                :class="formData.next_action === 'refund' ? 'bg-white border-green-500 ring-2 ring-green-300' : 'bg-white'">
-                <input
-                  type="radio"
-                  value="refund"
-                  v-model="formData.next_action"
-                  :disabled="submissionComplete || fieldsDisabled"
-                  class="w-4 h-4 text-green-600"
-                />
-                <div class="ml-3 flex-1">
-                  <p class="font-medium text-gray-900">💰 Proceed to Refund (Stage 13)</p>
-                  <p class="text-xs text-gray-600">Request Bank Transfer - Favorable Outcome</p>
-                </div>
-                <span v-if="formData.next_action === 'refund'" class="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded">✓ Selected</span>
-              </label>
-
-              <!-- Option 2: KIAN (Loss Recognition) -->
-              <label class="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-white transition"
-                :class="formData.next_action === 'kian' ? 'bg-white border-red-500 ring-2 ring-red-300' : 'bg-white'">
-                <input
-                  type="radio"
-                  value="kian"
-                  v-model="formData.next_action"
-                  :disabled="submissionComplete || fieldsDisabled"
-                  class="w-4 h-4 text-red-600"
-                />
-                <div class="ml-3 flex-1">
-                  <p class="font-medium text-gray-900">📋 Proceed to KIAN (Stage 16)</p>
-                  <p class="text-xs text-gray-600">File KIAN Report - Loss Recognition</p>
-                </div>
-                <span v-if="formData.next_action === 'kian'" class="px-2 py-1 bg-red-100 text-red-800 text-xs font-semibold rounded">✓ Selected</span>
-              </label>
-            </div>
+            <!-- Stage 12 is terminal: Refund is parallel and KIAN remains derived. -->
+            <DecisionActions
+              v-if="showSupremeCourtDecisionOptions && formData.decision_type"
+              v-model="decisionActions"
+              :available-amount="computedAvailableRefundAmount"
+              next-stage-name=""
+              :show-continue="false"
+              :disabled="submissionComplete || fieldsDisabled"
+              @change="handleDecisionActionsChange"
+            />
 
             <!-- Document Upload Section -->
             <div class="border-t pt-2 mt-2">
@@ -682,7 +651,7 @@ const showAppealDecisionOptions = computed(() => {
 const showSupremeCourtDecisionOptions = computed(() => {
   const shouldShow = props.showDecisionOptions && props.stageId === 12
   if (props.stageId === 12) {
-    console.log(`[StageForm DEBUG] Stage 12 - showDecisionOptions=${props.showDecisionOptions}, stageId=${props.stageId}, formData.keputusan_pk=${formData.keputusan_pk}, result=${shouldShow}`)
+    console.log(`[StageForm DEBUG] Stage 12 - showDecisionOptions=${props.showDecisionOptions}, stageId=${props.stageId}, formData.decision_type=${formData.decision_type}, result=${shouldShow}`)
   }
   return shouldShow
 })
@@ -1281,33 +1250,16 @@ const executeSubmitForm = async () => {
     // Get CSRF token from meta tag
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
 
-    // ⭐ AUTO-SET user_routing_choice for Stage 7 based on decision_type
-    if (props.stageId === 7) {
-      if (formData.decision_type === 'granted') {
-        // Auto-route granted → Refund
-        formData.user_routing_choice = 'refund'
-        console.log('[Stage 7] Auto-set user_routing_choice=refund for GRANTED decision')
-      } else if (formData.decision_type === 'rejected') {
-        // Auto-route rejected → Appeal
-        formData.user_routing_choice = 'appeal'
-        console.log('[Stage 7] Auto-set user_routing_choice=appeal for REJECTED decision')
-      }
-      // For partially_granted, user must have selected one (via radio buttons)
-    }
-
-    // ⭐ PASS user_routing_choice for Stage 10 (Appeal Decision)
-    if (props.stageId === 10) {
-      // user_routing_choice should already be in formData from parent component
-      // If not set, use the one from prefillData via emit or passed via prop
-      console.log('[Stage 10] Form data with routing choice:', { user_routing_choice: formData.user_routing_choice, decision_type: formData.decision_type })
-    }
-
     const payload = {
       ...formData,
       stage_id: props.stageId,
       case_id: props.caseId,
       action: 'submit',
       is_draft: false
+    }
+    if (props.stageId === 12) {
+      delete payload.continue_to_next_stage
+      delete payload.next_action
     }
     
 
@@ -1388,6 +1340,10 @@ const executeSaveDraft = async () => {
       case_id: props.caseId,
       action: 'draft',
       is_draft: true
+    }
+    if (props.stageId === 12) {
+      delete payload.continue_to_next_stage
+      delete payload.next_action
     }
     
     // DEBUG: Log the request payload

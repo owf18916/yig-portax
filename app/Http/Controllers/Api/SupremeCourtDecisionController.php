@@ -6,6 +6,8 @@ use App\Models\TaxCase;
 use App\Models\SupremeCourtDecision;
 use App\Models\WorkflowHistory;
 use App\Jobs\SendKianReminderJob;
+use App\Services\DecisionPointRefundService;
+use App\Services\KianNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -17,10 +19,14 @@ class SupremeCourtDecisionController extends ApiController
     public function store(Request $request, TaxCase $taxCase)
     {
         try {
+            if ($taxCase->current_stage !== 12) {
+                return $this->error('Tax case is not at Supreme Court Decision stage', 422);
+            }
+
             $validated = $request->validate([
                 'decision_number' => 'required|string|unique:supreme_court_decisions',
                 'decision_date' => 'required|date',
-                'decision_type' => 'required|in:GRANTED,REJECTED,PARTIALLY_GRANTED',
+                'decision_type' => 'required|in:granted,partially_granted,rejected',
                 'decision_amount' => 'required|numeric|min:0',
                 'decision_notes' => 'nullable|string',
                 'notes' => 'nullable|string',
@@ -29,18 +35,8 @@ class SupremeCourtDecisionController extends ApiController
             ]);
 
             // ⭐ CHANGE 3: Validate independent actions
-            if ($validated['create_refund']) {
-                $validated['refund_amount'] = $request->input('refund_amount');
-                if (!$validated['refund_amount'] || $validated['refund_amount'] <= 0) {
-                    return $this->error('Refund amount must be greater than 0 when creating refund', 422);
-                }
-                
-                // Validate refund amount doesn't exceed available amount
-                $availableAmount = max(0, $taxCase->disputed_amount - ($taxCase->getTotalRefundedAmount() ?? 0));
-                if ($validated['refund_amount'] > $availableAmount) {
-                    return $this->error("Refund amount cannot exceed available amount (Rp {$availableAmount})", 422);
-                }
-            }
+            $validated['create_refund'] = $request->boolean('create_refund');
+            $validated['refund_amount'] = $validated['refund_amount'] ?? null;
 
             DB::beginTransaction();
 
@@ -59,20 +55,16 @@ class SupremeCourtDecisionController extends ApiController
                 'status' => 'submitted',
             ]);
 
-            // ⭐ CHANGE 3: Create refund if requested
-            if ($validated['create_refund']) {
-                $scDecision->createRefundIfNeeded();
-            }
+            app(DecisionPointRefundService::class)->createIfRequested($scDecision, 12, auth()->id());
 
             // Log workflow history
             WorkflowHistory::create([
                 'tax_case_id' => $taxCase->id,
                 'stage_id' => 12,
                 'stage_from' => 12,
-                'stage_number' => 12,
-                'action' => 'SUPREME_COURT_DECISION_SUBMITTED',
-                'description' => 'Supreme court decision submitted',
-                'performed_by' => auth()->id(),
+                'action' => 'submitted',
+                'status' => 'submitted',
+                'user_id' => auth()->id(),
                 'notes' => $validated['notes'] ?? null,
                 'decision_point' => 'independent_actions',
                 'decision_value' => json_encode([
@@ -82,21 +74,12 @@ class SupremeCourtDecisionController extends ApiController
                 ]),
             ]);
 
-            // ✅ FIXED: Check if KIAN reminder email should be sent
-            // KIAN is needed WHENEVER loss exists at Stage 12, REGARDLESS of decision type
-            if ($taxCase->needsKianAtStage(12)) {
-                $reason = $taxCase->getKianEligibilityReasonForStage(12);
-                if ($reason) {
-                    $caseId = (int) $taxCase->id;
-                    dispatch(new SendKianReminderJob($caseId, 'Stage 12 - Supreme Court Decision (Keputusan Peninjauan Kembali)', $reason, 12));
-                }
-            }
+            app(KianNotificationService::class)->evaluateFinalSubmit($taxCase->fresh(), 12);
 
             // Mark case as completed (Supreme Court is final stage)
             $taxCase->update([
-                'current_stage' => null,
+                'current_stage' => 12,
                 'is_completed' => true,
-                'status' => 'COMPLETED'
             ]);
 
             DB::commit();
@@ -111,9 +94,10 @@ class SupremeCourtDecisionController extends ApiController
     /**
      * Display the specified supreme court decision
      */
-    public function show(TaxCase $taxCase, SupremeCourtDecision $supremeCourtDecision)
+    public function show(TaxCase $taxCase)
     {
-        if ($supremeCourtDecision->tax_case_id !== $taxCase->id) {
+        $supremeCourtDecision = $taxCase->supremeCourtDecision;
+        if (! $supremeCourtDecision) {
             return $this->error('Supreme court decision not found for this tax case', 404);
         }
 
@@ -133,49 +117,41 @@ class SupremeCourtDecisionController extends ApiController
                 return $this->error('Supreme court decision not found for this tax case', 404);
             }
 
-            if ($supremeCourtDecision->status !== 'DRAFT') {
+            if ($supremeCourtDecision->status !== 'draft') {
                 return $this->error('Only draft decisions can be approved', 400);
             }
 
             DB::beginTransaction();
 
             $supremeCourtDecision->update([
-                'status' => 'APPROVED',
-                'approved_date' => now(),
+                'status' => 'approved',
+                'approved_at' => now(),
                 'approved_by' => auth()->id(),
             ]);
 
-            // Determine next stage based on decision type
             $decisionType = $supremeCourtDecision->decision_type;
-            $nextStage = ($decisionType === 'REJECTED') ? 13 : 12;
-            $nextStatus = ($decisionType === 'REJECTED') ? 'CLOSED' : 'REFUND_PROCESSING';
 
             // Log workflow history with decision routing
             WorkflowHistory::create([
                 'tax_case_id' => $taxCase->id,
-                'stage_number' => 11,
-                'action' => 'SUPREME_COURT_DECISION_APPROVED',
-                'description' => 'Supreme court decision approved. Decision: ' . $decisionType,
-                'performed_by' => auth()->id(),
+                'stage_id' => 12,
+                'stage_from' => 12,
+                'action' => 'approved',
+                'status' => 'approved',
+                'user_id' => auth()->id(),
                 'notes' => $request->input('notes'),
                 'decision_point' => 'supreme_court_decision',
                 'decision_value' => $decisionType,
-                'next_stage' => $nextStage,
             ]);
 
-            // Update tax case status with automatic routing
             $taxCase->update([
-                'current_stage' => $nextStage,
-                'status' => $nextStatus
+                'current_stage' => 12,
+                'is_completed' => true,
             ]);
 
             DB::commit();
 
-            $message = ($decisionType === 'REJECTED')
-                ? 'Supreme court decision approved. Case closed with rejection.'
-                : 'Supreme court decision approved. Proceeding to Stage 12 (Refund Process).';
-
-            return $this->success($supremeCourtDecision, $message, 200);
+            return $this->success($supremeCourtDecision, 'Supreme court decision approved. Main workflow remains terminal at Stage 12.', 200);
         } catch (\Exception $e) {
             DB::rollBack();
             return $this->error($e->getMessage(), 500);

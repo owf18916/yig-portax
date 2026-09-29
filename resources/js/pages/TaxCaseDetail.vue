@@ -229,7 +229,7 @@
           </div>
 
           <!-- REFUND FLOW SECTION - Multiple Refunds by Stage Source -->
-          <div v-if="hasRefundTriggered()" class="border rounded-lg overflow-hidden">
+          <div v-if="refundProcesses.length > 0" class="border rounded-lg overflow-hidden">
             <button
               @click="expandedSections.refund = !expandedSections.refund"
               class="w-full px-4 py-3 bg-green-50 hover:bg-green-100 flex items-center justify-between transition"
@@ -239,8 +239,8 @@
                 <h3 class="font-semibold text-green-900">REFUND FLOW</h3>
                 <span class="text-sm text-green-700">(New Stages 1-4)</span>
               </div>
-              <span v-if="getRefundsByStageSource().length > 0" class="inline-block px-2 py-0.5 bg-green-200 text-green-800 text-xs font-semibold rounded">
-                {{ getRefundsByStageSource().length }} Refund{{ getRefundsByStageSource().length !== 1 ? 's' : '' }}
+              <span class="inline-block px-2 py-0.5 bg-green-200 text-green-800 text-xs font-semibold rounded">
+                {{ refundProcesses.length }} Refund{{ refundProcesses.length !== 1 ? 's' : '' }}
               </span>
             </button>
             <transition
@@ -255,7 +255,7 @@
                 <!-- For each refund grouped by stage source -->
                 <div v-for="refundGroup in getRefundsByStageSource()" :key="refundGroup.source" class="border border-green-200 rounded-lg bg-white p-4">
                   <div class="mb-4">
-                    <h4 class="font-semibold text-green-900">💰 {{ refundGroup.label }}</h4>
+                    <h4 class="font-semibold text-green-900">Refund — {{ refundGroup.label }}</h4>
                     <p class="text-sm text-gray-600">{{ refundGroup.refunds.length }} refund process{{ refundGroup.refunds.length !== 1 ? 'es' : '' }}</p>
                   </div>
                   
@@ -279,6 +279,10 @@
                       </div>
                     </div>
                     
+                    <Button @click="openRefund(refund)" variant="primary" size="sm">
+                      Open Refund
+                    </Button>
+
                     <!-- NEW STAGES 1-4 PROGRESS BAR -->
                     <div class="space-y-2 mt-4">
                       <p class="text-xs font-semibold text-gray-700 uppercase">Refund Progress</p>
@@ -407,7 +411,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch, reactive } from 'vue'
+import { computed, ref, onMounted, watch, reactive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useToast } from '../composables/useToast'
 import { useTaxCaseStore } from '../stores/taxCaseStore'
@@ -434,7 +438,7 @@ let activeLoadRequest = 0
 // State for collapsible sections
 const expandedSections = ref({
   main: true,    // Main flow always expanded by default
-  refund: false, // Refund collapsed by default, auto-expand when active
+  refund: true,
   kian: false    // KIAN collapsed by default, auto-expand when active
 })
 
@@ -502,6 +506,14 @@ const getStage12Decision = () => {
   }
   return null
 }
+
+// Persisted RefundProcess records are the only source of detail-page visibility.
+// Workflow-history flags are intentionally not used here: a decision can record
+// create_refund without a process ever being persisted.
+const refundProcesses = computed(() => {
+  const refunds = caseData.value.refund_processes
+  return Array.isArray(refunds) ? refunds.filter(refund => refund?.id) : []
+})
 
 // Helper function: Check if any decision point has create_refund = true
 const hasRefundTriggered = () => {
@@ -633,24 +645,20 @@ const getStagesByBranch = (branch) => {
 
 // Helper function: Get refunds organized by stage source for multi-refund display
 const getRefundsByStageSource = () => {
-  if (!caseData.value.refund_processes || !Array.isArray(caseData.value.refund_processes)) {
-    return []
-  }
-  
   const refundMap = {}
-  const stageSourceLabels = {
-    'SKP': 'Stage 4 - SKP Decision',
-    'OBJECTION': 'Stage 7 - Objection Decision',
-    'APPEAL': 'Stage 10 - Appeal Decision',
-    'SUPREME_COURT': 'Stage 12 - Supreme Court Decision'
+  const stageLabels = {
+    4: 'SKP Assessment',
+    7: 'Objection Decision',
+    10: 'Appeal Decision',
+    12: 'Supreme Court Decision'
   }
   
-  caseData.value.refund_processes.forEach(refund => {
-    const source = refund.stage_source || 'UNKNOWN'
+  refundProcesses.value.forEach(refund => {
+    const source = String(refund.stage_id ?? 'unknown')
     if (!refundMap[source]) {
       refundMap[source] = {
         source,
-        label: stageSourceLabels[source] || source,
+        label: stageLabels[refund.stage_id] || `Origin stage ${refund.stage_id ?? 'unknown'}`,
         refunds: []
       }
     }
@@ -1324,9 +1332,17 @@ const navigateToRefundStage = (stageNum, refundId = null) => {
   })
 }
 
+const openRefund = (refund) => {
+  navigateToRefundStage(getCurrentRefundStage(refund), refund.id)
+}
+
 // ✅ NEW: Get current stage for a specific refund
 const getCurrentRefundStage = (refund) => {
   if (!refund) return 0
+
+  if (Number.isInteger(Number(refund.current_refund_stage))) {
+    return Math.min(4, Math.max(1, Number(refund.current_refund_stage)))
+  }
   
   // Stage progression logic:
   // Stage 1: refund_status = 'INITIATED' (RefundProcess created)
@@ -1343,7 +1359,7 @@ const getCurrentRefundStage = (refund) => {
   if (transferStatus === 'requested') return 2
   if (refundStatus === 'initiated') return 1
   
-  return 0
+  return 1
 }
 
 // ✅ NEW: Check if refund stage is accessible (can click to navigate)

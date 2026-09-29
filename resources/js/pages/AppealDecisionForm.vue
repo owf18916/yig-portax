@@ -48,9 +48,8 @@
 
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useRevisionAPI } from '@/composables/useRevisionAPI'
-import { useToast } from '@/composables/useToast'
 import StageForm from '../components/StageForm.vue'
 import RevisionHistoryPanel from '../components/RevisionHistoryPanel.vue'
 
@@ -184,75 +183,6 @@ const isStage10Submitted = computed(() => {
 const currentDecision = computed(() => {
   return prefillData.value.keputusan_banding || 'Not selected'
 })
-
-const router = useRouter()
-const { showSuccess, showError } = useToast()
-
-// Handle routing to Supreme Court (Stage 11) - Lock workflow to Supreme Court path
-const proceedToSupremeCourt = async () => {
-  try {
-    const response = await fetch(`/api/tax-cases/${caseId}/workflow-decision`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
-      },
-      body: JSON.stringify({
-        current_stage_id: 10,
-        next_stage_id: 11,
-        decision_type: 'supreme_court',
-        decision_reason: 'User selected to proceed to Supreme Court (Peninjauan Kembali)'
-      })
-    })
-
-    if (response.ok) {
-      showSuccess('Workflow locked to Supreme Court path (Stage 11)')
-      // Navigate to Stage 11 (Peninjauan Kembali)
-      setTimeout(() => {
-        router.push(`/tax-cases/${caseId}/workflow/11`)
-      }, 1000)
-    } else {
-      const errorData = await response.json()
-      throw new Error(errorData.message || 'Failed to update workflow')
-    }
-  } catch (error) {
-    showError('Error proceeding to Supreme Court: ' + error.message)
-    console.error('Error:', error)
-  }
-}
-
-// Handle routing to Refund (Stage 13) - Lock workflow to Refund path
-const proceedToRefund = async () => {
-  try {
-    const response = await fetch(`/api/tax-cases/${caseId}/workflow-decision`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
-      },
-      body: JSON.stringify({
-        current_stage_id: 10,
-        next_stage_id: 13,
-        decision_type: 'refund',
-        decision_reason: `User selected to proceed with Refund path (Decision: ${prefillData.value.keputusan_banding})`
-      })
-    })
-
-    if (response.ok) {
-      showSuccess('Workflow locked to Refund path (Stage 13)')
-      // Navigate to Stage 13 (Bank Transfer Request)
-      setTimeout(() => {
-        router.push(`/tax-cases/${caseId}/workflow/13`)
-      }, 1000)
-    } else {
-      const errorData = await response.json()
-      throw new Error(errorData.message || 'Failed to update workflow')
-    }
-  } catch (error) {
-    showError('Error proceeding to Refund: ' + error.message)
-    console.error('Error:', error)
-  }
-}
 
 onMounted(async () => {
   try {

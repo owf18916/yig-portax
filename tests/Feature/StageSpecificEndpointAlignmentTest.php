@@ -80,7 +80,7 @@ class StageSpecificEndpointAlignmentTest extends TestCase
         return [
             'date and defaults' => ['2026-10-15', [], 4, null],
             'null and objection' => [null, ['continue_to_next_stage' => true], 5, 5],
-            'refund choice' => ['2026-10-15', ['create_refund' => true, 'refund_amount' => 50, 'continue_to_next_stage' => true, 'user_routing_choice' => 'refund'], 13, 13],
+            'refund and continue' => ['2026-10-15', ['create_refund' => true, 'refund_amount' => 50, 'continue_to_next_stage' => true, 'user_routing_choice' => 'refund'], 5, 5],
         ];
     }
 
@@ -107,7 +107,10 @@ class StageSpecificEndpointAlignmentTest extends TestCase
         $decision = json_decode(WorkflowHistory::sole()->decision_value, true);
         $this->assertSame($choices['create_refund'] ?? false, $decision['create_refund']);
         $this->assertEquals($choices['refund_amount'] ?? null, $decision['refund_amount']);
-        $this->assertDatabaseCount('refund_processes', 0);
+        $this->assertDatabaseCount('refund_processes', ($choices['create_refund'] ?? false) ? 1 : 0);
+        if ($choices['create_refund'] ?? false) {
+            $this->assertDatabaseHas('refund_processes', ['tax_case_id' => $this->case->id, 'stage_id' => 4]);
+        }
         $this->assertDatabaseCount('notification_attempts', 1);
         $attempt = NotificationAttempt::sole();
         $this->assertSame($this->case->id, $attempt->notificationLog->tax_case_id);

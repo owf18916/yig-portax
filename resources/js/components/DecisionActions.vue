@@ -2,7 +2,7 @@
   <div class="border-t-2 border-gray-200 pt-6 mt-6">
     <h3 class="text-lg font-semibold text-gray-900 mb-4">📊 Decision Actions</h3>
     <p class="text-sm text-gray-600 mb-4">
-      Choose your next actions. You can create a refund trigger, continue to next stage, or do both. 
+      Choose the independent process actions that apply to this decision.
       <strong>Note:</strong> Refund amounts are set in the dedicated Refund Filling stages (13-15).
     </p>
 
@@ -28,7 +28,7 @@
       </div>
 
       <!-- Action 2: Continue to Next Stage -->
-      <div class="bg-green-50 border-2 border-green-200 rounded-lg p-4">
+      <div v-if="showContinue" class="bg-green-50 border-2 border-green-200 rounded-lg p-4">
         <label class="flex items-start cursor-pointer">
           <input
             type="checkbox"
@@ -47,7 +47,7 @@
       </div>
 
       <!-- Warning if neither selected -->
-      <div v-if="!actions.createRefund && !actions.continueToNextStage" class="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-3">
+      <div v-if="!actions.createRefund && (!showContinue || !actions.continueToNextStage)" class="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-3">
         <div class="flex items-start">
           <div class="flex-shrink-0">
             <span class="text-lg">⚠️</span>
@@ -57,7 +57,7 @@
               Warning: Neither action selected
             </p>
             <p class="text-xs text-yellow-700 mt-1">
-              If you don't create a refund or continue to next stage, this case will be marked as complete. You may be able to create a KIAN (Internal Loss Recognition) request later.
+              No parallel Refund process will be created. KIAN availability remains derived separately.
             </p>
           </div>
         </div>
@@ -73,10 +73,10 @@
           <li v-else>
             ✗ No refund process
           </li>
-          <li v-if="actions.continueToNextStage">
+          <li v-if="showContinue && actions.continueToNextStage">
             ✓ Continue to {{ nextStageName }}
           </li>
-          <li v-else>
+          <li v-else-if="showContinue">
             ✗ Stop here (may create KIAN later)
           </li>
         </ul>
@@ -102,6 +102,10 @@ const props = defineProps({
   disabled: {
     type: Boolean,
     default: false
+  },
+  showContinue: {
+    type: Boolean,
+    default: true
   },
   modelValue: {
     type: Object,

@@ -48,9 +48,8 @@
 
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useRevisionAPI } from '@/composables/useRevisionAPI'
-import { useToast } from '@/composables/useToast'
 import StageForm from '../components/StageForm.vue'
 import RevisionHistoryPanel from '../components/RevisionHistoryPanel.vue'
 import DecisionActions from '../components/DecisionActions.vue'
@@ -275,79 +274,6 @@ const showRefundButton = computed(() => {
 const currentSkpType = computed(() => {
   return prefillData.value.skp_type || 'Not selected'
 })
-
-const router = useRouter()
-const { showSuccess, showError } = useToast()
-
-// Handle routing to Objection (Stage 5) - Lock workflow to Objection path
-const proceedToObjection = async () => {
-  try {
-    // Update workflow history with stage_to=5 to lock the path
-    // Also update current_stage to 5
-    const response = await fetch(`/api/tax-cases/${caseId}/workflow-decision`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
-      },
-      body: JSON.stringify({
-        current_stage_id: 4,
-        next_stage_id: 5,
-        decision_type: 'objection',
-        decision_reason: 'User selected to proceed with Objection path'
-      })
-    })
-
-    if (response.ok) {
-      showSuccess('Workflow locked to Objection path (Stage 5)')
-      // Navigate to Stage 5 (Surat Keberatan)
-      setTimeout(() => {
-        router.push(`/tax-cases/${caseId}/workflow/5`)
-      }, 1000)
-    } else {
-      const errorData = await response.json()
-      throw new Error(errorData.message || 'Failed to update workflow')
-    }
-  } catch (error) {
-    showError('Error proceeding to Objection: ' + error.message)
-    console.error('Error:', error)
-  }
-}
-
-// Handle routing to Refund (Stage 13) - Lock workflow to Refund path
-const proceedToRefund = async () => {
-  try {
-    // Update workflow history with stage_to=13 to lock the path
-    // Also update current_stage to 13
-    const response = await fetch(`/api/tax-cases/${caseId}/workflow-decision`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
-      },
-      body: JSON.stringify({
-        current_stage_id: 4,
-        next_stage_id: 13,
-        decision_type: 'refund',
-        decision_reason: 'User selected to proceed with Refund path (SKP type: LB)'
-      })
-    })
-
-    if (response.ok) {
-      showSuccess('Workflow locked to Refund path (Stage 13)')
-      // Navigate to Stage 13 (Bank Transfer Request)
-      setTimeout(() => {
-        router.push(`/tax-cases/${caseId}/workflow/13`)
-      }, 1000)
-    } else {
-      const errorData = await response.json()
-      throw new Error(errorData.message || 'Failed to update workflow')
-    }
-  } catch (error) {
-    showError('Error proceeding to Refund: ' + error.message)
-    console.error('Error:', error)
-  }
-}
 
 onMounted(async () => {
   try {

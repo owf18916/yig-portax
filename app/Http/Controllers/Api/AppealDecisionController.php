@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Models\TaxCase;
 use App\Models\AppealDecision;
 use App\Jobs\SendKianReminderJob;
+use App\Services\DecisionPointRefundService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 
@@ -28,7 +29,6 @@ class AppealDecisionController extends ApiController
             'decision_type' => 'required|in:granted,partially_granted,rejected,skp_kb',
             'decision_amount' => 'required|numeric|min:0',
             'decision_notes' => 'nullable|string',
-            'user_routing_choice' => 'required|in:refund,supreme_court', // User explicit choice
             'notes' => 'nullable|string',
             'create_refund' => 'nullable|boolean',
             'refund_amount' => 'nullable|numeric|min:0',
@@ -36,18 +36,9 @@ class AppealDecisionController extends ApiController
         ]);
 
         // ⭐ CHANGE 3: Validate independent actions
-        if ($validated['create_refund']) {
-            $validated['refund_amount'] = $request->input('refund_amount');
-            if (!$validated['refund_amount'] || $validated['refund_amount'] <= 0) {
-                return $this->error('Refund amount must be greater than 0 when creating refund', 422);
-            }
-            
-            // Validate refund amount doesn't exceed available amount
-            $availableAmount = max(0, $taxCase->disputed_amount - ($taxCase->getTotalRefundedAmount() ?? 0));
-            if ($validated['refund_amount'] > $availableAmount) {
-                return $this->error("Refund amount cannot exceed available amount (Rp {$availableAmount})", 422);
-            }
-        }
+        $validated['create_refund'] = $request->boolean('create_refund');
+        $validated['continue_to_next_stage'] = $request->boolean('continue_to_next_stage');
+        $validated['refund_amount'] = $validated['refund_amount'] ?? null;
 
         // Map request fields to database field names
         $dbData = [
@@ -66,22 +57,14 @@ class AppealDecisionController extends ApiController
             'continue_to_next_stage' => $validated['continue_to_next_stage'] ?? false,
         ];
 
-        // Determine next stage based on USER'S EXPLICIT CHOICE (not decision type)
-        $nextStage = $this->determineNextStageFromUserChoice($validated['user_routing_choice']);
-        
-        // ⭐ CHANGE 3: Override next stage if continue_to_next_stage is false
-        if (!$validated['continue_to_next_stage']) {
-            $nextStage = null; // Case will end
-        }
+        $nextStage = $validated['continue_to_next_stage'] ? 11 : null;
         
         $dbData['next_stage'] = $nextStage;
 
         $decision = AppealDecision::create($dbData);
 
         // ⭐ CHANGE 3: Create refund if requested
-        if ($validated['create_refund']) {
-            $decision->createRefundIfNeeded();
-        }
+        app(DecisionPointRefundService::class)->createIfRequested($decision, 10, auth()->id());
 
         // Update tax case stage
         if ($validated['continue_to_next_stage']) {
@@ -138,13 +121,6 @@ class AppealDecisionController extends ApiController
 
         $decision->update($validated);
 
-        // If user_routing_choice is provided, update next_stage
-        if (isset($validated['user_routing_choice']) && $validated['user_routing_choice']) {
-            $nextStage = $this->determineNextStageFromUserChoice($validated['user_routing_choice']);
-            $decision->update(['next_stage' => $nextStage]);
-            $taxCase->update(['next_stage_id' => $nextStage]);
-        }
-
         return $this->success($decision->fresh(), 'Appeal decision updated successfully');
     }    /**
      * Approve appeal decision and route to next stage
@@ -171,15 +147,10 @@ class AppealDecisionController extends ApiController
         ]);
 
         // Update tax case with next stage from user_routing_choice
-        $nextStage = $decision->next_stage ?? ($decision->user_routing_choice 
-            ? $this->determineNextStageFromUserChoice($decision->user_routing_choice)
-            : $this->determineNextStageFromDecision($decision->decision_type ?? 'rejected')
-        );
-        
-        $taxCase->update([
-            'current_stage' => $nextStage,
-            'next_stage_id' => $nextStage,
-        ]);
+        $nextStage = $decision->continue_to_next_stage ? 11 : null;
+        if ($nextStage) {
+            $taxCase->update(['current_stage' => $nextStage]);
+        }
 
         // Log workflow
         $taxCase->workflowHistories()->create([
@@ -194,7 +165,6 @@ class AppealDecisionController extends ApiController
 
         $stageMapping = [
             11 => 'Supreme Court Submission',
-            13 => 'Bank Transfer Request',
         ];
         $stageName = $stageMapping[$nextStage] ?? 'Unknown';
 

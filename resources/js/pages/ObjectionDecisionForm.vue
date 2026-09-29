@@ -59,7 +59,7 @@ const route = useRoute()
 const router = useRouter()
 const caseId = parseInt(route.params.id, 10)
 const { listRevisions } = useRevisionAPI()
-const { showSuccess, showError } = useToast()
+const { showError } = useToast()
 
 // Helper function to format date for HTML date input (YYYY-MM-DD)
 const formatDateForInput = (date) => {
@@ -245,74 +245,6 @@ const syncFormDataToParent = (formDataUpdate) => {
       }
     })
     console.log('[ObjectionDecisionForm] Form data synced:', formDataUpdate)
-  }
-}
-
-// Handle routing to Appeal (Stage 8) - User choice for partially_granted
-const proceedToAppeal = async () => {
-  try {
-    // Call decision-choice endpoint
-    const response = await fetch(`/api/tax-cases/${caseId}/workflow-decision`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
-      },
-      body: JSON.stringify({
-        current_stage_id: 7,
-        next_stage_id: 8,
-        decision_type: 'appeal',
-        decision_reason: 'User selected to proceed with Appeal path after partially granted decision'
-      })
-    })
-
-    if (response.ok) {
-      showSuccess('Workflow locked to Appeal path (Stage 8)')
-      // Navigate to Stage 8 (Appeal Submission)
-      setTimeout(() => {
-        router.push(`/tax-cases/${caseId}/workflow/8`)
-      }, 1000)
-    } else {
-      const errorData = await response.json()
-      throw new Error(errorData.message || 'Failed to update workflow')
-    }
-  } catch (error) {
-    showError('Error proceeding to Appeal: ' + error.message)
-    console.error('Error:', error)
-  }
-}
-
-// Handle routing to Refund (Stage 13) - User choice for partially_granted
-const proceedToRefund = async () => {
-  try {
-    // Call decision-choice endpoint
-    const response = await fetch(`/api/tax-cases/${caseId}/workflow-decision`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
-      },
-      body: JSON.stringify({
-        current_stage_id: 7,
-        next_stage_id: 13,
-        decision_type: 'refund',
-        decision_reason: 'User selected to proceed with Refund path after partially granted decision'
-      })
-    })
-
-    if (response.ok) {
-      showSuccess('Workflow locked to Refund path (Stage 13)')
-      // Navigate to Stage 13 (Bank Transfer Request)
-      setTimeout(() => {
-        router.push(`/tax-cases/${caseId}/workflow/13`)
-      }, 1000)
-    } else {
-      const errorData = await response.json()
-      throw new Error(errorData.message || 'Failed to update workflow')
-    }
-  } catch (error) {
-    showError('Error proceeding to Refund: ' + error.message)
-    console.error('Error:', error)
   }
 }
 

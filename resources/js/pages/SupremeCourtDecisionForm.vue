@@ -22,7 +22,7 @@
       :caseStatus="caseStatus"
       :preFilledMessage="preFilledMessage"
       :prefillData="prefillData"
-      :showDecisionOptions="false"
+      :showDecisionOptions="true"
       @submit="refreshTaxCase"
       @saveDraft="refreshTaxCase"
       @update:formData="syncFormDataToParent"
@@ -83,10 +83,8 @@ const availableFields = [
   'decision_type',
   'decision_amount',
   'decision_notes',
-  'next_action',
   'supporting_docs',
   'create_refund',
-  'continue_to_next_stage'
 ]
 
 const fields = ref([
@@ -182,7 +180,7 @@ const isStage12Submitted = computed(() => {
 
 // Computed property: Get current decision for display
 const currentDecision = computed(() => {
-  return prefillData.value.keputusan_pk || 'Not selected'
+  return prefillData.value.decision_type || 'Not selected'
 })
 
 const router = useRouter()

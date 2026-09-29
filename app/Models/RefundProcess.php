@@ -80,6 +80,8 @@ class RefundProcess extends Model
         'deleted_at' => 'datetime',
     ];
 
+    protected $appends = ['current_refund_stage'];
+
     /**
      * ✅ BOOT: Hook into model lifecycle to validate uniqueness constraints
      * Enforces: Only ONE refund per tax_case for decision stages (4,7,10,12)
@@ -239,9 +241,9 @@ class RefundProcess extends Model
      */
     public function getCurrentRefundStage(): int
     {
-        $latestTransfer = $this->bankTransferRequests()
-            ->latest()
-            ->first();
+        $latestTransfer = $this->relationLoaded('bankTransferRequests')
+            ? $this->bankTransferRequests->sortByDesc('created_at')->first()
+            : $this->bankTransferRequests()->latest()->first();
 
         // Stage 1: No bank transfer request yet
         if (!$latestTransfer) {
@@ -265,6 +267,11 @@ class RefundProcess extends Model
 
         // Default to stage 1 if status is unclear
         return 1;
+    }
+
+    public function getCurrentRefundStageAttribute(): int
+    {
+        return $this->getCurrentRefundStage();
     }
 
     /**
@@ -299,4 +306,3 @@ class RefundProcess extends Model
         return $this->getCurrentRefundStage() === 4;
     }
 }
-

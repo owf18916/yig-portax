@@ -376,7 +376,7 @@ class TaxCase extends Model
         // Check Supreme Court Decision (Stage 12) - Final stage
         $supremeCourtDecision = $this->supremeCourtDecision;
         if ($supremeCourtDecision) {
-            if (in_array($supremeCourtDecision->decision_type, ['PARTIALLY_GRANTED', 'REJECTED'])) {
+            if (in_array(strtolower((string) $supremeCourtDecision->decision_type), ['partially_granted', 'rejected'], true)) {
                 return true;
             }
         }
@@ -427,7 +427,7 @@ class TaxCase extends Model
         // Check Supreme Court Decision
         $supremeCourtDecision = $this->supremeCourtDecision;
         if ($supremeCourtDecision) {
-            if (in_array($supremeCourtDecision->decision_type, ['PARTIALLY_GRANTED', 'REJECTED'])) {
+            if (in_array(strtolower((string) $supremeCourtDecision->decision_type), ['partially_granted', 'rejected'], true)) {
                 $loss = $this->disputed_amount - ($supremeCourtDecision->decision_amount ?? 0);
                 $reasons[] = "Supreme Court Decision type: {$supremeCourtDecision->decision_type}. Loss: Rp " . number_format($loss, 0, ',', '.');
             }
@@ -465,8 +465,8 @@ class TaxCase extends Model
         if ($stageId === 12) {
             // Stage 12: Supreme Court Decision
             return $this->supremeCourtDecision && $this->supremeCourtSubmission &&
-                   in_array($this->supremeCourtDecision->decision_type, 
-                       ['PARTIALLY_GRANTED', 'REJECTED']) &&
+                   in_array(strtolower((string) $this->supremeCourtDecision->decision_type),
+                       ['partially_granted', 'rejected'], true) &&
                    $this->supremeCourtDecision->decision_amount < 
                    $this->supremeCourtSubmission->review_amount;
         }

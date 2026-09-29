@@ -38,7 +38,6 @@ class SupremeCourtDecision extends Model
         'notes',
         'create_refund',
         'refund_amount',
-        'continue_to_next_stage',
     ];
 
     protected $casts = [
