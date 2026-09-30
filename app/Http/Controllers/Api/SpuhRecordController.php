@@ -16,6 +16,7 @@ class SpuhRecordController extends ApiController
      */
     public function store(Request $request, TaxCase $taxCase)
     {
+        app(\App\Services\RevisionMutationGuard::class)->assertStageIsEditable($taxCase, 6);
         try {
             $validated = $request->validate([
                 'spuh_number' => 'required|string',
@@ -75,4 +76,3 @@ class SpuhRecordController extends ApiController
         }
     }
 }
-

@@ -2,503 +2,229 @@
 
 namespace App\Services;
 
-use App\Models\Revision;
-use App\Models\TaxCase;
-use App\Models\Document;
-use App\Models\User;
+use App\Config\RevisionFieldConfig;
+use App\Events\{RevisionApproved, RevisionRejected, RevisionRequested};
+use App\Models\{Document, RefundProcess, Revision, TaxCase, User};
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use App\Events\RevisionRequested;
-use App\Events\RevisionApproved;
-use App\Events\RevisionRejected;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
+use RuntimeException;
 
 class RevisionService
 {
-    /**
-     * Request a revision on a model (TaxCase, SKP, SPHP, etc)
-     */
+    private const FINAL_EVIDENCE = ['submitted', 'approved', 'completed'];
+    private const DECISION_STAGES = [4, 7, 10, 12];
+    private const NEXT_STAGE = [4 => 5, 7 => 8, 10 => 11];
+
+    public function __construct(
+        private DecisionPointRefundService $refundService,
+        private KianNotificationService $kianService,
+        private MainWorkflowStateResolver $stateResolver,
+    ) {}
+
     public function requestRevision(
-        Model $revisable,
+        TaxCase $taxCase,
         User $requestedBy,
         array $proposedValues,
         array $proposedDocumentChanges,
         string $reason,
-        array $fields = [],
-        ?string $stageCode = null
+        array $selectedFields,
+        int|string $stageCode
     ): Revision {
-        return DB::transaction(function () use (
-            $revisable,
-            $requestedBy,
-            $proposedValues,
-            $proposedDocumentChanges,
-            $reason,
-            $fields,
-            $stageCode
-        ) {
-            // Check if there's already a pending revision
-            $pendingRevision = $revisable->revisions()
-                ->whereIn('revision_status', ['requested'])
-                ->first();
+        $stage = (int) $stageCode;
+        $contract = RevisionFieldConfig::contract($stage);
+        if (!$contract) throw ValidationException::withMessages(['stage_code' => 'Generic Revision supports main workflow stages 1 through 12 only.']);
 
-            if ($pendingRevision) {
-                throw new \Exception('There is already a revision pending review');
-            }
+        $target = $this->resolveTarget($taxCase, $stage, $contract);
+        $this->assertSubmitted($taxCase, $target, $stage);
+        $this->assertStageTwelveOpen($taxCase, $stage);
+        $values = $this->validateValues($contract, $selectedFields, $proposedValues);
 
-            // Determine the actual data source based on stage
-            $dataSource = $revisable;
-            
-            Log::info("RevisionService: stageCode = {$stageCode}");
-            Log::info("RevisionService: revisable type = " . class_basename($revisable));
-            
-            if ($stageCode && $revisable instanceof \App\Models\TaxCase) {
-                Log::info("RevisionService: Is TaxCase, loading relationships");
-                
-                // For stage 2 (SP2), fetch data from sp2Record
-                if ((int)$stageCode === 2) {
-                    if (!$revisable->relationLoaded('sp2Record')) {
-                        $revisable->load('sp2Record');
-                    }
-                    if ($revisable->sp2Record) {
-                        $dataSource = $revisable->sp2Record;
-                        Log::info("RevisionService: Using sp2Record as data source");
-                    }
-                }
-                // For stage 3 (SPHP), fetch data from sphpRecord
-                elseif ((int)$stageCode === 3) {
-                    if (!$revisable->relationLoaded('sphpRecord')) {
-                        $revisable->load('sphpRecord');
-                    }
-                    if ($revisable->sphpRecord) {
-                        $dataSource = $revisable->sphpRecord;
-                        Log::info("RevisionService: Using sphpRecord as data source");
-                    }
-                }
-                // For stage 4 (SKP), fetch data from skpRecord
-                elseif ((int)$stageCode === 4) {
-                    if (!$revisable->relationLoaded('skpRecord')) {
-                        $revisable->load('skpRecord');
-                    }
-                    if ($revisable->skpRecord) {
-                        $dataSource = $revisable->skpRecord;
-                        Log::info("RevisionService: Using skpRecord as data source");
-                    }
-                }
-                // For stage 5 (Objection Submission), fetch data from objectionSubmission
-                elseif ((int)$stageCode === 5) {
-                    if (!$revisable->relationLoaded('objectionSubmission')) {
-                        $revisable->load('objectionSubmission');
-                    }
-                    if ($revisable->objectionSubmission) {
-                        $dataSource = $revisable->objectionSubmission;
-                        Log::info("RevisionService: Using objectionSubmission as data source");
-                    }
-                }
-                // For stage 6 (SPUH), fetch data from spuhRecord
-                elseif ((int)$stageCode === 6) {
-                    if (!$revisable->relationLoaded('spuhRecord')) {
-                        $revisable->load('spuhRecord');
-                    }
-                    if ($revisable->spuhRecord) {
-                        $dataSource = $revisable->spuhRecord;
-                        Log::info("RevisionService: Using spuhRecord as data source");
-                    }
-                }
-                // For stage 7 (Objection Decision), fetch data from objectionDecision
-                elseif ((int)$stageCode === 7) {
-                    if (!$revisable->relationLoaded('objectionDecision')) {
-                        $revisable->load('objectionDecision');
-                    }
-                    if ($revisable->objectionDecision) {
-                        $dataSource = $revisable->objectionDecision;
-                        Log::info("RevisionService: Using objectionDecision as data source");
-                    }
-                }
-                // For stage 8 (Appeal Submission), fetch data from appealSubmission
-                elseif ((int)$stageCode === 8) {
-                    if (!$revisable->relationLoaded('appealSubmission')) {
-                        $revisable->load('appealSubmission');
-                    }
-                    if ($revisable->appealSubmission) {
-                        $dataSource = $revisable->appealSubmission;
-                        Log::info("RevisionService: Using appealSubmission as data source");
-                    }
-                }
-                // For stage 9 (Appeal Explanation Request), fetch data from appealExplanationRequest
-                elseif ((int)$stageCode === 9) {
-                    if (!$revisable->relationLoaded('appealExplanationRequest')) {
-                        $revisable->load('appealExplanationRequest');
-                    }
-                    if ($revisable->appealExplanationRequest) {
-                        $dataSource = $revisable->appealExplanationRequest;
-                        Log::info("RevisionService: Using appealExplanationRequest as data source");
-                    }
-                }
-                // For stage 10 (Appeal Decision), fetch data from appealDecision
-                elseif ((int)$stageCode === 10) {
-                    if (!$revisable->relationLoaded('appealDecision')) {
-                        $revisable->load('appealDecision');
-                    }
-                    if ($revisable->appealDecision) {
-                        $dataSource = $revisable->appealDecision;
-                        Log::info("RevisionService: Using appealDecision as data source");
-                    }
-                }
-                // For stage 11 (Supreme Court Submission), fetch data from supremeCourtSubmission
-                elseif ((int)$stageCode === 11) {
-                    if (!$revisable->relationLoaded('supremeCourtSubmission')) {
-                        $revisable->load('supremeCourtSubmission');
-                    }
-                    if ($revisable->supremeCourtSubmission) {
-                        $dataSource = $revisable->supremeCourtSubmission;
-                        Log::info("RevisionService: Using supremeCourtSubmission as data source");
-                    }
-                }
-                // For stage 12 (Supreme Court Decision), fetch data from supremeCourtDecision
-                elseif ((int)$stageCode === 12) {
-                    if (!$revisable->relationLoaded('supremeCourtDecision')) {
-                        $revisable->load('supremeCourtDecision');
-                    }
-                    if ($revisable->supremeCourtDecision) {
-                        $dataSource = $revisable->supremeCourtDecision;
-                        Log::info("RevisionService: Using supremeCourtDecision as data source");
-                    }
-                }
-                // For stage 16 (KIAN Submission), fetch data from kianSubmission
-                elseif ((int)$stageCode === 16) {
-                    if (!$revisable->relationLoaded('kianSubmission')) {
-                        $revisable->load('kianSubmission');
-                    }
-                    if ($revisable->kianSubmission) {
-                        $dataSource = $revisable->kianSubmission;
-                        Log::info("RevisionService: Using kianSubmission as data source");
-                    }
-                }
-            }
+        return DB::transaction(function () use ($taxCase, $target, $requestedBy, $values, $proposedDocumentChanges, $reason, $selectedFields, $stage) {
+            TaxCase::whereKey($taxCase->id)->lockForUpdate()->firstOrFail();
+            $lockedTarget = $target::whereKey($target->getKey())->lockForUpdate()->firstOrFail();
+            $duplicate = Revision::where('target_type', $target::class)->where('target_id', $target->getKey())
+                ->where('stage_code', $stage)->where('revision_status', 'requested')->lockForUpdate()->exists();
+            if ($duplicate) throw ValidationException::withMessages(['revision' => 'A pending revision already exists for this target and stage.']);
 
-            // Prepare original data (only include fields being revised)
-            $originalData = [];
-            foreach ($fields as $field) {
-                if ($field === 'supporting_docs') {
-                    // For docs, store current document IDs
-                    if (method_exists($revisable, 'documents')) {
-                        $originalData[$field] = $revisable->documents()->pluck('id')->toArray();
-                    }
-                } else {
-                    // Get value from the appropriate data source
-                    $value = $dataSource->$field ?? null;
-                    $originalData[$field] = $value;
-                    Log::info("RevisionService: Field {$field} = " . json_encode($value));
-                }
-            }
-
-            // Filter out null values from proposed values
-            $filteredProposedValues = array_filter(
-                $proposedValues,
-                fn($value) => $value !== null
-            );
-
-            // Create revision record dengan stage_code
+            $original = Arr::only($lockedTarget->getAttributes(), array_keys($values));
             $revision = Revision::create([
-                'revisable_type' => class_basename($revisable),
-                'revisable_id' => $revisable->id,
-                'stage_code' => (int)$stageCode,
-                'revision_status' => 'requested',
-                'original_data' => $originalData,
-                'proposed_values' => $filteredProposedValues,
-                'proposed_document_changes' => $proposedDocumentChanges,
-                'requested_by' => $requestedBy->id,
-                'requested_at' => now(),
-                'reason' => $reason,
+                'revisable_type' => 'TaxCase', 'revisable_id' => $taxCase->id,
+                'target_type' => $target::class, 'target_id' => $target->getKey(), 'stage_code' => $stage,
+                'target_version' => $this->version($lockedTarget), 'revision_status' => 'requested',
+                'original_data' => $original, 'proposed_values' => $values,
+                'proposed_document_changes' => $this->normalizeDocumentChanges($proposedDocumentChanges),
+                'requested_by' => $requestedBy->id, 'requested_at' => now(), 'reason' => $reason,
             ]);
-
-            // Fire event
-            event(new RevisionRequested($revision, $revisable));
-
-            return $revision->load(['requestedBy']);
-        });
+            event(new RevisionRequested($revision, $taxCase));
+            return $revision->load('requestedBy');
+        }, 3);
     }
 
-    /**
-     * Decide on revision (approve or reject)
-     */
-    public function decideRevision(
-        Revision $revision,
-        Model $revisable,
-        User $decidedBy,
-        string $decision,
-        ?string $rejectionReason = null
-    ): Revision {
-        return DB::transaction(function () use (
-            $revision,
-            $revisable,
-            $decidedBy,
-            $decision,
-            $rejectionReason
-        ) {
-            if (!$revision->isPending()) {
-                throw new \Exception('Can only decide revisions in requested status');
+    public function decideRevision(Revision $revision, TaxCase $taxCase, User $actor, string $decision, ?string $reason = null): Revision
+    {
+        return DB::transaction(function () use ($revision, $taxCase, $actor, $decision, $reason) {
+            $case = TaxCase::whereKey($taxCase->id)->lockForUpdate()->firstOrFail();
+            $locked = Revision::whereKey($revision->id)->lockForUpdate()->firstOrFail();
+            if ((int)$locked->revisable_id !== (int)$case->id || !in_array($locked->revisable_type, [TaxCase::class, 'TaxCase'], true)) {
+                throw new RuntimeException('Revision does not belong to this tax case.');
+            }
+            if (!$locked->isPending()) return $locked; // deterministic idempotent replay
+            if ($decision === 'reject') return $this->reject($locked, $actor, $reason);
+
+            $stage = (int)$locked->stage_code;
+            $contract = RevisionFieldConfig::contract($stage);
+            if (!$contract || !$locked->target_type || !$locked->target_id) throw new RuntimeException('Legacy or unsupported revision cannot be applied; request a new canonical revision.');
+            if ($locked->target_type !== $contract['class']) throw new RuntimeException('Revision target type does not match its stage contract.');
+            /** @var Model $target */
+            $target = $contract['class']::whereKey($locked->target_id)->lockForUpdate()->firstOrFail();
+            $this->assertTargetBelongs($case, $target, $stage);
+            if (!hash_equals((string)$locked->target_version, $this->version($target))) throw new RuntimeException('Revision is stale because the target changed after the request.');
+            $this->assertSubmitted($case, $target, $stage);
+            $this->assertStageTwelveOpen($case, $stage);
+            $values = $this->validateValues($contract, array_keys($locked->proposed_values ?? []), $locked->proposed_values ?? []);
+            $downstream = $this->assertNoDownstream($case, $stage);
+            $before = Arr::only($target->getAttributes(), array_keys($values));
+            $refund = $this->prepareRefundReconciliation($case, $target, $stage, $values);
+
+            if (isset(self::NEXT_STAGE[$stage]) && array_key_exists('continue_to_next_stage', $values)) {
+                if ($target->hasAttribute('next_stage')) $values['next_stage'] = $values['continue_to_next_stage'] ? self::NEXT_STAGE[$stage] : null;
+            }
+            $target->fill($values)->save();
+            $this->applyDocuments($locked, $case, $target);
+            $refundResult = $this->applyRefundReconciliation($target, $stage, $actor->id, $refund);
+            $kianResult = 'not_applicable';
+            if (in_array($stage, self::DECISION_STAGES, true)) {
+                $this->kianService->evaluateFinalSubmit($case->fresh(), $stage);
+                $kianResult = 'eligibility_re_evaluated; historical evidence preserved';
             }
 
-            if ($decision === 'approve') {
-                return $this->approveRevision($revision, $revisable, $decidedBy);
-            } else {
-                return $this->rejectRevision($revision, $revisable, $decidedBy, $rejectionReason);
-            }
-        });
+            $target->refresh();
+            $after = Arr::only($target->getAttributes(), array_keys($values));
+            $audit = [
+                'revision_id'=>$locked->id, 'target_type'=>$target::class, 'target_id'=>$target->getKey(), 'stage'=>$stage,
+                'before'=>$before, 'after'=>$after, 'changed_fields'=>array_keys($values),
+                'actor'=>$actor->id, 'reason'=>$locked->reason, 'downstream_check'=>$downstream,
+                'routing_impact'=>$this->routingImpact($stage, $values), 'refund_reconciliation'=>$refundResult,
+                'kian_reconciliation'=>$kianResult, 'target_version_before'=>$locked->target_version,
+                'target_version_after'=>$this->version($target), 'applied_at'=>now()->toISOString(),
+            ];
+            $locked->update(['revision_status'=>'approved','approved_by'=>$actor->id,'approved_at'=>now(),'revised_data'=>$after,'audit_data'=>$audit]);
+            event(new RevisionApproved($locked));
+            return $locked->refresh();
+        }, 3);
     }
 
-    /**
-     * Approve revision and apply changes
-     */
-    private function approveRevision(
-        Revision $revision,
-        Model $revisable,
-        User $decidedBy
-    ): Revision {
-        $updates = [];
-
-        // Apply proposed values (non-document fields)
-        foreach ($revision->proposed_values ?? [] as $field => $value) {
-            if ($field !== 'supporting_docs' && $value !== null) {
-                $updates[$field] = $value;
-            }
-        }
-
-        // Apply document changes
-        if (!empty($revision->proposed_document_changes)) {
-            $docChanges = $revision->proposed_document_changes;
-
-            // Delete marked files
-            if (!empty($docChanges['files_to_delete'])) {
-                $documents = Document::whereIn('id', $docChanges['files_to_delete']);
-                if ($revisable instanceof TaxCase) {
-                    $documents->where('tax_case_id', $revisable->id);
-                }
-                $documents->delete();
-            }
-
-            // Link new files to the tax case
-            if (!empty($docChanges['files_to_add'])) {
-                // Update existing documents to link them to this revisable
-                $documents = Document::whereIn('id', $docChanges['files_to_add']);
-                if ($revisable instanceof TaxCase) {
-                    $documents->where('tax_case_id', $revisable->id);
-                }
-                $documents->update([
-                    'documentable_type' => class_basename($revisable),
-                    'documentable_id' => $revisable->id,
-                ]);
-            }
-        }
-
-        // Update revision status
-        $revision->update([
-            'revision_status' => 'approved',
-            'approved_by' => $decidedBy->id,
-            'approved_at' => now(),
-        ]);
-
-        // Determine which model to update based on stage_code
-        $updateTarget = $revisable;
-        $stageCode = $revision->stage_code;
-        
-        Log::info('RevisionService: Approving revision', [
-            'revision_id' => $revision->id,
-            'stage_code' => $stageCode,
-            'revisable_type' => class_basename($revisable)
-        ]);
-        
-        if ($stageCode && $revisable instanceof \App\Models\TaxCase) {
-            // Load appropriate stage-specific relationship
-            if ($stageCode == 2) {
-                if (!$revisable->relationLoaded('sp2Record')) {
-                    $revisable->load('sp2Record');
-                }
-                if ($revisable->sp2Record) {
-                    $updateTarget = $revisable->sp2Record;
-                    Log::info('RevisionService: Using sp2Record as update target');
-                }
-            }
-            // Add more stage-specific relationships as they are created
-            elseif ($stageCode == 3) {
-                if (!$revisable->relationLoaded('sphpRecord')) {
-                    $revisable->load('sphpRecord');
-                }
-                if ($revisable->sphpRecord) {
-                    $updateTarget = $revisable->sphpRecord;
-                    Log::info('RevisionService: Using sphpRecord as update target');
-                }
-            }
-            elseif ($stageCode == 4) {
-                if (!$revisable->relationLoaded('skpRecord')) {
-                    $revisable->load('skpRecord');
-                }
-                if ($revisable->skpRecord) {
-                    $updateTarget = $revisable->skpRecord;
-                    Log::info('RevisionService: Using skpRecord as update target');
-                }
-            }
-            elseif ($stageCode == 5) {
-                if (!$revisable->relationLoaded('objectionSubmission')) {
-                    $revisable->load('objectionSubmission');
-                }
-                if ($revisable->objectionSubmission) {
-                    $updateTarget = $revisable->objectionSubmission;
-                    Log::info('RevisionService: Using objectionSubmission as update target');
-                }
-            }
-            elseif ($stageCode == 6) {
-                if (!$revisable->relationLoaded('spuhRecord')) {
-                    $revisable->load('spuhRecord');
-                }
-                if ($revisable->spuhRecord) {
-                    $updateTarget = $revisable->spuhRecord;
-                    Log::info('RevisionService: Using spuhRecord as update target');
-                }
-            }
-            elseif ($stageCode == 7) {
-                if (!$revisable->relationLoaded('objectionDecision')) {
-                    $revisable->load('objectionDecision');
-                }
-                if ($revisable->objectionDecision) {
-                    $updateTarget = $revisable->objectionDecision;
-                    Log::info('RevisionService: Using objectionDecision as update target');
-                }
-            }
-            elseif ($stageCode == 8) {
-                if (!$revisable->relationLoaded('appealSubmission')) {
-                    $revisable->load('appealSubmission');
-                }
-                if ($revisable->appealSubmission) {
-                    $updateTarget = $revisable->appealSubmission;
-                    Log::info('RevisionService: Using appealSubmission as update target');
-                }
-            }
-            elseif ($stageCode == 9) {
-                if (!$revisable->relationLoaded('appealExplanationRequest')) {
-                    $revisable->load('appealExplanationRequest');
-                }
-                if ($revisable->appealExplanationRequest) {
-                    $updateTarget = $revisable->appealExplanationRequest;
-                    Log::info('RevisionService: Using appealExplanationRequest as update target');
-                }
-            }
-            elseif ($stageCode == 10) {
-                if (!$revisable->relationLoaded('appealDecision')) {
-                    $revisable->load('appealDecision');
-                }
-                if ($revisable->appealDecision) {
-                    $updateTarget = $revisable->appealDecision;
-                    Log::info('RevisionService: Using appealDecision as update target');
-                }
-            }
-            elseif ($stageCode == 11) {
-                if (!$revisable->relationLoaded('supremeCourtSubmission')) {
-                    $revisable->load('supremeCourtSubmission');
-                }
-                if ($revisable->supremeCourtSubmission) {
-                    $updateTarget = $revisable->supremeCourtSubmission;
-                    Log::info('RevisionService: Using supremeCourtSubmission as update target');
-                }
-            }
-            elseif ($stageCode == 12) {
-                if (!$revisable->relationLoaded('supremeCourtDecision')) {
-                    $revisable->load('supremeCourtDecision');
-                }
-                if ($revisable->supremeCourtDecision) {
-                    $updateTarget = $revisable->supremeCourtDecision;
-                    Log::info('RevisionService: Using supremeCourtDecision as update target');
-                }
-            }
-            elseif ($stageCode == 16) {
-                if (!$revisable->relationLoaded('kianSubmission')) {
-                    $revisable->load('kianSubmission');
-                }
-                if ($revisable->kianSubmission) {
-                    $updateTarget = $revisable->kianSubmission;
-                    Log::info('RevisionService: Using kianSubmission as update target');
-                }
-            }
-        }
-
-        // Apply updates to the appropriate model
-        if (!empty($updates)) {
-            $updateTarget->update($updates);
-            Log::info('RevisionService: Updates applied', [
-                'updates' => $updates,
-                'target_type' => class_basename($updateTarget),
-                'target_id' => $updateTarget->id
-            ]);
-
-            // If decision checkboxes were updated, create a new workflow history entry
-            if (isset($updates['create_refund']) || isset($updates['continue_to_next_stage'])) {
-                // Get the tax case
-                $taxCase = $revisable instanceof \App\Models\TaxCase ? $revisable : $revisable->taxCase;
-                
-                // Build decision_value JSON with the updated decision data
-                $decisionValue = [];
-                
-                // Include all decision-related fields from the updated model
-                if ($updateTarget->hasAttribute('create_refund')) {
-                    $decisionValue['create_refund'] = $updateTarget->create_refund ?? false;
-                }
-                if ($updateTarget->hasAttribute('continue_to_next_stage')) {
-                    $decisionValue['continue_to_next_stage'] = $updateTarget->continue_to_next_stage ?? false;
-                }
-                
-                // Add other decision fields if they exist
-                $decisionFields = ['decision_type', 'decision_amount', 'decision_number', 'decision_date', 'decision_notes'];
-                foreach ($decisionFields as $field) {
-                    if ($updateTarget->hasAttribute($field)) {
-                        $decisionValue[$field] = $updateTarget->$field;
-                    }
-                }
-                
-                // Create workflow history entry for this decision revision
-                if (!empty($decisionValue)) {
-                    \App\Models\WorkflowHistory::create([
-                        'tax_case_id' => $taxCase->id,
-                        'stage_from' => $stageCode,
-                        'stage_to' => $stageCode,
-                        'stage_id' => $stageCode,
-                        'decision_value' => json_encode($decisionValue),
-                        'user_id' => $decidedBy->id,
-                        'notes' => "Decision revised via revision request #{$revision->id}",
-                    ]);
-                    
-                    Log::info('RevisionService: Created workflow history entry for decision revision', [
-                        'tax_case_id' => $taxCase->id,
-                        'stage_id' => $stageCode,
-                        'revision_id' => $revision->id
-                    ]);
-                }
-            }
-        }
-
-        event(new RevisionApproved($revision));
-
-        return $revision->refresh();
+    private function resolveTarget(TaxCase $case, int $stage, array $contract): Model
+    {
+        if ($stage === 1) return $case;
+        $case->loadMissing($contract['relation']);
+        $target = $case->{$contract['relation']};
+        if (!$target) throw ValidationException::withMessages(['stage_code' => 'The concrete target record does not exist for this stage.']);
+        $this->assertTargetBelongs($case, $target, $stage);
+        return $target;
     }
 
-    /**
-     * Reject revision
-     */
-    private function rejectRevision(
-        Revision $revision,
-        Model $revisable,
-        User $decidedBy,
-        ?string $rejectionReason
-    ): Revision {
-        $revision->update([
-            'revision_status' => 'rejected',
-            'approved_by' => $decidedBy->id,
-            'approved_at' => now(),
-            'rejection_reason' => $rejectionReason,
-        ]);
+    private function assertTargetBelongs(TaxCase $case, Model $target, int $stage): void
+    {
+        if ($stage === 1 ? ((int)$target->getKey() !== (int)$case->id) : ((int)$target->getAttribute('tax_case_id') !== (int)$case->id)) {
+            throw new RuntimeException('Revision target does not belong to this tax case.');
+        }
+    }
 
+    private function validateValues(array $contract, array $selected, array $values): array
+    {
+        if (!array_is_list($selected) || count($selected) !== count(array_unique($selected)) || collect($selected)->contains(fn ($field) => !is_string($field))) {
+            throw ValidationException::withMessages(['fields' => 'Selected fields must be a unique list of canonical field keys.']);
+        }
+        $unknownValues = array_diff(array_keys($values), $contract['fields']);
+        $unknownSelected = array_diff($selected, array_merge($contract['fields'], ['supporting_docs']));
+        if ($unknownValues || $unknownSelected) throw ValidationException::withMessages(['proposed_values' => 'Unknown or forbidden revision fields: '.implode(', ', array_unique(array_merge($unknownValues, $unknownSelected)))]);
+        $selectedBusiness = array_values(array_diff($selected, ['supporting_docs']));
+        if (array_diff(array_keys($values), $selectedBusiness) || array_diff($selectedBusiness, array_keys($values))) {
+            throw ValidationException::withMessages(['fields' => 'Selected fields and proposed values must match exactly.']);
+        }
+        return Validator::make($values, Arr::only($contract['rules'], array_keys($values)))->validate();
+    }
+
+    private function assertSubmitted(TaxCase $case, Model $target, int $stage): void
+    {
+        $history = $case->workflowHistories()->where('stage_id', $stage)->whereIn('status', self::FINAL_EVIDENCE)->exists();
+        $status = strtolower((string)$target->getAttribute('status'));
+        if (!$history && !in_array($status, self::FINAL_EVIDENCE, true)) throw ValidationException::withMessages(['stage_code' => 'The exact target stage has no submitted/completed evidence.']);
+    }
+
+    private function assertStageTwelveOpen(TaxCase $case, int $stage): void
+    {
+        if ($stage === 12 && ($case->is_completed || $this->stateResolver->resolve($case->fresh())['terminal'])) {
+            throw ValidationException::withMessages(['stage_code' => 'Stage 12 cannot be revised after terminal completion.']);
+        }
+    }
+
+    private function assertNoDownstream(TaxCase $case, int $stage): array
+    {
+        $state = $this->stateResolver->resolve($case->fresh());
+        $downstream = array_values(array_filter($state['completed_stages'], fn($completed) => $completed > $stage));
+        if ($downstream) throw new RuntimeException('Revision approval blocked because downstream stage(s) '.implode(', ', $downstream).' already have submitted/completed evidence.');
+        return ['result'=>'clear','completed_downstream'=>[]];
+    }
+
+    private function prepareRefundReconciliation(TaxCase $case, Model $target, int $stage, array $values): array
+    {
+        if (!in_array($stage, self::DECISION_STAGES, true)) return ['action'=>'none','process'=>null];
+        $process = RefundProcess::where('tax_case_id',$case->id)->where('stage_id',$stage)->lockForUpdate()->first();
+        $beforeFlag = (bool)$target->getAttribute('create_refund');
+        $afterFlag = array_key_exists('create_refund',$values) ? (bool)$values['create_refund'] : $beforeFlag;
+        $beforeAmount = (string)$target->getAttribute('refund_amount');
+        $afterAmount = array_key_exists('refund_amount',$values) ? (string)$values['refund_amount'] : $beforeAmount;
+        if ($process && (!$afterFlag || ($afterAmount !== $beforeAmount && (string)$process->refund_amount !== $afterAmount))) {
+            if (!$process->isRefundStage1() || $process->status !== 'draft' || $process->refund_status !== 'pending') throw new RuntimeException('Refund reconciliation is blocked because the RefundProcess has progressed beyond the editable boundary.');
+        }
+        if ($process && !$afterFlag) return ['action'=>'reject_initial','process'=>$process];
+        if ($process && $afterAmount !== (string)$process->refund_amount) return ['action'=>'sync_amount','process'=>$process,'amount'=>$afterAmount];
+        if (!$process && $afterFlag) return ['action'=>'create','process'=>null];
+        return ['action'=>'none','process'=>$process];
+    }
+
+    private function applyRefundReconciliation(Model $target, int $stage, int $actor, array $plan): string
+    {
+        if ($plan['action']==='create') { $this->refundService->createIfRequested($target, $stage, $actor); return 'created_idempotently'; }
+        if ($plan['action']==='sync_amount') { $plan['process']->update(['refund_amount'=>$plan['amount']]); return 'initial_amount_synchronized'; }
+        if ($plan['action']==='reject_initial') { $plan['process']->update(['refund_status'=>'rejected','status'=>'rejected','status_comment'=>'Reconciled by approved upstream revision']); return 'initial_process_rejected_preserving_history'; }
+        return 'unchanged';
+    }
+
+    private function applyDocuments(Revision $revision, TaxCase $case, Model $target): void
+    {
+        $changes = $this->normalizeDocumentChanges($revision->proposed_document_changes ?? []);
+        if ($changes['files_to_delete']) Document::whereIn('id',$changes['files_to_delete'])->where('tax_case_id',$case->id)->where('stage_code',(string)$revision->stage_code)->delete();
+        if ($changes['files_to_add']) Document::whereIn('id',$changes['files_to_add'])->where('tax_case_id',$case->id)->where('stage_code',(string)$revision->stage_code)->update(['documentable_type'=>$target::class,'documentable_id'=>$target->getKey()]);
+    }
+
+    private function normalizeDocumentChanges(array $changes): array
+    {
+        return ['files_to_delete'=>collect($changes['files_to_delete']??[])->map(fn($id)=>(int)$id)->filter()->unique()->values()->all(),'files_to_add'=>collect($changes['files_to_add']??[])->map(fn($id)=>(int)$id)->filter()->unique()->values()->all()];
+    }
+
+    private function reject(Revision $revision, User $actor, ?string $reason): Revision
+    {
+        $revision->update(['revision_status'=>'rejected','approved_by'=>$actor->id,'approved_at'=>now(),'rejection_reason'=>$reason]);
         event(new RevisionRejected($revision));
-
         return $revision->refresh();
+    }
+
+    private function routingImpact(int $stage, array $values): array
+    {
+        if (!isset(self::NEXT_STAGE[$stage]) || !array_key_exists('continue_to_next_stage',$values)) return ['changed'=>false];
+        return ['changed'=>true,'next_stage'=>$values['continue_to_next_stage'] ? self::NEXT_STAGE[$stage] : null];
+    }
+
+    private function version(Model $target): string
+    {
+        $attributes = $target->getAttributes();
+        ksort($attributes);
+        return hash('sha256', json_encode($attributes, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_UNICODE));
     }
 }

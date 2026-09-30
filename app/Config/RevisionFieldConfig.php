@@ -2,115 +2,41 @@
 
 namespace App\Config;
 
-/**
- * Field configuration for revisions across different models
- * Centralized place to manage field labels and rules
- */
+use App\Models\{AppealDecision, AppealExplanationRequest, AppealSubmission, ObjectionDecision, ObjectionSubmission, SkpRecord, SphpRecord, Sp2Record, SpuhRecord, SupremeCourtDecision, SupremeCourtSubmission, TaxCase};
+
+/** Canonical, server-owned Revision contract. */
 class RevisionFieldConfig
 {
-    /**
-     * Get field labels for a specific model type
-     */
-    public static function getFieldLabels(string $modelType): array
-    {
-        $labelMaps = [
-            'TaxCase' => [
-                'period_id' => 'Tax Period',
-                'currency_id' => 'Currency',
-                'disputed_amount' => 'Disputed Amount',
-                'supporting_docs' => 'Supporting Documents',
-            ],
-            'SKP' => [
-                'skp_number' => 'SKP Number',
-                'skp_due_date' => 'Tanggal Jatuh Tempo SKP',
-                'issue_date' => 'Issue Date',
-                'receipt_date' => 'Receipt Date',
-                'skp_type' => 'SKP Type',
-                'skp_amount' => 'SKP Amount',
-                'royalty_correction' => 'Royalty Correction',
-                'service_correction' => 'Service Correction',
-                'other_correction' => 'Other Correction',
-                'correction_notes' => 'Correction Notes',
-                'user_routing_choice' => 'Routing Choice (Refund/Objection)',
-            ],
-            'SPHP' => [
-                'sphp_number' => 'SPHP Number',
-                'period_date' => 'Period Date',
-                'amount' => 'Amount',
-                'documents' => 'Documents',
-            ],
-            'ObjectionSubmission' => [
-                'objection_reason' => 'Objection Reason',
-                'amount_objected' => 'Amount Objected',
-                'supporting_docs' => 'Supporting Documents',
-            ],
-        ];
+    private const CONTRACTS = [
+        1 => [TaxCase::class, null, ['spt_number'=>'nullable|string|max:255','spt_type'=>'nullable|string|max:255','filing_date'=>'nullable|date','received_date'=>'nullable|date','reported_amount'=>'nullable|numeric|min:0','disputed_amount'=>'nullable|numeric|min:0','vat_in_amount'=>'nullable|numeric|min:0','vat_out_amount'=>'nullable|numeric|min:0','description'=>'nullable|string|max:5000']],
+        2 => [Sp2Record::class, 'sp2Record', ['sp2_number'=>'nullable|string|max:255','issue_date'=>'nullable|date','receipt_date'=>'nullable|date','auditor_name'=>'nullable|string|max:255','auditor_position'=>'nullable|string|max:255','auditor_phone'=>'nullable|string|max:255','auditor_email'=>'nullable|email|max:255','notes'=>'nullable|string|max:5000']],
+        3 => [SphpRecord::class, 'sphpRecord', ['sphp_number'=>'nullable|string|max:255','sphp_issue_date'=>'nullable|date','sphp_receipt_date'=>'nullable|date','royalty_finding'=>'nullable|numeric|min:0','service_finding'=>'nullable|numeric|min:0','other_finding'=>'nullable|numeric|min:0','other_finding_notes'=>'nullable|string|max:5000']],
+        4 => [SkpRecord::class, 'skpRecord', ['skp_number'=>'nullable|string|max:255','issue_date'=>'nullable|date','receipt_date'=>'nullable|date','skp_due_date'=>'nullable|date','skp_type'=>'nullable|string|max:255','skp_amount'=>'nullable|numeric|min:0','royalty_correction'=>'nullable|numeric|min:0','service_correction'=>'nullable|numeric|min:0','other_correction'=>'nullable|numeric|min:0','correction_notes'=>'nullable|string|max:5000','create_refund'=>'boolean','refund_amount'=>'nullable|numeric|min:0','continue_to_next_stage'=>'boolean']],
+        5 => [ObjectionSubmission::class, 'objectionSubmission', ['objection_number'=>'nullable|string|max:255','submission_date'=>'nullable|date','objection_amount'=>'nullable|numeric|min:0','objection_grounds'=>'nullable|string|max:5000','supporting_evidence'=>'nullable|string|max:5000','notes'=>'nullable|string|max:5000']],
+        6 => [SpuhRecord::class, 'spuhRecord', ['spuh_number'=>'nullable|string|max:255','issue_date'=>'nullable|date','receipt_date'=>'nullable|date','reply_number'=>'nullable|string|max:255','reply_date'=>'nullable|date','notes'=>'nullable|string|max:5000']],
+        7 => [ObjectionDecision::class, 'objectionDecision', ['decision_number'=>'nullable|string|max:255','decision_date'=>'nullable|date','decision_type'=>'nullable|string|max:255','decision_amount'=>'nullable|numeric|min:0','decision_notes'=>'nullable|string|max:5000','create_refund'=>'boolean','refund_amount'=>'nullable|numeric|min:0','continue_to_next_stage'=>'boolean']],
+        8 => [AppealSubmission::class, 'appealSubmission', ['appeal_number'=>'nullable|string|max:255','dispute_number'=>'nullable|string|max:255','submission_date'=>'nullable|date','appeal_amount'=>'nullable|numeric|min:0','appeal_grounds'=>'nullable|string|max:5000','notes'=>'nullable|string|max:5000']],
+        9 => [AppealExplanationRequest::class, 'appealExplanationRequest', ['request_number'=>'nullable|string|max:255','request_issue_date'=>'nullable|date','request_receipt_date'=>'nullable|date','explanation_letter_number'=>'nullable|string|max:255','explanation_submission_date'=>'nullable|date','notes'=>'nullable|string|max:5000']],
+        10 => [AppealDecision::class, 'appealDecision', ['decision_number'=>'nullable|string|max:255','decision_date'=>'nullable|date','decision_type'=>'nullable|string|max:255','decision_amount'=>'nullable|numeric|min:0','decision_notes'=>'nullable|string|max:5000','create_refund'=>'boolean','refund_amount'=>'nullable|numeric|min:0','continue_to_next_stage'=>'boolean']],
+        11 => [SupremeCourtSubmission::class, 'supremeCourtSubmission', ['submission_number'=>'nullable|string|max:255','submission_date'=>'nullable|date','submission_amount'=>'nullable|numeric|min:0','supreme_court_letter_number'=>'nullable|string|max:255','review_amount'=>'nullable|numeric|min:0','notes'=>'nullable|string|max:5000']],
+        12 => [SupremeCourtDecision::class, 'supremeCourtDecision', ['decision_number'=>'nullable|string|max:255','decision_date'=>'nullable|date','decision_type'=>'nullable|string|max:255','decision_amount'=>'nullable|numeric|min:0','decision_notes'=>'nullable|string|max:5000','create_refund'=>'boolean','refund_amount'=>'nullable|numeric|min:0']],
+    ];
 
-        return $labelMaps[$modelType] ?? [];
+    public static function contract(int $stage): ?array
+    {
+        if (!isset(self::CONTRACTS[$stage])) return null;
+        [$class, $relation, $rules] = self::CONTRACTS[$stage];
+        return compact('class', 'relation', 'rules') + ['fields' => array_keys($rules)];
     }
 
-    /**
-     * Get field label for a specific model and field
-     */
-    public static function getFieldLabel(string $modelType, string $fieldName): string
+    public static function getAvailableFields(string|int $model): array
     {
-        $labels = self::getFieldLabels($modelType);
-        return $labels[$fieldName] ?? str_replace('_', ' ', ucfirst($fieldName));
+        if (is_numeric($model)) return self::contract((int)$model)['fields'] ?? [];
+        foreach (self::CONTRACTS as $contract) if (class_basename($contract[0]) === $model) return array_keys($contract[2]);
+        return [];
     }
 
-    /**
-     * Get available fields for revision per model type
-     */
-    public static function getAvailableFields(string $modelType): array
-    {
-        $availableFields = [
-            'TaxCase' => [
-                'period_id',
-                'currency_id',
-                'disputed_amount',
-                'supporting_docs',
-            ],
-            'SKP' => [
-                'skp_number',
-                'skp_due_date',
-                'issue_date',
-                'receipt_date',
-                'skp_type',
-                'skp_amount',
-                'royalty_correction',
-                'service_correction',
-                'other_correction',
-                'correction_notes',
-                'user_routing_choice',
-            ],
-            'SPHP' => [
-                'sphp_number',
-                'period_date',
-                'amount',
-                'documents',
-            ],
-            'ObjectionSubmission' => [
-                'objection_reason',
-                'amount_objected',
-                'supporting_docs',
-            ],
-        ];
-
-        return $availableFields[$modelType] ?? [];
-    }
-
-    /**
-     * Get document field names for a model type
-     */
-    public static function getDocumentFields(string $modelType): array
-    {
-        $docFields = [
-            'TaxCase' => ['supporting_docs'],
-            'SKP' => ['attachments'],
-            'SPHP' => ['documents'],
-            'ObjectionSubmission' => ['supporting_docs'],
-        ];
-
-        return $docFields[$modelType] ?? [];
-    }
+    public static function getFieldLabel(string $modelType, string $fieldName): string { return ucwords(str_replace('_', ' ', $fieldName)); }
+    public static function getFieldLabels(string $modelType): array { return collect(self::getAvailableFields($modelType))->mapWithKeys(fn($f)=>[$f=>self::getFieldLabel($modelType,$f)])->all(); }
+    public static function getDocumentFields(string $modelType): array { return ['supporting_docs']; }
 }

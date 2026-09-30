@@ -177,7 +177,8 @@ class TaxCase extends Model
     // Revision relationship
     public function revisions(): HasMany
     {
-        return $this->hasMany(Revision::class, 'revisable_id')->where('revisable_type', 'TaxCase');
+        return $this->hasMany(Revision::class, 'revisable_id')
+            ->whereIn('revisable_type', ['TaxCase', self::class]);
     }
 
     public function lastRevision(): BelongsTo

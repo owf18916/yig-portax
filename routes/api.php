@@ -294,6 +294,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
 
             // ⭐ CAST stage to integer (route param comes as string)
             $stage = (int) $stage;
+            app(\App\Services\RevisionMutationGuard::class)->assertStageIsEditable($taxCase, $stage);
             // Determine action from request body - must explicitly check for 'draft'
             $action = $request->input('action');
             $isDraft = ($action === 'draft') || ($action === null && $request->boolean('is_draft', false));

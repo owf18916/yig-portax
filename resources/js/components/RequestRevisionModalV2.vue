@@ -16,7 +16,7 @@
               <span class="required">*</span> Select fields to revise:
             </label>
             <div class="fields-checklist">
-              <label v-for="field in availableFields" :key="field" class="field-checkbox">
+              <label v-for="field in revisionFields" :key="field" class="field-checkbox">
                 <input 
                   type="checkbox" 
                   :value="field"
@@ -348,6 +348,31 @@ const props = defineProps({
   } // Full field definitions with labels
 })
 
+// This mirrors RevisionFieldConfig.  These are API/model keys, never labels or
+// legacy form aliases.  The server remains the authority and validates this
+// same contract on every request.
+const REVISION_FIELDS_BY_STAGE = {
+  1: ['spt_number', 'spt_type', 'filing_date', 'received_date', 'reported_amount', 'disputed_amount', 'vat_in_amount', 'vat_out_amount', 'description'],
+  2: ['sp2_number', 'issue_date', 'receipt_date', 'auditor_name', 'auditor_position', 'auditor_phone', 'auditor_email', 'notes'],
+  3: ['sphp_number', 'sphp_issue_date', 'sphp_receipt_date', 'royalty_finding', 'service_finding', 'other_finding', 'other_finding_notes'],
+  4: ['skp_number', 'issue_date', 'receipt_date', 'skp_due_date', 'skp_type', 'skp_amount', 'royalty_correction', 'service_correction', 'other_correction', 'correction_notes', 'create_refund', 'refund_amount', 'continue_to_next_stage'],
+  5: ['objection_number', 'submission_date', 'objection_amount', 'objection_grounds', 'supporting_evidence', 'notes'],
+  6: ['spuh_number', 'issue_date', 'receipt_date', 'reply_number', 'reply_date', 'notes'],
+  7: ['decision_number', 'decision_date', 'decision_type', 'decision_amount', 'decision_notes', 'create_refund', 'refund_amount', 'continue_to_next_stage'],
+  8: ['appeal_number', 'dispute_number', 'submission_date', 'appeal_amount', 'appeal_grounds', 'notes'],
+  9: ['request_number', 'request_issue_date', 'request_receipt_date', 'explanation_letter_number', 'explanation_submission_date', 'notes'],
+  10: ['decision_number', 'decision_date', 'decision_type', 'decision_amount', 'decision_notes', 'create_refund', 'refund_amount', 'continue_to_next_stage'],
+  11: ['submission_number', 'submission_date', 'submission_amount', 'supreme_court_letter_number', 'review_amount', 'notes'],
+  12: ['decision_number', 'decision_date', 'decision_type', 'decision_amount', 'decision_notes', 'create_refund', 'refund_amount']
+}
+
+const revisionFields = computed(() => [
+  ...(REVISION_FIELDS_BY_STAGE[Number(props.stageId)] || []),
+  // Documents are intentionally not proposed_values: their contract is the
+  // separate proposed_document_changes map.
+  'supporting_docs'
+])
+
 const emit = defineEmits(['submit', 'close'])
 const { showSuccess, showError } = useToast()
 
@@ -465,7 +490,15 @@ const getFieldType = (field) => {
   const types = {
     'period_id': 'select',
     'currency_id': 'select',
+    'spt_number': 'text',
+    'spt_type': 'text',
+    'filing_date': 'date',
+    'received_date': 'date',
+    'reported_amount': 'number',
     'disputed_amount': 'number',
+    'vat_in_amount': 'number',
+    'vat_out_amount': 'number',
+    'description': 'textarea',
     'sp2_number': 'text',
     'issue_date': 'date',
     'receipt_date': 'date',
@@ -473,6 +506,7 @@ const getFieldType = (field) => {
     'auditor_phone': 'text',
     'auditor_email': 'text',
     'auditor_position': 'text',
+    'notes': 'textarea',
     'skp_due_date': 'date',
     'sphp_number': 'text',
     'sphp_issue_date': 'date',
@@ -496,10 +530,15 @@ const getFieldType = (field) => {
     'objection_amount': 'number',
     'objection_grounds': 'textarea',
     'supporting_evidence': 'textarea',
+    'appeal_number': 'text',
+    'dispute_number': 'text',
+    'appeal_amount': 'number',
+    'appeal_grounds': 'textarea',
     'decision_number': 'text',
     'decision_date': 'date',
     'decision_type': 'select',
     'decision_amount': 'number',
+    'decision_notes': 'textarea',
     'request_number': 'text',
     'request_issue_date': 'date',
     'request_receipt_date': 'date',
@@ -507,6 +546,8 @@ const getFieldType = (field) => {
     'explanation_submission_date': 'date',
     'supreme_court_letter_number': 'text',
     'review_amount': 'number',
+    'submission_number': 'text',
+    'submission_amount': 'number',
     'create_refund': 'checkbox',
     'continue_to_next_stage': 'checkbox'
   }
@@ -565,6 +606,12 @@ const handleFieldToggle = () => {
         proposedValues.value[field] = ''
       }
     }
+  })
+
+  // Do not retain a value for an unselected field: both payload collections
+  // are built from this same selected set below.
+  Object.keys(proposedValues.value).forEach(field => {
+    if (!selectedFields.value.includes(field)) delete proposedValues.value[field]
   })
 }
 
@@ -643,25 +690,25 @@ const submit = async () => {
       throw new Error('CSRF token not found')
     }
 
-    // Prepare payload - DON'T include actual file objects
-    // Filter out null values from proposed_values
-    const checkboxFields = ['create_refund', 'continue_to_next_stage']
-    const filteredProposedValues = Object.keys(proposedValues.value).reduce((acc, key) => {
-      if (proposedValues.value[key] !== null) {
-        // For checkbox fields, ensure boolean values
-        if (checkboxFields.includes(key)) {
-          acc[key] = proposedValues.value[key] === true ? true : false
-        } else {
-          acc[key] = proposedValues.value[key]
-        }
-      }
-      return acc
-    }, {})
+    // Build both collections from the same canonical selected business keys.
+    // Presence is deliberately used here: false, 0, an empty string, and null
+    // are legitimate values whose acceptance is determined by server rules.
+    const selectedBusinessFields = selectedFields.value.filter(field => field !== 'supporting_docs')
+    const missingValue = selectedBusinessFields.find(field => !Object.prototype.hasOwnProperty.call(proposedValues.value, field))
+    if (missingValue) {
+      fieldError.value = `Please provide a proposed value for ${fieldLabel(missingValue)}`
+      return
+    }
+    const proposedValuesPayload = Object.fromEntries(
+      selectedBusinessFields.map(field => [field, proposedValues.value[field]])
+    )
 
     const payload = {
-      fields: selectedFields.value,
+      // A documents-only revision retains its established document marker;
+      // otherwise fields and proposed_values have identical key sets.
+      fields: selectedBusinessFields.length ? selectedBusinessFields : ['supporting_docs'],
       reason: reason.value,
-      proposed_values: filteredProposedValues,
+      proposed_values: proposedValuesPayload,
       proposed_document_changes: proposedDocChanges.value,
       stage_code: props.stageId
     }

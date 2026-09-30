@@ -39,8 +39,8 @@
           <div v-if="revision.revision_status === 'requested'" class="pending-section">
             <span class="status-icon warning-icon">⏳ Waiting for Holding approval...</span>
             
-            <!-- Show approval button only for Holding users -->
-            <div v-if="isHoldingUser" class="approval-actions mt-3">
+            <!-- Backend-derived capability keeps UI visibility aligned with RevisionPolicy. -->
+            <div v-if="revision.can_decide" class="approval-actions mt-3">
               <button 
                 @click="openApprovalModal(revision)"
                 class="btn btn-sm btn-primary"
@@ -52,7 +52,7 @@
 
           <!-- APPROVED State -->
           <div v-if="revision.revision_status === 'approved'" class="approved-section">
-            <span class="status-icon success-icon">✅ APPROVED - Ready for Changes</span>
+            <span class="status-icon success-icon">✅ APPROVED AND APPLIED</span>
             <p v-if="revision.approved_at"><strong>Approved at:</strong> {{ formatDate(revision.approved_at) }}</p>
             <div v-if="revision.proposed_values" class="mt-2">
               <strong>Proposed Changes:</strong>
@@ -86,7 +86,7 @@
               </div>
             </div>
             <!-- Next Action: Submit Revised Data -->
-            <div v-if="isCurrentUser" class="next-actions mt-3">
+            <div v-if="false" class="next-actions mt-3">
               <button 
                 @click="openSubmitRevisedModal(revision)"
                 class="btn btn-sm btn-success"
@@ -203,6 +203,20 @@ const showApprovalModal = ref(false)
 const revisionToApprove = ref(null)
 const showSubmitRevisedModal = ref(false)
 const revisionToSubmit = ref(null)
+const newlyRequestedRevision = ref(null)
+const locallyDecidedRevisions = ref(new Map())
+
+// Keep the successful canonical POST response visible while the one bounded
+// parent refresh is in flight. This also prevents a cached parent list from
+// making a just-created request disappear.
+const visibleRevisions = computed(() => {
+  const byId = new Map(props.revisions.map(revision => [revision.id, revision]))
+  if (newlyRequestedRevision.value?.id) {
+    byId.set(newlyRequestedRevision.value.id, newlyRequestedRevision.value)
+  }
+  locallyDecidedRevisions.value.forEach((revision, id) => byId.set(id, revision))
+  return [...byId.values()]
+})
 
 // Check if user can request new revision
 const canRequestRevision = computed(() => {
@@ -242,9 +256,9 @@ const revisionStatusMessage = computed(() => {
 // Filter revisions by CURRENT STAGE ONLY
 const stageFilteredRevisions = computed(() => {
   const stageIdNum = parseInt(props.stageId, 10)
-  return props.revisions.filter(r => {
-    // Filter by stage_code from revision record (matches stage_id)
-    return r.stage_code === stageIdNum
+  return visibleRevisions.value.filter(r => {
+    // APIs and legacy rows may serialize numeric stage_code differently.
+    return Number(r.stage_code) === stageIdNum
   })
 })
 
@@ -253,18 +267,6 @@ const sortedRevisions = computed(() => {
   return [...stageFilteredRevisions.value].sort((a, b) => 
     new Date(b.created_at) - new Date(a.created_at)
   )
-})
-
-// Check if current user is from Holding entity (can approve/reject revisions)
-const isHoldingUser = computed(() => {
-  if (!props.currentUser) return false
-  return props.currentUser?.entity?.entity_type === 'HOLDING'
-})
-
-// Check if current user is the one who requested revision (can submit revised data)
-const isCurrentUser = computed(() => {
-  if (!props.currentUser) return false
-  return props.currentUser?.entity?.entity_type !== 'HOLDING'
 })
 
 const statusClass = (status) => {
@@ -325,6 +327,7 @@ const showComparison = (revision) => {
 
 const onRevisionRequested = (revision) => {
   showRequestModal.value = false
+  newlyRequestedRevision.value = revision
   emit('revision-requested', revision)
   emit('refresh')
 }
@@ -349,6 +352,8 @@ const onRevisedDataSubmitted = (submittedData) => {
 const onRevisionApproved = (revision) => {
   showApprovalModal.value = false
   revisionToApprove.value = null
+  locallyDecidedRevisions.value.set(revision.id, revision)
+  locallyDecidedRevisions.value = new Map(locallyDecidedRevisions.value)
   emit('refresh')
   showSuccess('Revision Approved', 'Changes have been successfully applied.')
 }
@@ -356,6 +361,8 @@ const onRevisionApproved = (revision) => {
 const onRevisionRejected = (revision) => {
   showApprovalModal.value = false
   revisionToApprove.value = null
+  locallyDecidedRevisions.value.set(revision.id, revision)
+  locallyDecidedRevisions.value = new Map(locallyDecidedRevisions.value)
   emit('refresh')
   showSuccess('Revision Rejected', 'The revision request has been rejected.')
 }

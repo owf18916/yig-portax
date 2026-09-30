@@ -195,7 +195,6 @@
                       @click="$router.push(`/tax-cases/${$route.params.id}/workflow/${stage.id}`)"
                       variant="primary"
                       size="sm"
-                      :disabled="!stage.accessible"
                     >
                       Access
                     </Button>
@@ -708,6 +707,8 @@ const updateStageAccessibility = () => {
   
   workflowStages.value.forEach((stage) => {
     stage.accessible = false
+    stage.viewable = false
+    stage.mode = null
     stage.completed = isStageCompleted(stage.id)
 
     if (stage.branch === 'main') {
@@ -715,7 +716,16 @@ const updateStageAccessibility = () => {
         item => item.stage === stage.id
       )
       stage.completed = canonicalStage?.status === 'completed'
-      stage.accessible = canonicalStage?.available === true
+      // The canonical resolver owns progression. Presentation only maps its
+      // three statuses: completed is viewable, available is editable, locked
+      // has no normal Access action.
+      stage.viewable = ['completed', 'available'].includes(canonicalStage?.status)
+      stage.accessible = canonicalStage?.status === 'available'
+      stage.mode = canonicalStage?.status === 'completed'
+        ? 'view'
+        : canonicalStage?.status === 'available'
+          ? 'edit'
+          : null
       return
     }
     
@@ -1007,7 +1017,7 @@ watch(
 
 const canAccessStage = (stageId) => {
   const stage = workflowStages.value.find(s => s.id === stageId)
-  return stage && stage.accessible
+  return stage && (stage.branch === 'main' ? stage.viewable : stage.accessible)
 }
 
 const formatStatus = (status) => {

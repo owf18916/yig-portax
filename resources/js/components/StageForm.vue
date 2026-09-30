@@ -100,6 +100,9 @@
             <p class="text-xs text-gray-600 mt-0.5">{{ stageDescription }}</p>
           </div>
           <div class="p-3">
+            <div v-if="fieldsDisabled" class="mb-3 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+              This submitted stage is view-only. Request a Revision to propose changes.
+            </div>
             <form @submit.prevent="submitForm" class="space-y-2">
             
             <!-- Dynamic Fields -->
@@ -386,14 +389,14 @@
 
             <!-- Submit Buttons -->
             <div class="flex gap-1 pt-2 border-t">
-              <Button type="submit" variant="primary" :disabled="submitting || isLoading || supplementaryUploading || uploadProgress > 0 || fieldsDisabled || submissionComplete" class="text-xs px-2 py-1.5">
+              <Button v-if="!fieldsDisabled" type="submit" variant="primary" :disabled="submitting || isLoading || supplementaryUploading || uploadProgress > 0 || submissionComplete" class="text-xs px-2 py-1.5">
                 {{ submitting ? 'Submitting...' : 'Submit & Continue' }}
               </Button>
-              <Button type="button" @click="saveDraft" variant="secondary" :disabled="submitting || isLoading || supplementaryUploading || uploadProgress > 0 || fieldsDisabled || submissionComplete" class="text-xs px-2 py-1.5">
+              <Button v-if="!fieldsDisabled" type="button" @click="saveDraft" variant="secondary" :disabled="submitting || isLoading || supplementaryUploading || uploadProgress > 0 || submissionComplete" class="text-xs px-2 py-1.5">
                 Save as Draft
               </Button>
               <Button type="button" @click="viewCaseDetail" variant="secondary" :disabled="isLoading" class="text-xs px-2 py-1.5">
-                Cancel
+                {{ fieldsDisabled ? 'Back to Case Detail' : 'Cancel' }}
               </Button>
             </div>
             </form>

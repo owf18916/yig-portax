@@ -45,6 +45,10 @@ class RevisionPolicy
             return null;
         }
 
+        if ($revision->relationLoaded('revisable')) {
+            return $revision->revisable instanceof TaxCase ? $revision->revisable : null;
+        }
+
         return TaxCase::find($revision->revisable_id);
     }
 }

@@ -14,6 +14,7 @@ class Sp2RecordController extends ApiController
      */
     public function store(Request $request, TaxCase $taxCase): JsonResponse
     {
+        app(\App\Services\RevisionMutationGuard::class)->assertStageIsEditable($taxCase, 2);
         $validated = $request->validate([
             'sp2_number' => 'nullable|string',
             'issue_date' => 'nullable|date',

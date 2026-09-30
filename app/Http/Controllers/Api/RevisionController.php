@@ -12,6 +12,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 
 class RevisionController extends Controller
 {
@@ -48,9 +49,9 @@ class RevisionController extends Controller
             'files.*' => 'file|mimes:pdf|max:10240', // Max 10MB per file
         ]);
 
-        // Parse payload from FormData
+        // Accept multipart (with uploads) and JSON clients through one contract.
         $payloadJson = $request->input('payload');
-        $payload = json_decode($payloadJson, true);
+        $payload = $payloadJson ? json_decode($payloadJson, true) : $request->all();
 
         if (!$payload || !is_array($payload)) {
             return response()->json([
@@ -77,30 +78,21 @@ class RevisionController extends Controller
             ], 422);
         }
 
+        $stageCode = (int) ($payload['stage_code'] ?? 0);
         $this->ensureDocumentsBelongToTaxCase(
             array_merge(
                 $payload['proposed_document_changes']['files_to_delete'] ?? [],
                 $payload['proposed_document_changes']['files_to_add'] ?? []
             ),
-            $taxCase
+            $taxCase,
+            $stageCode
         );
-
-        // Check if data is submitted via workflow_history (source of truth)
-        $isStageSubmitted = $taxCase->workflowHistories()
-            ->where('stage_id', $stageCode ?? 1)
-            ->whereIn('status', ['submitted', 'approved'])
-            ->exists();
-            
-        if (!$isStageSubmitted) {
-            return response()->json([
-                'error' => 'Cannot request revision for unsubmitted data',
-            ], 422);
+        if ($stageCode < 1 || $stageCode > 12) {
+            return response()->json(['error' => 'stage_code must be a canonical main stage from 1 through 12.'], 422);
         }
 
         // Custom validation: ensure at least one change is proposed
-        $hasFieldChanges = collect($payload['proposed_values'] ?? [])
-            ->filter(fn($value) => $value !== null)
-            ->isNotEmpty();
+        $hasFieldChanges = collect($payload['proposed_values'] ?? [])->isNotEmpty();
 
         $hasDocumentChanges = (
             collect($payload['proposed_document_changes']['files_to_delete'] ?? [])->isNotEmpty() ||
@@ -115,9 +107,6 @@ class RevisionController extends Controller
         }
 
         try {
-            // Extract stage_code from payload with default
-            $stageCode = $payload['stage_code'] ?? '1';
-
             // Upload new files if any and get document IDs
             $documentIds = [];
             if ($request->hasFile('files')) {
@@ -183,7 +172,23 @@ class RevisionController extends Controller
                 'message' => 'Revision requested successfully',
                 'revision' => $revisionData,
             ], 201);
+        } catch (ValidationException $e) {
+            foreach ($documentIds ?? [] as $documentId) {
+                $document = Document::find($documentId);
+                if ($document) {
+                    Storage::disk(config('filesystems.default'))->delete($document->file_path);
+                    $document->forceDelete();
+                }
+            }
+            throw $e;
         } catch (\Exception $e) {
+            foreach ($documentIds ?? [] as $documentId) {
+                $document = Document::find($documentId);
+                if ($document) {
+                    Storage::disk(config('filesystems.default'))->delete($document->file_path);
+                    $document->forceDelete();
+                }
+            }
             Log::error('RevisionController: Error requesting revision', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
@@ -238,54 +243,9 @@ class RevisionController extends Controller
     public function submitRevisedData(Request $request, TaxCase $taxCase, Revision $revision): JsonResponse
     {
         $this->ensureRevisionBelongsToTaxCase($revision, $taxCase);
-
-        $user = auth()->user();
-        
-        // Ensure entity is loaded for authorization
-        $user->load('entity');
-        
-        // Check authorization - only non-Holding users can submit
-        if ($user->entity?->entity_type === 'HOLDING') {
-            return response()->json([
-                'error' => 'Only non-Holding users can submit revised data',
-            ], 403);
-        }
-
-        // Check if revision is approved
-        if ($revision->revision_status !== 'approved') {
-            return response()->json([
-                'error' => 'Revision must be in approved status to submit revised data',
-            ], 422);
-        }
-
-        $validated = $request->validate([
-            'revised_data' => 'required|array',
-            'revision_id' => 'required|integer|in:' . $revision->id,
-        ]);
-
-        try {
-            // Update revision status to 'submitted'
-            $revision->update([
-                'revision_status' => 'submitted',
-                'revised_data' => $validated['revised_data'],
-                'submitted_by' => auth()->id(),
-                'submitted_at' => now(),
-            ]);
-
-            return response()->json([
-                'message' => 'Revised data submitted successfully. Waiting for Holding decision.',
-                'revision' => $revision->load(['requestedBy', 'submittedBy']),
-            ], 200);
-        } catch (\Exception $e) {
-            Log::error('RevisionController: Error submitting revised data', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
-            return response()->json([
-                'error' => 'Failed to submit revised data: ' . $e->getMessage(),
-            ], 500);
-        }
+        return response()->json([
+            'error' => 'Deprecated endpoint: approval is the sole Revision apply point.',
+        ], 409);
     }
 
     /**
@@ -376,6 +336,13 @@ class RevisionController extends Controller
      */
     public function indexRevisions(TaxCase $taxCase): JsonResponse
     {
+        // Route middleware enforces this too; retain it at the controller
+        // boundary because history visibility follows TaxCase visibility,
+        // not the ability to approve a Revision.
+        $this->authorize('view', $taxCase);
+
+        $user = auth()->user()->load('entity');
+
         $revisions = $taxCase->revisions()
             ->with([
                 'requestedBy:id,name,email',
@@ -384,24 +351,23 @@ class RevisionController extends Controller
             ->latest()
             ->get();
 
-        // Add documents data to each revision
-        $revisions->each(function ($revision) use ($taxCase) {
-            $docChanges = $revision->proposed_document_changes ?? [];
-            $documentIds = array_merge(
-                $docChanges['files_to_delete'] ?? [],
-                $docChanges['files_to_add'] ?? []
-            );
-
-            $documents = [];
-            if (!empty($documentIds)) {
-                $documents = Document::whereIn('id', $documentIds)
-                    ->where('tax_case_id', $taxCase->id)
-                    ->get(['id', 'original_filename'])
-                    ->keyBy('id')
-                    ->toArray();
-            }
-
-            $revision->documents = $documents;
+        $documentIds = $revisions->flatMap(fn ($revision) => array_merge(
+            $revision->proposed_document_changes['files_to_delete'] ?? [],
+            $revision->proposed_document_changes['files_to_add'] ?? []
+        ))->filter()->unique()->values();
+        $documents = Document::withTrashed()->whereIn('id', $documentIds)->where('tax_case_id', $taxCase->id)
+            ->get(['id', 'original_filename'])->keyBy('id');
+        $revisions->each(function ($revision) use ($documents, $user, $taxCase) {
+            $ids = collect(array_merge($revision->proposed_document_changes['files_to_delete'] ?? [], $revision->proposed_document_changes['files_to_add'] ?? []));
+            $revision->documents = $documents->only($ids->all())->toArray();
+            // This is presentation capability only. RevisionPolicy remains the
+            // authorization authority for the decision endpoint.
+            // All rows belong to the route TaxCase, so hydrate that relation
+            // just for the policy evaluation and avoid a TaxCase query per row.
+            $revision->setRelation('revisable', $taxCase);
+            $revision->can_decide = $revision->revision_status === 'requested'
+                && $user->can('decide', $revision);
+            $revision->unsetRelation('revisable');
         });
 
         return response()->json([
@@ -419,7 +385,7 @@ class RevisionController extends Controller
         );
     }
 
-    private function ensureDocumentsBelongToTaxCase(array $documentIds, TaxCase $taxCase): void
+    private function ensureDocumentsBelongToTaxCase(array $documentIds, TaxCase $taxCase, int $stageCode): void
     {
         $documentIds = collect($documentIds)->filter()->unique()->values();
         if ($documentIds->isEmpty()) {
@@ -429,6 +395,7 @@ class RevisionController extends Controller
         $ownedCount = Document::query()
             ->whereIn('id', $documentIds)
             ->where('tax_case_id', $taxCase->id)
+            ->when($stageCode > 0, fn ($query) => $query->where('stage_code', (string) $stageCode))
             ->count();
 
         abort_unless($ownedCount === $documentIds->count(), 404, 'Document not found for this tax case.');

@@ -14,6 +14,10 @@ class Revision extends Model
         'revisable_type',
         'revisable_id',
         'stage_code',
+        'target_type',
+        'target_id',
+        'target_version',
+        'audit_data',
         'revision_status',
         'original_data',
         'revised_data',
@@ -38,6 +42,7 @@ class Revision extends Model
         'revised_data' => 'json',
         'proposed_values' => 'json',
         'proposed_document_changes' => 'json',
+        'audit_data' => 'json',
         'requested_at' => 'datetime',
         'approved_at' => 'datetime',
         'submitted_at' => 'datetime',
@@ -50,6 +55,11 @@ class Revision extends Model
     public function revisable(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    public function target(): MorphTo
+    {
+        return $this->morphTo(__FUNCTION__, 'target_type', 'target_id');
     }
 
     // User relationships

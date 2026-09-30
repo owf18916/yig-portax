@@ -333,6 +333,7 @@ class TaxCaseController extends ApiController
         if ($taxCase->is_completed) {
             return $this->error('Cannot update a completed tax case', 422);
         }
+        app(\App\Services\RevisionMutationGuard::class)->assertStageIsEditable($taxCase, 1);
 
         $validated = $request->validate([
             'disputed_amount' => 'sometimes|numeric|min:0',
@@ -381,6 +382,16 @@ class TaxCaseController extends ApiController
                 'decision_value' => 'nullable|string',
                 'notes' => 'nullable|string',
             ]);
+
+            // This compatibility endpoint exists only for the preliminary-refund
+            // Stage 1 -> 2 hand-off; it may not fabricate arbitrary evidence.
+            abort_unless(
+                (int)$validated['stage_id'] === 1
+                    && (int)$validated['stage_to'] === 2
+                    && $validated['action'] === 'routed',
+                422,
+                'Manual workflow history is restricted to the canonical preliminary Stage 1 to Stage 2 route.'
+            );
 
             // Create workflow history entry
             $workflowHistory = $taxCase->workflowHistories()->create([
