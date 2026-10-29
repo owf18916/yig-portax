@@ -63,6 +63,7 @@ class ObjectionDecisionController extends ApiController
         // Log workflow with decision
         $taxCase->workflowHistories()->create([
             'stage_id' => 7,
+            'status' => 'submitted',
             'stage_from' => 7,
             'stage_to' => $nextStage,
             'action' => 'submitted',
@@ -79,13 +80,7 @@ class ObjectionDecisionController extends ApiController
 
         // ✅ FIXED: Check if KIAN reminder email should be sent
         // KIAN is needed WHENEVER loss exists at Stage 7, REGARDLESS of next stage choice
-        if ($taxCase->needsKianAtStage(7)) {
-            $reason = $taxCase->getKianEligibilityReasonForStage(7);
-            if ($reason) {
-                $caseId = (int) $taxCase->id;
-                dispatch(new SendKianReminderJob($caseId, 'Stage 7 - Objection Decision (Keputusan Keberatan)', $reason, 7));
-            }
-        }
+        app(\App\Services\KianNotificationService::class)->evaluateFinalSubmit($taxCase->setRelation('objectionDecision', $decision), 7);
 
         return $this->success(
             $decision->load(['taxCase', 'submittedBy']),

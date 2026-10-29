@@ -57,6 +57,9 @@
       </Card>
 
       <!-- ✅ MULTI-STAGE KIAN Opportunities (Stages 4, 7, 10, 12) -->
+      <div v-if="Object.values(caseData.kian_status_by_stage || {}).some(s => s.evaluationState === 'unresolved')" class="bg-amber-50 border border-amber-300 p-4 rounded-lg">
+        KIAN exposure is unresolved. A confirmed SPT tax position and compatible Decision Point inputs are required before eligibility can be determined.
+      </div>
       <div v-if="caseData.kian_status_by_stage && Object.values(caseData.kian_status_by_stage).some(s => s.needsKian)" class="bg-red-100 border-2 border-red-500 p-4 rounded-lg">
         <div class="text-red-900 font-bold mb-3">🚨 IMPORTANT: KIAN Required At These Stages</div>
         <div class="space-y-3">
@@ -201,7 +204,7 @@
                     <!-- KIAN Button for Stages 4, 7, 10, 12 -->
                     <!-- ⭐ FIXED: KIAN button is independent from stage accessibility (side action) -->
                     <Button
-                      v-if="[4, 7, 10, 12].includes(stage.id) && caseData.kian_status_by_stage?.[stage.id]?.needsKian"
+                      v-if="[4, 7, 10, 12].includes(stage.id) && (caseData.kian_status_by_stage?.[stage.id]?.needsKian || caseData.kian_status_by_stage?.[stage.id]?.kianId)"
                       @click="navigateToKianSubmission(stage.id)"
                       :variant="caseData.kian_status_by_stage[stage.id]?.submitted ? 'secondary' : 'danger'"
                       size="sm"

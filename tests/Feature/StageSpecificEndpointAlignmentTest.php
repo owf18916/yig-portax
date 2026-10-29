@@ -31,7 +31,7 @@ class StageSpecificEndpointAlignmentTest extends TestCase
             'user_id' => $this->user->id, 'entity_id' => $entity->id,
             'fiscal_year_id' => $year->id, 'currency_id' => $currency->id,
             'case_status_id' => $status->id, 'case_number' => 'ALIGN-01',
-            'case_type' => 'CIT', 'reported_amount' => 100, 'disputed_amount' => 100,
+            'spt_position_type' => 'LB', 'case_type' => 'CIT', 'reported_amount' => 100, 'disputed_amount' => 100,
             'current_stage' => 4,
         ]);
         $this->actingAs($this->user);

@@ -200,8 +200,44 @@ class TaxCaseNumberGenerationTest extends TestCase
             'case_type' => 'CIT',
             'fiscal_year_id' => $this->fiscalYear->id,
             'period_id' => $periodId,
+            'spt_position_type' => 'LB',
             'disputed_amount' => 5000000000,
             'currency_id' => 1,
         ], $overrides);
+    }
+
+    public function test_creation_requires_explicit_position_without_inferring_from_amount_or_category(): void
+    {
+        $payload = $this->payload(['spt_type' => 'SPT']);
+        unset($payload['spt_position_type']);
+        $this->actingAs($this->user)->postJson('/api/tax-cases', $payload)
+            ->assertUnprocessable()->assertJsonValidationErrors('spt_position_type');
+        $this->assertDatabaseCount('tax_cases', 0);
+    }
+
+    public static function positions(): array
+    {
+        return [['CIT', 'LB', '100'], ['CIT', 'KB', '100'], ['CIT', 'NIHIL', '0'],
+            ['VAT', 'LB', '100'], ['VAT', 'KB', '100'], ['VAT', 'NIHIL', '0']];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('positions')]
+    public function test_creation_persists_all_positions_and_preserves_filing_category(string $caseType, string $type, string $amount): void
+    {
+        $payload = $this->payload(['case_type' => $caseType, 'spt_type' => 'SPT', 'spt_position_type' => $type, 'disputed_amount' => $amount]);
+        if ($caseType === 'VAT') {
+            $payload['vat_in_amount'] = $type === 'LB' ? '200' : '100';
+            $payload['vat_out_amount'] = $type === 'KB' ? '200' : '100';
+        }
+        $this->actingAs($this->user)->postJson('/api/tax-cases', $payload)->assertCreated()
+            ->assertJsonPath('data.spt_position_type', $type)->assertJsonPath('data.spt_type', 'SPT');
+    }
+
+    public function test_nihil_nonzero_and_mismatched_vat_position_are_rejected_without_writes(): void
+    {
+        $this->actingAs($this->user)->postJson('/api/tax-cases', $this->payload(['spt_position_type' => 'NIHIL']))->assertUnprocessable();
+        $this->postJson('/api/tax-cases', $this->payload(['case_type' => 'VAT', 'spt_position_type' => 'KB',
+            'vat_in_amount' => '200', 'vat_out_amount' => '100', 'disputed_amount' => '100']))->assertUnprocessable();
+        $this->assertDatabaseCount('tax_cases', 0);
     }
 }

@@ -22,6 +22,7 @@
       :caseStatus="caseStatus"
       :preFilledMessage="preFilledMessage"
       :prefillData="prefillData"
+      :exposure="caseData.kian_status_by_stage?.[7]"
       :requireDocuments="true"
       :showDecisionOptions="true"
       @submit="refreshTaxCase"

@@ -105,6 +105,13 @@
             </div>
             <form @submit.prevent="submitForm" class="space-y-2">
             
+            <div v-if="exposure" class="p-3 bg-blue-50 rounded-lg text-sm">
+              <p v-if="[7, 10, 12].includes(stageId)">Previous remaining exposure: {{ exposure.previousExposure ?? 'Unresolved' }}</p>
+              <p>Remaining exposure after decision: {{ exposure.remainingExposure ?? 'Pending evaluation' }}</p>
+              <p v-if="exposure.evaluationState === 'unresolved'" class="text-amber-800">Exposure unresolved: {{ exposure.evaluationReason }}</p>
+              <p v-if="formData.decision_type === 'partially_granted'">Recovery must be greater than zero and less than previous remaining exposure.</p>
+            </div>
+
             <!-- Dynamic Fields -->
             <div v-for="field in fields" :key="field.id" class="space-y-1">
               <!-- Text Input -->
@@ -128,12 +135,12 @@
                 :placeholder="field.placeholder"
                 :required="field.required"
                 :error="formErrors[field.key]"
-                :disabled="field.readonly || submissionComplete || fieldsDisabled"
+                :disabled="field.readonly || submissionComplete || fieldsDisabled || (field.key === 'decision_amount' && fixedRecovery)"
                 :decimal-places="field.decimalPlaces ?? field.decimal_places"
                 :integer-only="field.integerOnly ?? field.integer_only ?? false"
                 :allow-negative="field.allowNegative ?? field.allow_negative ?? false"
                 :min="field.min ?? 0"
-                :max="field.max"
+                :max="field.key === 'decision_amount' ? exposure?.previousExposure : field.max"
               />
 
               <!-- Email Input -->
@@ -463,6 +470,7 @@ const route = useRoute()
 
 // Props - passed from parent form component
 const props = defineProps({
+  exposure: { type: Object, default: null },
   stageName: {
     type: String,
     required: true
@@ -566,6 +574,14 @@ const decisionActions = ref({
   refundAmount: 0,
   continueToNextStage: false
 })
+
+// Fixed recovery comes from the backend, without client exposure arithmetic.
+const fixedRecovery = computed(() => [7, 10, 12].includes(props.stageId) && ['granted', 'rejected'].includes(formData.decision_type))
+watch(() => [formData.decision_type, props.exposure?.previousExposure], ([outcome, prior]) => {
+  if (![7, 10, 12].includes(props.stageId) || submissionComplete.value) return
+  if (outcome === 'rejected') formData.decision_amount = '0.00'
+  if (outcome === 'granted' && prior != null) formData.decision_amount = prior
+}, { immediate: true })
 
 // ⭐ WATCHER: Sync decision actions to formData (one-way sync)
 watch(

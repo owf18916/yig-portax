@@ -115,7 +115,11 @@ class TaxCaseController extends ApiController
             'description' => 'nullable|string',
             // ✅ NEW: Support Preliminary Refund (Pengembalian Pendahuluan)
             'spt_type' => 'nullable|in:SPT,Pengembalian Pendahuluan,Kurang Bayar',
+            'spt_position_type' => 'required|in:LB,KB,NIHIL',
         ]);
+
+        app(\App\Services\DecisionPointTaxExposure::class)->validatePosition($validated['spt_position_type'], (string) $validated['disputed_amount']);
+        if ($validated['case_type'] === 'VAT') app(\App\Services\DecisionPointTaxExposure::class)->validateVatInputs($validated);
 
         try {
             $taxCase = DB::transaction(function () use ($validated, $user) {
@@ -341,6 +345,9 @@ class TaxCaseController extends ApiController
             'received_date' => 'sometimes|date',
         ]);
 
+        if (array_key_exists('disputed_amount', $validated) && $taxCase->spt_position_type) {
+            app(\App\Services\DecisionPointTaxExposure::class)->validatePosition($taxCase->spt_position_type, (string) $validated['disputed_amount']);
+        }
         $taxCase->update($validated);
 
         return $this->success(

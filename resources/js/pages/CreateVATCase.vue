@@ -364,12 +364,12 @@ const validateForm = async () => {
     isValid = false
   }
 
-  if (!formData.ppn_masukan || parseFloat(formData.ppn_masukan) <= 0) {
-    formErrors.ppn_masukan = 'PPN Masukan must be greater than 0'
+  if (formData.ppn_masukan === '' || formData.ppn_masukan == null || Number(formData.ppn_masukan) < 0) {
+    formErrors.ppn_masukan = 'PPN Masukan cannot be negative'
     isValid = false
   }
 
-  if (!formData.ppn_keluaran || parseFloat(formData.ppn_keluaran) < 0) {
+  if (formData.ppn_keluaran === '' || formData.ppn_keluaran == null || Number(formData.ppn_keluaran) < 0) {
     formErrors.ppn_keluaran = 'PPN Keluaran cannot be negative'
     isValid = false
   }
@@ -434,9 +434,11 @@ const submitForm = async () => {
         case_type: 'VAT',
         fiscal_year_id: selectedPeriod.fiscal_year_id,  // CHANGED: use fiscal_year_id dari period
         period_id: selectedPeriod.id,  // CHANGED: kirim period_id, bukan period string
-        ppn_masukan: parseFloat(formData.ppn_masukan),
-        ppn_keluaran: parseFloat(formData.ppn_keluaran),
-        disputed_amount: calculateDispute()
+        vat_in_amount: formData.ppn_masukan,
+        vat_out_amount: formData.ppn_keluaran,
+        disputed_amount: calculateDispute().toFixed(2),
+        spt_position_type: Number(formData.ppn_masukan) > Number(formData.ppn_keluaran) ? 'LB'
+          : Number(formData.ppn_masukan) < Number(formData.ppn_keluaran) ? 'KB' : 'NIHIL'
       })
     })
 

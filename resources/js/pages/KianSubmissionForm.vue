@@ -15,12 +15,12 @@
           <h3 class="text-sm font-semibold text-blue-900 mb-2">💰 KIAN Opportunities Available</h3>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <!-- Stage 4 KIAN -->
-            <div v-if="kianStatusByStage['4']?.needsKian" 
+            <div v-if="kianStatusByStage['4']?.needsKian || kianStatusByStage['4']?.kianId"
               :class="['p-3 rounded-lg border', kianStatusByStage['4']?.submitted ? 'bg-green-50 border-green-200' : 'bg-white border-blue-200']">
               <div class="flex items-center justify-between">
                 <div>
                   <p class="text-xs font-semibold text-blue-900">Stage 4 - SKP Decision</p>
-                  <p class="text-xs text-blue-700 mt-1">Loss: Rp {{ formatAmount(kianStatusByStage['4']?.lossAmount) }}</p>
+                  <p class="text-xs text-blue-700 mt-1">Remaining exposure: {{ kianStatusByStage['4']?.remainingExposure ?? 'Unresolved or pending' }}</p>
                 </div>
                 <button v-if="!kianStatusByStage['4']?.submitted"
                   @click="selectStageForKian(4)"
@@ -32,12 +32,12 @@
             </div>
 
             <!-- Stage 7 KIAN -->
-            <div v-if="kianStatusByStage['7']?.needsKian" 
+            <div v-if="kianStatusByStage['7']?.needsKian || kianStatusByStage['7']?.kianId"
               :class="['p-3 rounded-lg border', kianStatusByStage['7']?.submitted ? 'bg-green-50 border-green-200' : 'bg-white border-blue-200']">
               <div class="flex items-center justify-between">
                 <div>
                   <p class="text-xs font-semibold text-blue-900">Stage 7 - Objection Decision</p>
-                  <p class="text-xs text-blue-700 mt-1">Loss: Rp {{ formatAmount(kianStatusByStage['7']?.lossAmount) }}</p>
+                  <p class="text-xs text-blue-700 mt-1">Remaining exposure: {{ kianStatusByStage['7']?.remainingExposure ?? 'Unresolved or pending' }}</p>
                 </div>
                 <button v-if="!kianStatusByStage['7']?.submitted"
                   @click="selectStageForKian(7)"
@@ -49,12 +49,12 @@
             </div>
 
             <!-- Stage 10 KIAN -->
-            <div v-if="kianStatusByStage['10']?.needsKian" 
+            <div v-if="kianStatusByStage['10']?.needsKian || kianStatusByStage['10']?.kianId"
               :class="['p-3 rounded-lg border', kianStatusByStage['10']?.submitted ? 'bg-green-50 border-green-200' : 'bg-white border-blue-200']">
               <div class="flex items-center justify-between">
                 <div>
                   <p class="text-xs font-semibold text-blue-900">Stage 10 - Appeal Decision</p>
-                  <p class="text-xs text-blue-700 mt-1">Loss: Rp {{ formatAmount(kianStatusByStage['10']?.lossAmount) }}</p>
+                  <p class="text-xs text-blue-700 mt-1">Remaining exposure: {{ kianStatusByStage['10']?.remainingExposure ?? 'Unresolved or pending' }}</p>
                 </div>
                 <button v-if="!kianStatusByStage['10']?.submitted"
                   @click="selectStageForKian(10)"
@@ -66,12 +66,12 @@
             </div>
 
             <!-- Stage 12 KIAN -->
-            <div v-if="kianStatusByStage['12']?.needsKian" 
+            <div v-if="kianStatusByStage['12']?.needsKian || kianStatusByStage['12']?.kianId"
               :class="['p-3 rounded-lg border', kianStatusByStage['12']?.submitted ? 'bg-green-50 border-green-200' : 'bg-white border-blue-200']">
               <div class="flex items-center justify-between">
                 <div>
                   <p class="text-xs font-semibold text-blue-900">Stage 12 - Supreme Court Decision</p>
-                  <p class="text-xs text-blue-700 mt-1">Loss: Rp {{ formatAmount(kianStatusByStage['12']?.lossAmount) }}</p>
+                  <p class="text-xs text-blue-700 mt-1">Remaining exposure: {{ kianStatusByStage['12']?.remainingExposure ?? 'Unresolved or pending' }}</p>
                 </div>
                 <button v-if="!kianStatusByStage['12']?.submitted"
                   @click="selectStageForKian(12)"
@@ -401,7 +401,7 @@ onMounted(async () => {
     const routeStageId = route.params.stageId
     if (routeStageId) {
       const stageId = parseInt(routeStageId, 10)
-      if ([4, 7, 10, 12].includes(stageId) && kianStatusByStage.value[stageId]?.needsKian) {
+      if ([4, 7, 10, 12].includes(stageId) && (kianStatusByStage.value[stageId]?.needsKian || kianStatusByStage.value[stageId]?.kianId)) {
         selectStageForKian(stageId)
       }
     }
@@ -442,7 +442,8 @@ const selectStageForKian = async (stageId) => {
         }
         
         // ✅ Check if KIAN is already submitted/approved → set read-only mode
-        if (existingKian.status && ['submitted', 'approved'].includes(existingKian.status)) {
+        if (existingKian.status && existingKian.status !== 'draft') {
+          preFilledLossAmount.value = existingKian.loss_amount ?? existingKian.kian_amount
           isKianSubmitted.value = true
         } else {
           isKianSubmitted.value = false

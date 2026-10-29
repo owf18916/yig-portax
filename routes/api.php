@@ -316,7 +316,9 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                     ], $guard['status']);
                 }
 
-                if ($stage === 2) {
+                if ($stage === 1) {
+                    $request->validate(['disputed_amount' => 'sometimes|required|numeric|min:0', 'spt_position_type' => 'sometimes|required|in:LB,KB,NIHIL']);
+                } elseif ($stage === 2) {
                     $request->validate([
                         'auditor_position' => 'nullable|string|max:255',
                         'auditor_email' => 'nullable|string|max:255',
@@ -344,6 +346,10 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                     $request->validate($rules);
                 }
 
+                if (!$isDraft && in_array($stage, [1, 4, 7, 10, 12], true)) {
+                    $request->merge(app(\App\Services\DecisionPointTaxExposure::class)->normalizeForCase($taxCase, $stage, $request->all()));
+                }
+
                 // StageForm requires supporting documents only for final submission.
                 // The optional SPHP notes attachment cannot satisfy this requirement.
                 if (!$isDraft && !\App\Models\Document::query()
@@ -364,6 +370,10 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                 if ($stage == 1) {
                     if ($request->has('period_id')) $updateData['period_id'] = $request->input('period_id');
                     if ($request->has('currency_id')) $updateData['currency_id'] = $request->input('currency_id');
+                    if ($request->has('spt_position_type')) {
+                        $request->validate(['spt_position_type' => 'required|in:LB,KB,NIHIL']);
+                        $updateData['spt_position_type'] = $request->input('spt_position_type');
+                    }
                     if ($request->has('disputed_amount')) $updateData['disputed_amount'] = $request->input('disputed_amount');
                     if ($request->has('spt_type') && !empty($request->input('spt_type'))) {
                         $updateData['spt_type'] = $request->input('spt_type');
@@ -725,7 +735,8 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                 // ✅ NEW: KIAN REMINDER TRIGGERS for Stages 7, 10, 12
                 // Trigger KIAN whenever loss exists, not conditional on next stage choice
                 if (in_array($stage, [4, 7, 10, 12], true)) {
-                    app(\App\Services\KianNotificationService::class)->evaluateFinalSubmit($taxCase->fresh(), $stage);
+                    $taxCase->setRelation([4 => 'skpRecord', 7 => 'objectionDecision', 10 => 'appealDecision', 12 => 'supremeCourtDecision'][$stage], $decisionRecord);
+                    app(\App\Services\KianNotificationService::class)->evaluateFinalSubmit($taxCase, $stage);
                 }
 
                 DB::commit();
@@ -777,7 +788,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         Route::post('/sp2-records/{sp2Record}/reject', [Sp2RecordController::class, 'reject'])->name('sp2-records.reject');
         
         // SKP Records - Stage 4
-        Route::post('/skp-records', [SkpRecordController::class, 'store'])->name('skp-records.store');
+        Route::post('/skp-records', [SkpRecordController::class, 'store'])->name('skp-records.store')->middleware(\App\Http\Middleware\ValidateDecisionPointSubmission::class.':4');
         Route::get('/skp-records', [SkpRecordController::class, 'show'])->name('skp-records.show');
         Route::post('/skp-records/{skpRecord}/approve', [SkpRecordController::class, 'approve'])->name('skp-records.approve');
         
@@ -792,7 +803,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         Route::get('/spuh-records', [SpuhRecordController::class, 'show'])->name('spuh-records.show');
         
         // Objection Decisions - Stage 7
-        Route::post('/objection-decisions', [ObjectionDecisionController::class, 'store'])->name('objection-decisions.store');
+        Route::post('/objection-decisions', [ObjectionDecisionController::class, 'store'])->name('objection-decisions.store')->middleware(\App\Http\Middleware\ValidateDecisionPointSubmission::class.':7');
         Route::get('/objection-decisions', [ObjectionDecisionController::class, 'show'])->name('objection-decisions.show');
         Route::post('/objection-decisions/{decision}/approve', [ObjectionDecisionController::class, 'approve'])->name('objection-decisions.approve');
         
@@ -808,7 +819,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         Route::post('/appeal-explanation-requests/{explanationRequest}/submit', [AppealExplanationRequestController::class, 'submit'])->name('appeal-explanations.submit');
         
         // Appeal Decisions - Stage 10
-        Route::post('/appeal-decisions', [AppealDecisionController::class, 'store'])->name('appeal-decisions.store');
+        Route::post('/appeal-decisions', [AppealDecisionController::class, 'store'])->name('appeal-decisions.store')->middleware(\App\Http\Middleware\ValidateDecisionPointSubmission::class.':10');
         Route::get('/appeal-decisions', [AppealDecisionController::class, 'show'])->name('appeal-decisions.show');
         Route::post('/appeal-decisions/{decision}/approve', [AppealDecisionController::class, 'approve'])->name('appeal-decisions.approve');
         
@@ -819,7 +830,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         Route::post('/supreme-court-submissions/{supremeCourtSubmission}/withdraw', [SupremeCourtSubmissionController::class, 'withdraw'])->name('supreme-court-submissions.withdraw');
         
         // Supreme Court Decisions - Stage 11b
-        Route::post('/supreme-court-decisions', [SupremeCourtDecisionController::class, 'store'])->name('supreme-court-decisions.store');
+        Route::post('/supreme-court-decisions', [SupremeCourtDecisionController::class, 'store'])->name('supreme-court-decisions.store')->middleware(\App\Http\Middleware\ValidateDecisionPointSubmission::class.':12');
         Route::get('/supreme-court-decisions', [SupremeCourtDecisionController::class, 'show'])->name('supreme-court-decisions.show');
         Route::post('/supreme-court-decisions/{supremeCourtDecision}/approve', [SupremeCourtDecisionController::class, 'approve'])->name('supreme-court-decisions.approve');
         

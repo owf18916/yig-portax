@@ -50,6 +50,7 @@ class TaxCase extends Model
         'case_type',
         'spt_number',
         'spt_type',
+        'spt_position_type',
         'filing_date',
         'received_date',
         'reported_amount',
@@ -329,12 +330,10 @@ class TaxCase extends Model
      */
     public function canCreateKian(): bool
     {
-        // Must not already have KIAN submission
-        if ($this->kianSubmissions()->exists()) {
-            return false;
+        foreach ($this->getKianStatusByStage() as $result) {
+            if ($result['needsKian'] === true && !$result['kianId']) return true;
         }
-
-        return $this->needsKianReminder();
+        return false;
     }
 
     /**
@@ -342,46 +341,9 @@ class TaxCase extends Model
      */
     public function needsKianReminder(): bool
     {
-        // Check each stage for KIAN eligibility conditions
-        
-        // Check SKP Stage (Stage 4)
-        $skpRecord = $this->skpRecord;
-        if ($skpRecord) {
-            if ($skpRecord->skp_amount < $this->disputed_amount && !$skpRecord->continue_to_next_stage) {
-                return true;
-            }
+        foreach ($this->exposureByStage() as $result) {
+            if ($result['needsKian'] === true) return true;
         }
-
-        // Check Preliminary Refund (if Pengembalian Pendahuluan case)
-        $preliminaryRefund = $this->preliminaryRefundRequest;
-        if ($preliminaryRefund && $preliminaryRefund->approval_status === 'REJECTED') {
-            return true;
-        }
-
-        // Check Objection Decision (Stage 7)
-        $objectionDecision = $this->objectionDecision;
-        if ($objectionDecision) {
-            if ($objectionDecision->decision_amount < $this->disputed_amount && !$objectionDecision->continue_to_next_stage) {
-                return true;
-            }
-        }
-
-        // Check Appeal Decision (Stage 10)
-        $appealDecision = $this->appealDecision;
-        if ($appealDecision) {
-            if ($appealDecision->decision_amount < $this->disputed_amount && !$appealDecision->continue_to_next_stage) {
-                return true;
-            }
-        }
-
-        // Check Supreme Court Decision (Stage 12) - Final stage
-        $supremeCourtDecision = $this->supremeCourtDecision;
-        if ($supremeCourtDecision) {
-            if (in_array(strtolower((string) $supremeCourtDecision->decision_type), ['partially_granted', 'rejected'], true)) {
-                return true;
-            }
-        }
-
         return false;
     }
 
@@ -391,120 +353,34 @@ class TaxCase extends Model
     public function getKianEligibilityReason(): ?string
     {
         $reasons = [];
-
-        // Check SKP Stage
-        $skpRecord = $this->skpRecord;
-        if ($skpRecord) {
-            if ($skpRecord->skp_amount < $this->disputed_amount && !$skpRecord->continue_to_next_stage) {
-                $loss = $this->disputed_amount - $skpRecord->skp_amount;
-                $reasons[] = "SKP Amount (Rp " . number_format($skpRecord->skp_amount, 0, ',', '.') . ") is less than disputed amount. Loss: Rp " . number_format($loss, 0, ',', '.');
-            }
+        foreach ($this->exposureByStage() as $stage => $result) {
+            if ($result['needsKian'] === true) $reasons[] = "Stage {$stage} remaining company tax exposure: {$result['remainingExposure']}";
         }
-
-        // Check Preliminary Refund
-        $preliminaryRefund = $this->preliminaryRefundRequest;
-        if ($preliminaryRefund && $preliminaryRefund->approval_status === 'REJECTED') {
-            $reasons[] = "Preliminary Refund Request was REJECTED. Amount requested: Rp " . number_format($preliminaryRefund->requested_amount, 0, ',', '.');
-        }
-
-        // Check Objection Decision
-        $objectionDecision = $this->objectionDecision;
-        if ($objectionDecision) {
-            if ($objectionDecision->decision_amount < $this->disputed_amount && !$objectionDecision->continue_to_next_stage) {
-                $loss = $this->disputed_amount - $objectionDecision->decision_amount;
-                $reasons[] = "Objection Decision (Rp " . number_format($objectionDecision->decision_amount, 0, ',', '.') . ") is less than disputed amount. Loss: Rp " . number_format($loss, 0, ',', '.');
-            }
-        }
-
-        // Check Appeal Decision
-        $appealDecision = $this->appealDecision;
-        if ($appealDecision) {
-            if ($appealDecision->decision_amount < $this->disputed_amount && !$appealDecision->continue_to_next_stage) {
-                $loss = $this->disputed_amount - $appealDecision->decision_amount;
-                $reasons[] = "Appeal Decision (Rp " . number_format($appealDecision->decision_amount, 0, ',', '.') . ") is less than disputed amount. Loss: Rp " . number_format($loss, 0, ',', '.');
-            }
-        }
-
-        // Check Supreme Court Decision
-        $supremeCourtDecision = $this->supremeCourtDecision;
-        if ($supremeCourtDecision) {
-            if (in_array(strtolower((string) $supremeCourtDecision->decision_type), ['partially_granted', 'rejected'], true)) {
-                $loss = $this->disputed_amount - ($supremeCourtDecision->decision_amount ?? 0);
-                $reasons[] = "Supreme Court Decision type: {$supremeCourtDecision->decision_type}. Loss: Rp " . number_format($loss, 0, ',', '.');
-            }
-        }
-
-        return !empty($reasons) ? implode(' | ', $reasons) : null;
+        return $reasons ? implode(' | ', $reasons) : null;
     }
 
     /**
      * ✅ NEW METHOD 1: Check if KIAN is needed at a specific stage
      * Multiple KIAN per stage concept (v2)
      */
-    public function needsKianAtStage(int $stageId): bool
+    public function needsKianAtStage(int $stageId): ?bool
     {
-        if ($stageId === 4) {
-            // Stage 4: SKP
-            return $this->skpRecord && 
-                   $this->skpRecord->skp_amount < $this->disputed_amount;
-        }
-        
-        if ($stageId === 7) {
-            // Stage 7: Objection Decision
-            return $this->objectionDecision && $this->objectionSubmission &&
-                   $this->objectionDecision->decision_amount < 
-                   $this->objectionSubmission->objection_amount;
-        }
-        
-        if ($stageId === 10) {
-            // Stage 10: Appeal Decision
-            return $this->appealDecision && $this->appealSubmission &&
-                   $this->appealDecision->decision_amount < 
-                   $this->appealSubmission->appeal_amount;
-        }
-        
-        if ($stageId === 12) {
-            // Stage 12: Supreme Court Decision
-            return $this->supremeCourtDecision && $this->supremeCourtSubmission &&
-                   in_array(strtolower((string) $this->supremeCourtDecision->decision_type),
-                       ['partially_granted', 'rejected'], true) &&
-                   $this->supremeCourtDecision->decision_amount < 
-                   $this->supremeCourtSubmission->review_amount;
-        }
-        
-        return false;
+        return $this->exposureByStage()[$stageId]['needsKian'] ?? null;
     }
 
     /**
      * ✅ NEW METHOD 2: Calculate loss amount at a specific stage
      * Returns null if no loss at that stage
      */
-    public function calculateLossAtStage(int $stageId): ?float
+    public function calculateLossAtStage(int $stageId): ?string
     {
-        if ($stageId === 4) {
-            if (!$this->needsKianAtStage(4)) return null;
-            return (float) ($this->disputed_amount - $this->skpRecord->skp_amount);
-        }
-        
-        if ($stageId === 7) {
-            if (!$this->needsKianAtStage(7)) return null;
-            return (float) ($this->objectionSubmission->objection_amount - 
-                   $this->objectionDecision->decision_amount);
-        }
-        
-        if ($stageId === 10) {
-            if (!$this->needsKianAtStage(10)) return null;
-            return (float) ($this->appealSubmission->appeal_amount - 
-                   $this->appealDecision->decision_amount);
-        }
-        
-        if ($stageId === 12) {
-            if (!$this->needsKianAtStage(12)) return null;
-            return (float) ($this->supremeCourtSubmission->review_amount - 
-                   $this->supremeCourtDecision->decision_amount);
-        }
-        
-        return null;
+        $result = $this->exposureByStage()[$stageId] ?? null;
+        return ($result['needsKian'] ?? false) ? $result['remainingExposure'] : null;
+    }
+
+    public function exposureByStage(): array
+    {
+        return app(\App\Services\DecisionPointTaxExposure::class)->evaluate($this);
     }
 
     /**
@@ -532,42 +408,8 @@ class TaxCase extends Model
      */
     public function getKianEligibilityReasonForStage(int $stageId): ?string
     {
-        $loss = $this->calculateLossAtStage($stageId);
-        if (!$loss) return null;
-        
-        $lossFormatted = 'Rp ' . number_format($loss, 0, ',', '.');
-        
-        switch ($stageId) {
-            case 4:
-                return "SKP amount (Rp " . 
-                    number_format($this->skpRecord->skp_amount, 0, ',', '.') . 
-                    ") kurang dari SPT (Rp " . 
-                    number_format($this->disputed_amount, 0, ',', '.') . 
-                    "). Loss: {$lossFormatted}";
-            
-            case 7:
-                return "Keputusan Keberatan (Rp " . 
-                    number_format($this->objectionDecision->decision_amount, 0, ',', '.') . 
-                    ") kurang dari pengajuan (Rp " . 
-                    number_format($this->objectionSubmission->objection_amount, 0, ',', '.') . 
-                    "). Loss: {$lossFormatted}";
-            
-            case 10:
-                return "Keputusan Banding (Rp " . 
-                    number_format($this->appealDecision->decision_amount, 0, ',', '.') . 
-                    ") kurang dari pengajuan (Rp " . 
-                    number_format($this->appealSubmission->appeal_amount, 0, ',', '.') . 
-                    "). Loss: {$lossFormatted}";
-            
-            case 12:
-                return "Keputusan PK (Rp " . 
-                    number_format($this->supremeCourtDecision->decision_amount, 0, ',', '.') . 
-                    ") kurang dari pengajuan (Rp " . 
-                    number_format($this->supremeCourtSubmission->review_amount, 0, ',', '.') . 
-                    "). Loss: {$lossFormatted}";
-        }
-        
-        return null;
+        $amount = $this->calculateLossAtStage($stageId);
+        return $amount === null ? null : "Stage {$stageId} remaining company tax exposure: {$amount}";
     }
 
     /**
@@ -577,29 +419,20 @@ class TaxCase extends Model
      */
     public function getKianStatusByStage(): array
     {
-        $stages = [4, 7, 10, 12];
-        $status = [];
-        
-        foreach ($stages as $stageId) {
-            $needsKian = $this->needsKianAtStage($stageId);
-            $lossAmount = $this->calculateLossAtStage($stageId);
-            $reason = $this->getKianEligibilityReasonForStage($stageId);
-            
-            // Check if KIAN already submitted for this stage
-            $kianSubmission = $this->kianSubmissions()
-                ->where('kian_submissions.stage_id', $stageId)
-                ->first();
-            
-            $status[$stageId] = [
-                'needsKian' => $needsKian,
-                'lossAmount' => $lossAmount,
-                'reason' => $reason,
-                'submitted' => $kianSubmission ? in_array($kianSubmission->status, ['submitted', 'approved']) : false,
-                'kianId' => $kianSubmission?->id,
-                'kianStatus' => $kianSubmission?->status,
+        $this->loadMissing('kianSubmissions');
+        $status = $this->exposureByStage();
+        foreach ($status as $stageId => &$result) {
+            $kian = $this->kianSubmissions->firstWhere('stage_id', $stageId);
+            $amount = $result['remainingExposure'];
+            $result += [
+                'lossAmount' => $result['needsKian'] === true ? $amount : null,
+                'reason' => $result['needsKian'] === true ? "Stage {$stageId} remaining company tax exposure: {$amount}" : $result['evaluationReason'],
+                'submitted' => $kian ? $kian->status !== 'draft' : false,
+                'kianId' => $kian?->id,
+                'kianStatus' => $kian?->status,
             ];
         }
-        
+        unset($result);
         return $status;
     }
 

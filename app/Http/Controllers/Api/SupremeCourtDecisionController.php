@@ -74,7 +74,7 @@ class SupremeCourtDecisionController extends ApiController
                 ]),
             ]);
 
-            app(KianNotificationService::class)->evaluateFinalSubmit($taxCase->fresh(), 12);
+            app(KianNotificationService::class)->evaluateFinalSubmit($taxCase->setRelation('supremeCourtDecision', $scDecision), 12);
 
             // Mark case as completed (Supreme Court is final stage)
             $taxCase->update([

@@ -86,6 +86,11 @@ class RevisionService
             $this->assertStageTwelveOpen($case, $stage);
             $values = $this->validateValues($contract, array_keys($locked->proposed_values ?? []), $locked->proposed_values ?? []);
             $downstream = $this->assertNoDownstream($case, $stage);
+            if (in_array($stage, [1, 4, 7, 10, 12], true)) {
+                $merged = array_replace($target->getAttributes(), $values);
+                $normalized = app(DecisionPointTaxExposure::class)->normalizeForCase($case, $stage, $merged);
+                if (in_array($stage, [7, 10, 12], true) && (array_key_exists('decision_type', $values) || array_key_exists('decision_amount', $values))) $values['decision_amount'] = $normalized['decision_amount'];
+            }
             $before = Arr::only($target->getAttributes(), array_keys($values));
             $refund = $this->prepareRefundReconciliation($case, $target, $stage, $values);
 
@@ -97,7 +102,8 @@ class RevisionService
             $refundResult = $this->applyRefundReconciliation($target, $stage, $actor->id, $refund);
             $kianResult = 'not_applicable';
             if (in_array($stage, self::DECISION_STAGES, true)) {
-                $this->kianService->evaluateFinalSubmit($case->fresh(), $stage);
+                $case->setRelation([4 => 'skpRecord', 7 => 'objectionDecision', 10 => 'appealDecision', 12 => 'supremeCourtDecision'][$stage], $target);
+                $this->kianService->evaluateFinalSubmit($case, $stage);
                 $kianResult = 'eligibility_re_evaluated; historical evidence preserved';
             }
 

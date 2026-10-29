@@ -79,6 +79,16 @@
           <p class="text-xs text-gray-500">CIT must be filed in March as closing date</p>
         </div>
 
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">SPT Tax Position *</label>
+          <select v-model="formData.spt_position_type" required class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+            <option value="">Select tax position</option>
+            <option value="LB">Lebih Bayar (LB)</option>
+            <option value="KB">Kurang Bayar (KB)</option>
+            <option value="NIHIL">NIHIL</option>
+          </select>
+        </div>
+
         <!-- SPT Amount -->
         <FormField
           label="SPT Amount"
@@ -164,6 +174,7 @@ const currentFiscalYear = computed(() => {
 const formData = reactive({
   fiscal_year: new Date().getFullYear(),
   amount: '',
+  spt_position_type: '',
   currency_id: ''
 })
 
@@ -171,6 +182,7 @@ const formErrors = reactive({
   entity_id: '',
   fiscal_year: '',
   amount: '',
+  spt_position_type: '',
   currency_id: ''
 })
 
@@ -419,8 +431,8 @@ const validateForm = async () => {
     isValid = false
   }
 
-  if (!formData.amount || formData.amount <= 0) {
-    formErrors.amount = 'Disputed amount must be greater than 0'
+  if (formData.amount === '' || formData.amount == null || Number(formData.amount) < 0 || (formData.spt_position_type === 'NIHIL' && Number(formData.amount) !== 0)) {
+    formErrors.amount = 'Enter a nonnegative amount; NIHIL requires zero'
     isValid = false
   }
 
@@ -490,6 +502,7 @@ const submitForm = async () => {
         period_id: marchPeriod.id,
         status: 'PENDING',
         disputed_amount: formData.amount,
+        spt_position_type: formData.spt_position_type,
         currency_id: formData.currency_id
       })
     })

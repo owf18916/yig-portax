@@ -13,14 +13,17 @@ class KianNotificationService
     public function evaluateFinalSubmit(TaxCase $taxCase, int $stageId): ?NotificationLog
     {
         if (!in_array($stageId, [4, 7, 10, 12], true)) return null;
-        $taxCase->loadMissing(['skpRecord','objectionSubmission','objectionDecision','appealSubmission','appealDecision','supremeCourtSubmission','supremeCourtDecision']);
-        $eligible = $taxCase->needsKianAtStage($stageId);
-        $reason = $eligible ? $taxCase->getKianEligibilityReasonForStage($stageId) : $this->ineligibleReason($stageId);
+        $evaluation = $taxCase->exposureByStage()[$stageId];
+        // Unknown inputs are neither eligible nor NOT_ELIGIBLE. Preserve old logs.
+        if ($evaluation['evaluationState'] !== 'resolved') return null;
+        $eligible = $evaluation['needsKian'];
+        $amount = $evaluation['remainingExposure'];
+        $reason = $eligible ? "Stage {$stageId} remaining company tax exposure: {$amount}" : 'Remaining company tax exposure is zero.';
         $key = hash('sha256', implode('|', [$taxCase->id, $stageId, NotificationLog::TYPE_KIAN_REMINDER, $reason]));
         // Unique key prevents concurrent double-clicks from creating two logical notifications.
         NotificationLog::firstOrCreate(['idempotency_key' => $key], [
             'tax_case_id'=>$taxCase->id, 'entity_id'=>$taxCase->entity_id, 'stage_id'=>$stageId,
-            'notification_type'=>NotificationLog::TYPE_KIAN_REMINDER, 'current_status'=>NotificationLog::NOT_ELIGIBLE,
+            'notification_type'=>NotificationLog::TYPE_KIAN_REMINDER, 'current_status'=>NotificationLog::NOT_ELIGIBLE, 'reason'=>$reason,
         ]);
         return DB::transaction(function () use ($taxCase, $stageId, $eligible, $reason, $key) {
             $log = NotificationLog::where('idempotency_key', $key)->lockForUpdate()->first();
@@ -56,5 +59,5 @@ class KianNotificationService
             return $attempt;
         });
     }
-    private function ineligibleReason(int $stage): string { return $stage === 4 ? 'SKP amount is not lower than disputed amount.' : 'The stage-specific KIAN eligibility rule was not met.'; }
+
 }

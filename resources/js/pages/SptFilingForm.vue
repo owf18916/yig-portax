@@ -113,7 +113,10 @@ const fields = ref([
     label: 'Nilai SPT',
     required: true,
     readonly: false
-  }
+  },
+  { id: 'position', key: 'spt_position_type', type: 'select', label: 'SPT Tax Position', required: true,
+    options: [{ value: 'LB', label: 'Lebih Bayar (LB)' }, { value: 'KB', label: 'Kurang Bayar (KB)' }, { value: 'NIHIL', label: 'NIHIL' }] }
+
 ])
 
 // Available fields untuk revisi - hanya field yang bisa dirubah setelah submission
@@ -121,6 +124,7 @@ const availableFields = [
   'period_id',
   'currency_id',
   'spt_type',
+  'spt_position_type',
   'disputed_amount',
   'supporting_docs'
 ]
@@ -160,6 +164,7 @@ const prefillData = ref({
   period_id: null,
   currency_id: null,
   spt_type: null,
+  spt_position_type: null,
   disputed_amount: null,
   submitted_at: null
 })
@@ -271,6 +276,7 @@ onMounted(async () => {
       entity_name: caseFetchedData.entity_name || '',
       period_id: caseFetchedData.period_id,  // Ini akan di-bind langsung di StageForm
       currency_id: caseFetchedData.currency_id,  // Ini akan di-bind langsung di StageForm
+      spt_position_type: caseFetchedData.spt_position_type,
       spt_type: caseFetchedData.spt_type || null,  // Include SPT type to prevent resetting
       disputed_amount: caseFetchedData.disputed_amount ? parseFloat(caseFetchedData.disputed_amount) : null,
       workflowHistories: caseFetchedData.workflow_histories || []  // Get workflow history untuk lock logic
@@ -354,6 +360,7 @@ const refreshTaxCase = async () => {
       entity_name: caseData.entity_name || '',
       period_id: caseData.period_id,
       currency_id: caseData.currency_id,
+      spt_position_type: caseData.spt_position_type,
       spt_type: caseData.spt_type || null,  // Include SPT type to prevent resetting on refresh
       disputed_amount: caseData.disputed_amount ? parseFloat(caseData.disputed_amount) : null,
       submitted_at: caseData.submitted_at || null,

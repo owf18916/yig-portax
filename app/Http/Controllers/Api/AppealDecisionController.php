@@ -73,6 +73,7 @@ class AppealDecisionController extends ApiController
         
         $taxCase->workflowHistories()->create([
             'stage_id' => 10,
+            'status' => 'submitted',
             'stage_from' => 10,
             'stage_to' => $nextStage,
             'action' => 'submitted',
@@ -89,13 +90,7 @@ class AppealDecisionController extends ApiController
 
         // ✅ FIXED: Check if KIAN reminder email should be sent
         // KIAN is needed WHENEVER loss exists at Stage 10, REGARDLESS of next stage choice
-        if ($taxCase->needsKianAtStage(10)) {
-            $reason = $taxCase->getKianEligibilityReasonForStage(10);
-            if ($reason) {
-                $caseId = (int) $taxCase->id;
-                dispatch(new SendKianReminderJob($caseId, 'Stage 10 - Appeal Decision (Keputusan Banding)', $reason, 10));
-            }
-        }
+        app(\App\Services\KianNotificationService::class)->evaluateFinalSubmit($taxCase->setRelation('appealDecision', $decision), 10);
 
         return $this->success(
             $decision->load(['taxCase', 'submittedBy']),

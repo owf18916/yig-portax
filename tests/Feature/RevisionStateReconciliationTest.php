@@ -29,8 +29,8 @@ class RevisionStateReconciliationTest extends TestCase
         $year = FiscalYear::create(['year'=>2026,'start_date'=>'2026-01-01','end_date'=>'2026-12-31']);
         $currency = Currency::create(['code'=>'REV','name'=>'Revision Currency','symbol'=>'R']);
         $open = CaseStatus::create(['code'=>'OPEN','name'=>'Open']);
-        $this->case = TaxCase::create(['user_id'=>$this->requester->id,'entity_id'=>$affiliate->id,'fiscal_year_id'=>$year->id,'currency_id'=>$currency->id,'case_status_id'=>$open->id,'case_number'=>'REV-1','case_type'=>'CIT','reported_amount'=>1000,'disputed_amount'=>1000,'current_stage'=>4]);
-        $this->target = SkpRecord::create(['tax_case_id'=>$this->case->id,'skp_number'=>'SKP-OLD','skp_amount'=>800,'create_refund'=>false,'continue_to_next_stage'=>false]);
+        $this->case = TaxCase::create(['user_id'=>$this->requester->id,'entity_id'=>$affiliate->id,'fiscal_year_id'=>$year->id,'currency_id'=>$currency->id,'case_status_id'=>$open->id,'case_number'=>'REV-1','case_type'=>'CIT','spt_position_type'=>'LB','reported_amount'=>1000,'disputed_amount'=>1000,'current_stage'=>4]);
+        $this->target = SkpRecord::create(['tax_case_id'=>$this->case->id,'skp_type'=>'LB','skp_number'=>'SKP-OLD','skp_amount'=>800,'create_refund'=>false,'continue_to_next_stage'=>false]);
         foreach (range(1, 4) as $stage) $this->history($stage);
     }
 
@@ -255,6 +255,45 @@ class RevisionStateReconciliationTest extends TestCase
     private function request(array $values, array $fields)
     {
         return $this->actingAs($this->requester)->postJson($this->requestUrl(), ['payload'=>json_encode($this->payload($values,$fields))]);
+    }
+
+    public function test_approved_decision_revision_normalizes_recovery_and_preserves_prior_evidence(): void
+    {
+        foreach ([5, 6, 7] as $stage) $this->history($stage);
+        $decision = ObjectionDecision::create(['tax_case_id' => $this->case->id, 'decision_number' => 'REV-RECOVERY',
+            'decision_date' => '2026-09-30', 'decision_type' => 'rejected', 'decision_amount' => 500, 'status' => 'submitted']);
+        $service = app(\App\Services\KianNotificationService::class);
+        $service->evaluateFinalSubmit($this->case->fresh(), 7);
+        $priorLog = \App\Models\NotificationLog::sole();
+        $payload = ['stage_code' => 7, 'fields' => ['decision_type', 'decision_amount'], 'reason' => 'Correct effective recovery after review.',
+            'proposed_values' => ['decision_type' => 'granted', 'decision_amount' => 1], 'proposed_document_changes' => []];
+        $revision = $this->actingAs($this->requester)->postJson($this->requestUrl(), ['payload' => json_encode($payload)])
+            ->assertCreated()->json('revision');
+        $url = "/api/tax-cases/{$this->case->id}/revisions/{$revision['id']}/decide";
+        $this->actingAs($this->approver)->patchJson($url, ['decision' => 'approve'])->assertOk();
+        $this->patchJson($url, ['decision' => 'approve'])->assertOk();
+        $this->assertSame('200.00', $decision->fresh()->decision_amount);
+        $this->assertFalse($this->case->fresh()->needsKianAtStage(7));
+        $this->assertSame('QUEUED', $priorLog->fresh()->current_status);
+        $this->assertDatabaseCount('notification_attempts', 1);
+        $audit = \App\Models\Revision::findOrFail($revision['id'])->audit_data;
+        $this->assertSame('500', (string) $audit['before']['decision_amount']);
+        $this->assertSame('200', (string) $audit['after']['decision_amount']);
+    }
+
+    public function test_invalid_partial_revision_does_not_apply_or_queue_a_notification(): void
+    {
+        foreach ([5, 6, 7] as $stage) $this->history($stage);
+        $decision = ObjectionDecision::create(['tax_case_id' => $this->case->id, 'decision_number' => 'REV-INVALID',
+            'decision_date' => '2026-09-30', 'decision_type' => 'rejected', 'decision_amount' => 0, 'status' => 'submitted']);
+        $payload = ['stage_code' => 7, 'fields' => ['decision_type', 'decision_amount'], 'reason' => 'Invalid partial must remain unapplied.',
+            'proposed_values' => ['decision_type' => 'partially_granted', 'decision_amount' => 200], 'proposed_document_changes' => []];
+        $revision = $this->actingAs($this->requester)->postJson($this->requestUrl(), ['payload' => json_encode($payload)])
+            ->assertCreated()->json('revision');
+        $this->actingAs($this->approver)->patchJson("/api/tax-cases/{$this->case->id}/revisions/{$revision['id']}/decide", ['decision' => 'approve'])->assertUnprocessable();
+        $this->assertSame('rejected', $decision->fresh()->decision_type);
+        $this->assertDatabaseHas('revisions', ['id' => $revision['id'], 'revision_status' => 'requested', 'audit_data' => null]);
+        $this->assertDatabaseCount('notification_attempts', 0);
     }
 
     private function requestUrl(): string { return "/api/tax-cases/{$this->case->id}/revisions/request"; }

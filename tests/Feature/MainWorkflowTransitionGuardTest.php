@@ -48,6 +48,7 @@ class MainWorkflowTransitionGuardTest extends TestCase
             'case_status_id' => $open->id,
             'case_number' => 'GUARD-2026-01',
             'case_type' => 'CIT',
+            'spt_position_type' => 'LB',
             'reported_amount' => 100,
             'disputed_amount' => 100,
             'current_stage' => 1,
@@ -174,6 +175,7 @@ class MainWorkflowTransitionGuardTest extends TestCase
         $this->supportingDocument(4);
         $this->postJson($this->url(4), [
             'action' => 'submit',
+            'skp_type' => 'LB', 'skp_amount' => 50,
             'create_refund' => true,
             'continue_to_next_stage' => true,
         ])->assertOk();

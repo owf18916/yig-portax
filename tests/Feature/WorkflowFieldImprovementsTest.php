@@ -76,7 +76,7 @@ class WorkflowFieldImprovementsTest extends TestCase
         $this->case->update(['current_stage' => 4]);
         $this->postJson("/api/tax-cases/{$this->case->id}/skp-records", [
             'skp_number' => 'SKP-01', 'issue_date' => '2026-09-01', 'skp_due_date' => 'invalid',
-            'skp_type' => 'NIHIL', 'skp_amount' => 100, 'user_routing_choice' => 'objection',
+            'skp_type' => 'NIHIL', 'skp_amount' => 0, 'user_routing_choice' => 'objection',
         ])->assertUnprocessable()->assertJsonValidationErrors('skp_due_date');
     }
 
