@@ -38,8 +38,10 @@ class DecisionPointContractNormalizationTest extends TestCase
         $this->user = User::factory()->create(['entity_id' => $entity->id, 'role_id' => $role->id]);
         $year = FiscalYear::create(['year' => 2026, 'start_date' => '2026-01-01', 'end_date' => '2026-12-31']);
         $currency = Currency::create(['code' => 'IDR', 'name' => 'Rupiah', 'symbol' => 'Rp']);
-        $open = CaseStatus::create(['code' => 'OPEN', 'name' => 'Open']);
-        CaseStatus::create(['code' => 'SUBMITTED', 'name' => 'Submitted']);
+        // The workflow's existing seeded contract is SUBMITTED = 2. PostgreSQL
+        // sequences survive transaction rollback, so reference IDs must be stable.
+        $open = CaseStatus::forceCreate(['id' => 1, 'code' => 'OPEN', 'name' => 'Open']);
+        CaseStatus::forceCreate(['id' => 2, 'code' => 'SUBMITTED', 'name' => 'Submitted']);
 
         $this->case = TaxCase::create([
             'user_id' => $this->user->id,
@@ -56,6 +58,34 @@ class DecisionPointContractNormalizationTest extends TestCase
         ]);
 
         $this->actingAs($this->user);
+    }
+
+    public function test_draft_preserves_status_and_submit_persists_seeded_submitted_status(): void
+    {
+        $this->prepareStage(4);
+        $originalStatus = $this->case->case_status_id;
+        $submitted = CaseStatus::where('code', 'SUBMITTED')->sole();
+        $payload = [
+            'action' => 'draft',
+            'skp_number' => 'SKP-STATUS',
+            'skp_type' => 'LB',
+            'skp_amount' => 800,
+            'create_refund' => false,
+            'continue_to_next_stage' => false,
+        ];
+
+        $this->postJson($this->url(4), $payload)->assertOk();
+        $this->assertSame($originalStatus, $this->case->fresh()->case_status_id);
+
+        $payload['action'] = 'submit';
+        $this->postJson($this->url(4), $payload)->assertOk();
+        $persisted = $this->case->fresh();
+        $this->assertSame($submitted->id, $persisted->case_status_id);
+        $this->assertSame('SUBMITTED', $persisted->status->code);
+        $this->assertSame(4, $persisted->current_stage);
+        $this->assertDatabaseHas('workflow_histories', [
+            'tax_case_id' => $persisted->id, 'stage_id' => 4, 'status' => 'submitted',
+        ]);
     }
 
     public static function decisionCombinations(): array
@@ -274,9 +304,6 @@ class DecisionPointContractNormalizationTest extends TestCase
 
     public function test_kian_rows_are_independent_stage_evidence_and_notifications_request_after_commit(): void
     {
-        if (\Illuminate\Support\Facades\DB::getDriverName() === 'sqlite') {
-            $this->markTestSkipped('Existing KIAN constraint migrations skip SQLite, retaining unique(tax_case_id). Run against a disposable PostgreSQL/MySQL test database or verify two stage KIANs manually; schema repair is deferred.');
-        }
         $this->prepareStage(7);
         $payload = $this->decisionPayload('STAGE-EVIDENCE', false, true);
         $payload['decision_type'] = 'partially_granted';

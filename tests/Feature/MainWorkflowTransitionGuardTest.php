@@ -38,8 +38,9 @@ class MainWorkflowTransitionGuardTest extends TestCase
         $this->user = User::factory()->create(['entity_id' => $entity->id, 'role_id' => $role->id]);
         $year = FiscalYear::create(['year' => 2026, 'start_date' => '2026-01-01', 'end_date' => '2026-12-31']);
         $currency = Currency::create(['code' => 'IDR', 'name' => 'Rupiah', 'symbol' => 'Rp']);
-        $open = CaseStatus::create(['code' => 'OPEN', 'name' => 'Open']);
-        CaseStatus::create(['code' => 'SUBMITTED', 'name' => 'Submitted']);
+        // Match the submit route's fresh-seeded IDs; PostgreSQL sequences survive rollback.
+        $open = CaseStatus::forceCreate(['id' => 1, 'code' => 'OPEN', 'name' => 'Open']);
+        CaseStatus::forceCreate(['id' => 2, 'code' => 'SUBMITTED', 'name' => 'Submitted']);
         $this->case = TaxCase::create([
             'user_id' => $this->user->id,
             'entity_id' => $entity->id,
@@ -149,7 +150,7 @@ class MainWorkflowTransitionGuardTest extends TestCase
         $this->case->update(['is_completed' => true]);
         $this->postJson($this->url(1), ['action' => 'draft'])->assertConflict();
 
-        $closed = CaseStatus::create(['code' => 'CLOSED', 'name' => 'Closed']);
+        $closed = CaseStatus::forceCreate(['id' => 3, 'code' => 'CLOSED', 'name' => 'Closed']);
         $this->case->update(['is_completed' => false, 'case_status_id' => $closed->id]);
         $this->postJson($this->url(1), ['action' => 'draft'])->assertConflict();
 

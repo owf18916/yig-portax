@@ -277,8 +277,9 @@ class RevisionStateReconciliationTest extends TestCase
         $this->assertSame('QUEUED', $priorLog->fresh()->current_status);
         $this->assertDatabaseCount('notification_attempts', 1);
         $audit = \App\Models\Revision::findOrFail($revision['id'])->audit_data;
-        $this->assertSame('500', (string) $audit['before']['decision_amount']);
-        $this->assertSame('200', (string) $audit['after']['decision_amount']);
+        // Raw audit decimals vary by driver; compare exact cents without rounding.
+        $this->assertSame('500.00', (string) \Brick\Math\BigDecimal::of($audit['before']['decision_amount'])->toScale(2));
+        $this->assertSame('200.00', (string) \Brick\Math\BigDecimal::of($audit['after']['decision_amount'])->toScale(2));
     }
 
     public function test_invalid_partial_revision_does_not_apply_or_queue_a_notification(): void

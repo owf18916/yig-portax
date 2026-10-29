@@ -29,8 +29,10 @@ class WorkflowFieldImprovementsTest extends TestCase
         parent::setUp();
         [$entity] = $this->entities();
         $user = $this->user($entity);
+        // Match the submit route's fresh-seeded IDs; PostgreSQL sequences survive rollback.
+        CaseStatus::forceCreate(['id' => 1, 'code' => 'OPEN', 'name' => 'Open']);
+        CaseStatus::forceCreate(['id' => 2, 'code' => 'SUBMITTED', 'name' => 'Submitted']);
         $this->case = $this->taxCase($entity, $user, $this->period('2026-03', 2026, 3), 'CIT');
-        CaseStatus::create(['code' => 'SUBMITTED', 'name' => 'Submitted']);
         $this->actingAs($user);
         Storage::fake(config('filesystems.default'));
     }
