@@ -92,19 +92,14 @@ const fields = ref([
     required: true,
     options: []
   },
+  { id: 'position', key: 'spt_position_type', type: 'select', label: 'Posisi SPT', required: true,
+    options: [{ value: 'LB', label: 'Lebih Bayar (LB)' }, { value: 'KB', label: 'Kurang Bayar (KB)' }, { value: 'NIHIL', label: 'NIHIL' }] },
   {
     id: 4,
-    type: 'select',
+    type: 'spt-method',
     key: 'spt_type',
-    label: 'SPT Type',
-    required: true,
-    options: [
-      { value: 'Pengembalian Pendahuluan', label: 'Pengembalian Pendahuluan (Preliminary Refund)' },
-      { value: 'Restitusi', label: 'Restitusi (Restitution)' },
-      { value: 'Kompensasi', label: 'Kompensasi (Compensation)' },
-      { value: 'Kurang Bayar', label: 'Kurang Bayar' }
-    ],
-    description: 'Select "Pengembalian Pendahuluan" to skip audit stages (SP2, SPHP) and go directly to SKP'
+    label: 'Jenis Pengajuan Lebih Bayar',
+    required: false
   },
   {
     id: 5,
@@ -114,8 +109,7 @@ const fields = ref([
     required: true,
     readonly: false
   },
-  { id: 'position', key: 'spt_position_type', type: 'select', label: 'SPT Tax Position', required: true,
-    options: [{ value: 'LB', label: 'Lebih Bayar (LB)' }, { value: 'KB', label: 'Kurang Bayar (KB)' }, { value: 'NIHIL', label: 'NIHIL' }] }
+
 
 ])
 
@@ -263,16 +257,9 @@ onMounted(async () => {
       label: `${c.code} - ${c.name}`
     }))
 
-    // Filter SPT Type options based on case type
-    // "Pengembalian Pendahuluan" is only for VAT, not for CIT
-    if (caseFetchedData.case_type === 'CIT') {
-      fields.value[3].options = fields.value[3].options.filter(
-        option => option.value !== 'Pengembalian Pendahuluan'
-      )
-    }
-
     // Set pre-fill data dengan nilai dari tax case (benar-benar linked!)
     prefillData.value = {
+      case_type: caseFetchedData.case_type,
       entity_name: caseFetchedData.entity_name || '',
       period_id: caseFetchedData.period_id,  // Ini akan di-bind langsung di StageForm
       currency_id: caseFetchedData.currency_id,  // Ini akan di-bind langsung di StageForm
@@ -353,22 +340,24 @@ const refreshTaxCase = async () => {
     }
     
     const caseResponse = await caseRes.json()
-    const caseData = caseResponse.data ? caseResponse.data : caseResponse
+    const refreshedCase = caseResponse.data ? caseResponse.data : caseResponse
+    caseData.value = refreshedCase
     
     // Update prefilled data dengan nilai terbaru
     prefillData.value = {
-      entity_name: caseData.entity_name || '',
-      period_id: caseData.period_id,
-      currency_id: caseData.currency_id,
-      spt_position_type: caseData.spt_position_type,
-      spt_type: caseData.spt_type || null,  // Include SPT type to prevent resetting on refresh
-      disputed_amount: caseData.disputed_amount ? parseFloat(caseData.disputed_amount) : null,
-      submitted_at: caseData.submitted_at || null,
-      workflowHistories: caseData.workflow_histories || []
+      case_type: refreshedCase.case_type,
+      entity_name: refreshedCase.entity_name || '',
+      period_id: refreshedCase.period_id,
+      currency_id: refreshedCase.currency_id,
+      spt_position_type: refreshedCase.spt_position_type,
+      spt_type: refreshedCase.spt_type || null,  // Include SPT type to prevent resetting on refresh
+      disputed_amount: refreshedCase.disputed_amount ? parseFloat(refreshedCase.disputed_amount) : null,
+      submitted_at: refreshedCase.submitted_at || null,
+      workflowHistories: refreshedCase.workflow_histories || []
     }
     
-    caseNumber.value = caseData.case_number || 'N/A'
-    caseStatus.value = caseData.case_status_id
+    caseNumber.value = refreshedCase.case_number || 'N/A'
+    caseStatus.value = refreshedCase.case_status_id
   } catch (err) {
     console.error('Failed to refresh tax case:', err)
   }

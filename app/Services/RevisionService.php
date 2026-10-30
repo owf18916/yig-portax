@@ -41,6 +41,7 @@ class RevisionService
         $this->assertSubmitted($taxCase, $target, $stage);
         $this->assertStageTwelveOpen($taxCase, $stage);
         $values = $this->validateValues($contract, $selectedFields, $proposedValues);
+        if ($stage === 1) app(SptFilingContract::class)->validate($values, $taxCase);
 
         return DB::transaction(function () use ($taxCase, $target, $requestedBy, $values, $proposedDocumentChanges, $reason, $selectedFields, $stage) {
             TaxCase::whereKey($taxCase->id)->lockForUpdate()->firstOrFail();
@@ -91,6 +92,7 @@ class RevisionService
                 $normalized = app(DecisionPointTaxExposure::class)->normalizeForCase($case, $stage, $merged);
                 if (in_array($stage, [7, 10, 12], true) && (array_key_exists('decision_type', $values) || array_key_exists('decision_amount', $values))) $values['decision_amount'] = $normalized['decision_amount'];
             }
+            if ($stage === 1) app(SptFilingContract::class)->validate($values, $case);
             $before = Arr::only($target->getAttributes(), array_keys($values));
             $refund = $this->prepareRefundReconciliation($case, $target, $stage, $values);
 

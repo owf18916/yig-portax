@@ -177,6 +177,10 @@ class MainWorkflowStateResolver
 
     private function availability(TaxCase $taxCase, int $stage, array $completed): array
     {
+        if ($stage > 1 && $taxCase->case_type === 'VAT' && $taxCase->spt_position_type === 'LB'
+            && $taxCase->spt_type === 'Pengembalian Pendahuluan') {
+            return ['available' => false, 'reason' => 'preliminary_administrative_route'];
+        }
         if ($stage === 1) {
             return ['available' => true, 'reason' => null];
         }

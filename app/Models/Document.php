@@ -45,6 +45,32 @@ class Document extends Model
     // Include name accessor in JSON
     protected $appends = ['name'];
 
+    public function isPreliminaryEvidence(): bool
+    {
+        return $this->documentable_type === PreliminaryRefundRequest::class
+            && in_array($this->document_type, ['preliminary_submission', 'preliminary_decision'], true);
+    }
+
+    public function toArray(): array
+    {
+        $data = parent::toArray();
+        if ($this->isPreliminaryEvidence()) {
+            unset($data['file_path']);
+        }
+
+        return $data;
+    }
+
+    protected static function booted(): void
+    {
+        static::updating(function (Document $document) {
+            abort_if($document->getRawOriginal('documentable_type') === PreliminaryRefundRequest::class, 422, 'Preliminary evidence is immutable.');
+        });
+        static::deleting(function (Document $document) {
+            abort_if($document->isPreliminaryEvidence(), 422, 'Preliminary evidence cannot be deleted.');
+        });
+    }
+
     // Relationships
     public function taxCase(): BelongsTo
     {

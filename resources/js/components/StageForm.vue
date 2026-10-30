@@ -114,6 +114,9 @@
 
             <!-- Dynamic Fields -->
             <div v-for="field in fields" :key="field.id" class="space-y-1">
+              <SptFilingMethod v-if="field.type === 'spt-method'"
+                v-model="formData.spt_type" :position="formData.spt_position_type"
+                :case-type="prefillData.case_type" :disabled="submissionComplete || fieldsDisabled" />
               <!-- Text Input -->
               <FormField
                 v-if="field.type === 'text'"
@@ -464,6 +467,7 @@ import Toast from './Toast.vue'
 import LoadingSpinner from './LoadingSpinner.vue'
 import ConfirmationDialog from './ConfirmationDialog.vue'
 import DecisionActions from './DecisionActions.vue'
+import SptFilingMethod from './SptFilingMethod.vue'
 
 const router = useRouter()
 const route = useRoute()

@@ -1,248 +1,119 @@
 <template>
-  <div class="h-full">
-    <!-- Loading Overlay -->
-    <div v-if="isLoading" class="fixed inset-0 backdrop-blur-sm bg-white/30 flex items-center justify-center z-50">
-      <div class="bg-white rounded-xl p-8 text-center shadow-2xl border border-white/50">
-        <div class="animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-500 mx-auto mb-4"></div>
-        <p class="text-gray-700 font-medium">Loading form data...</p>
-      </div>
-    </div>
-
-    <div class="max-w-4xl mx-auto p-6">
-      <!-- Header -->
-      <div class="mb-6">
-        <button @click="$router.back()" class="text-blue-600 hover:text-blue-800 mb-4">← Back to Case</button>
-        <h1 class="text-3xl font-bold text-gray-900">{{ title }}</h1>
-        <p class="text-gray-600 mt-2">{{ description }}</p>
-      </div>
-
-      <!-- Alert -->
-      <div v-if="apiError" class="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
-        <p class="text-red-800 font-medium">Error</p>
-        <p class="text-red-700">{{ apiError }}</p>
-      </div>
-
-      <!-- Form Card -->
-      <div class="bg-white rounded-lg shadow border border-gray-200">
-        <form @submit.prevent="submitForm" class="space-y-6 p-6">
-          <!-- Case Info -->
-          <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p class="text-sm text-gray-600">Case Number</p>
-            <p class="text-lg font-bold text-gray-900">{{ caseNumber }}</p>
-          </div>
-
-          <!-- Refund Amount -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Refund Amount *</label>
-            <div class="relative">
-              <span class="absolute left-3 top-3 text-gray-500">IDR</span>
-              <FormField
-                v-model="formData.refund_amount"
-                type="formatted-number"
-                :decimal-places="2"
-                step="0.01"
-                min="0"
-                placeholder="0.00"
-                required
-                class="w-full pl-12 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                :disabled="isSubmitting"
-              />
-            </div>
-            <p class="text-xs text-gray-500 mt-1">Maximum available: {{ formatCurrency(maxRefundAmount, 'IDR') }}</p>
-          </div>
-
-          <!-- Refund Method -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Refund Method *</label>
-            <select
-              v-model="formData.refund_method"
-              required
-              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-              :disabled="isSubmitting"
-            >
-              <option value="">-- Select Method --</option>
-              <option value="BANK_TRANSFER">Bank Transfer</option>
-              <option value="CHEQUE">Cheque</option>
-              <option value="CASH">Cash</option>
-            </select>
-          </div>
-
-          <!-- Refund Date -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Refund Date *</label>
-            <input
-              v-model="formData.refund_date"
-              type="date"
-              required
-              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-              :disabled="isSubmitting"
-            />
-          </div>
-
-          <!-- Notes -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Notes</label>
-            <textarea
-              v-model="formData.notes"
-              rows="4"
-              placeholder="Optional notes about this refund..."
-              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-              :disabled="isSubmitting"
-            />
-          </div>
-
-          <!-- Form Actions -->
-          <div class="flex gap-3 justify-end pt-6 border-t border-gray-200">
-            <button
-              type="button"
-              @click="$router.back()"
-              class="px-6 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-semibold"
-              :disabled="isSubmitting"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              class="px-6 py-2 text-white bg-green-600 hover:bg-green-700 rounded-lg font-semibold disabled:opacity-50"
-              :disabled="isSubmitting || !formData.refund_amount || !formData.refund_method"
-            >
-              {{ isSubmitting ? 'Creating...' : 'Create Refund' }}
-            </button>
-          </div>
+  <div class="space-y-5">
+    <Button @click="$router.push(`/tax-cases/${caseId}`)" variant="secondary">Back to case</Button>
+    <h1 class="text-2xl font-bold">Catat Pengajuan Pengembalian Pendahuluan</h1>
+    <p>Record an application already submitted to the Tax Office. Approval enables one Refund; a full received payment closes the case.</p>
+    <p v-if="error" role="alert" class="text-red-700">{{ error }}</p>
+    <p v-if="busy" role="status">Loading...</p>
+    <template v-else>
+      <p v-if="closed" class="font-bold">CLOSED: evidence remains available below.</p>
+      <p v-if="!eligible && !closed">Submit Stage 1 for an explicit VAT LB preliminary case before recording the application.</p>
+      <form v-if="eligible && caseData.preliminary_can_decide && !request && !closed" @submit.prevent="send('create')" class="space-y-3">
+        <p>Status: SUBMITTED</p>
+        <label class="block">Submission date (required) <input v-model="submissionDate" type="date" required class="border p-2" /></label>
+        <label class="block">Requested amount (required) <input v-model="requestedAmount" type="text" inputmode="decimal" required pattern="[0-9]+(\.[0-9]{1,2})?" class="border p-2" /></label>
+        <label class="block">Bukti Pengajuan (PDF, max 10 MB, required) <input type="file" accept=".pdf,application/pdf" required @change="chooseFile" /></label>
+        <label class="block">Explanation <textarea v-model="notes" maxlength="5000" class="border p-2" /></label>
+        <Button type="submit">Catat Pengajuan Pengembalian Pendahuluan</Button>
+      </form>
+      <div v-if="request" class="space-y-3 rounded border p-4">
+        <p>Request {{ request.request_number }} / {{ request.approval_status }}</p>
+        <p>Submission date: {{ request.submission_date?.slice(0, 10) }}; requested: {{ request.requested_amount }} {{ caseData.currency?.code }}</p>
+        <p>Recorded by user {{ request.submitted_by }} at {{ request.submitted_at }}</p>
+        <p v-if="request.notes">{{ request.notes }}</p>
+        <p v-if="historical" role="status">Historical evidence is read-only and has not been asserted compliant with the current document requirements. Separate review is required; outcomes cannot be amended here.</p>
+        <p v-if="request.submission_document">Bukti Pengajuan:
+          <a :href="download(request.submission_document.id)" class="text-blue-700 underline">{{ request.submission_document.original_filename }}</a>
+        </p>
+        <template v-if="request.approved_by">
+          <p>Source: external Tax Office decision. PorTax recorder: {{ request.approved_by }} at {{ request.approved_at }}</p>
+          <p>Decision date: {{ request.decision_date?.slice(0, 10) || 'Not recorded historically' }}</p>
+          <p v-if="request.status_comment">{{ request.status_comment }}</p>
+          <p v-if="request.approval_status === 'APPROVED'">Approved: {{ request.approved_amount }} {{ caseData.currency?.code }}</p>
+        </template>
+        <p v-if="request.decision_document">Dokumen Keputusan:
+          <a :href="download(request.decision_document.id)" class="text-blue-700 underline">{{ request.decision_document.original_filename }}</a>
+        </p>
+        <form v-if="request.approval_status === 'SUBMITTED' && !historical && caseData.preliminary_can_decide && !closed" @submit.prevent="send(outcome)" class="space-y-3">
+          <h2 class="text-xl font-bold">Catat Keputusan Kantor Pajak</h2>
+          <label class="block">External outcome <select v-model="outcome" class="border p-2"><option value="approve">APPROVED</option><option value="reject">REJECTED</option></select></label>
+          <label class="block">Decision date (required) <input v-model="decisionDate" type="date" required class="border p-2" /></label>
+          <label class="block">Dokumen Keputusan (PDF, max 10 MB, required) <input type="file" accept=".pdf,application/pdf" required @change="chooseFile" /></label>
+          <label v-if="outcome === 'approve'" class="block">Approved amount (required) <input v-model="approvedAmount" type="text" inputmode="decimal" required pattern="[0-9]+(\.[0-9]{1,2})?" class="border p-2" /></label>
+          <label class="block">Reason {{ outcome === 'reject' ? '(required, at least 10 characters)' : '(optional)' }} <textarea v-model="reason" :minlength="outcome === 'reject' ? 10 : undefined" :required="outcome === 'reject'" maxlength="5000" class="border p-2" /></label>
+          <Button type="submit">Catat Keputusan Kantor Pajak</Button>
         </form>
       </div>
-
-      <!-- Info Section -->
-      <div class="mt-8 bg-amber-50 border border-amber-200 rounded-lg p-6">
-        <h3 class="font-bold text-amber-900 mb-3">ℹ️ About Preliminary Refund</h3>
-        <ul class="space-y-2 text-amber-800 text-sm">
-          <li>• This is an independent refund process at Stage 1</li>
-          <li>• You can create a refund and still continue to SP2</li>
-          <li>• Both actions are completely independent</li>
-          <li>• This refund will be tracked separately from the main workflow</li>
-        </ul>
+      <div v-for="refund in refunds" :key="refund.id" class="rounded border p-4 space-y-3">
+        <p>{{ refund.refund_number }} / {{ refund.refund_amount }} / {{ refund.refund_status }}</p>
+        <Button @click="$router.push(`/tax-cases/${caseId}/refunds/${refund.id}/refund-stages/${refund.current_refund_stage >= 2 ? refund.current_refund_stage : 2}`)">View payment / receipt evidence</Button>
       </div>
-    </div>
+    </template>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { useToast } from '../composables/useToast'
-import FormField from '../components/FormField.vue'
-
-const route = useRoute()
-const router = useRouter()
-const { showSuccess, showError } = useToast()
-
-const caseId = parseInt(route.params.id, 10)
-const title = 'Create Preliminary Refund'
-const description = 'Independent refund process at Stage 1 (Pengembalian Pendahuluan)'
-
-const caseNumber = ref('TAX-2026-001')
-const maxRefundAmount = ref(0)
-const isLoading = ref(true)
-const isSubmitting = ref(false)
-const apiError = ref('')
-
-const formData = ref({
-  refund_amount: '',
-  refund_method: 'BANK_TRANSFER',
-  refund_date: new Date().toISOString().split('T')[0],
-  notes: ''
-})
-
-const formatCurrency = (amount, currencyCode = 'IDR') => {
-  const currencyMap = {
-    'IDR': { locale: 'id-ID', code: 'IDR' },
-    'USD': { locale: 'en-US', code: 'USD' },
-    'EUR': { locale: 'de-DE', code: 'EUR' }
-  }
-  
-  const currencyConfig = currencyMap[currencyCode] || currencyMap['IDR']
-  
-  return new Intl.NumberFormat(currencyConfig.locale, {
-    style: 'currency',
-    currency: currencyConfig.code,
-    minimumFractionDigits: 0
-  }).format(amount)
+import { ref, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
+import Button from '../components/Button.vue'
+const caseId = useRoute().params.id
+const caseData = ref({})
+const request = ref(null)
+const busy = ref(true)
+const error = ref('')
+const requestedAmount = ref('')
+const approvedAmount = ref('')
+const reason = ref('')
+const notes = ref('')
+const submissionDate = ref('')
+const decisionDate = ref('')
+const outcome = ref('approve')
+const documentFile = ref(null)
+const base = `/api/tax-cases/${caseId}`
+const closed = computed(() => caseData.value.is_completed || caseData.value.status?.code === 'CLOSED')
+const eligible = computed(() => caseData.value.case_type === 'VAT' && caseData.value.spt_position_type === 'LB' && caseData.value.spt_type === 'Pengembalian Pendahuluan' && caseData.value.workflow_state?.completed_stages?.includes(1))
+const historical = computed(() => request.value && (request.value.deleted_at || ['PENDING', 'POSTPONED'].includes(request.value.approval_status) || !request.value.submission_document || (['APPROVED', 'REJECTED'].includes(request.value.approval_status) && !request.value.decision_document)))
+const refunds = computed(() => (caseData.value.refund_processes || []).filter(r => Number(r.stage_id) === 0 || r.stage_source === 'PRELIMINARY'))
+const download = id => `/api/documents/${id}/download`
+function chooseFile(event) { documentFile.value = event.target.files?.[0] || null }
+async function api(url, options = {}) {
+  const response = await fetch(url, { credentials: 'include', ...options, headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', ...(document.querySelector('meta[name="csrf-token"]')?.content ? { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content } : {}) } })
+  const result = await response.json()
+  if (!response.ok) throw new Error(Object.values(result.errors || {}).flat().join(' ') || result.message || 'Request failed')
+  return result.data
 }
-
-const loadCaseData = async () => {
+async function load() {
+  caseData.value = await api(base)
+  try { request.value = await api(`${base}/preliminary-refund-request`) }
+  catch (e) { if (!e.message.includes('No preliminary refund request found')) throw e }
+}
+async function send(action) {
+  error.value = ''
+  if (!documentFile.value || documentFile.value.size > 10485760 || !documentFile.value.name.toLowerCase().endsWith('.pdf') || (documentFile.value.type && documentFile.value.type !== 'application/pdf')) {
+    error.value = 'A PDF document up to 10 MB is required.'
+    return
+  }
+  const payload = new FormData()
+  payload.append('document', documentFile.value)
+  if (action === 'create') {
+    payload.append('submission_date', submissionDate.value)
+    payload.append('requested_amount', requestedAmount.value)
+    if (notes.value) payload.append('notes', notes.value)
+  } else {
+    payload.append('decision_date', decisionDate.value)
+    if (action === 'approve') payload.append('approved_amount', approvedAmount.value)
+    if (reason.value) payload.append('reason', reason.value)
+  }
+  busy.value = true
   try {
-    const response = await fetch(`/api/tax-cases/${caseId}`, {
-      credentials: 'include',
-      headers: { 'Accept': 'application/json' }
-    })
-    
-    if (!response.ok) throw new Error('Failed to load case')
-    
-    const responseData = await response.json()
-    const data = responseData.data || responseData
-    
-    caseNumber.value = data.case_number || 'TAX-2026-001'
-    maxRefundAmount.value = data.disputed_amount || 0
-  } catch (error) {
-    apiError.value = error.message
-    console.error('Failed to load case:', error)
-  } finally {
-    isLoading.value = false
-  }
+    const url = `${base}/preliminary-refund-request` + (action === 'create' ? '' : `/${request.value.id}/${action}`)
+    await api(url, { method: 'POST', body: payload })
+    documentFile.value = null
+    await load()
+  } catch (e) { error.value = e.message }
+  finally { busy.value = false }
 }
-
-const submitForm = async () => {
-  try {
-    isSubmitting.value = true
-    apiError.value = ''
-    
-    // Validate amount
-    const amount = parseFloat(formData.value.refund_amount)
-    if (amount <= 0) {
-      throw new Error('Refund amount must be greater than 0')
-    }
-    if (amount > maxRefundAmount.value) {
-      throw new Error(`Refund amount cannot exceed ${formatCurrency(maxRefundAmount.value, 'IDR')}`)
-    }
-    
-    const response = await fetch(`/api/tax-cases/${caseId}/refund-processes`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content
-      },
-      body: JSON.stringify({
-        stage_id: 0, // PRELIMINARY
-        refund_number: `PREL-${Date.now()}`,
-        refund_date: formData.value.refund_date,
-        refund_method: formData.value.refund_method,
-        refund_amount: amount,
-        notes: formData.value.notes
-      })
-    })
-
-    if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.message || error.error || `API Error: ${response.status}`)
-    }
-
-    showSuccess('Success', 'Preliminary refund created successfully!')
-    
-    // Go back to case detail
-    setTimeout(() => {
-      router.push(`/tax-cases/${caseId}`)
-    }, 500)
-  } catch (error) {
-    apiError.value = error.message
-    showError('Error', error.message)
-  } finally {
-    isSubmitting.value = false
-  }
-}
-
-onMounted(() => {
-  loadCaseData()
+onMounted(async () => {
+  try { await load() } catch (e) { error.value = e.message } finally { busy.value = false }
 })
 </script>

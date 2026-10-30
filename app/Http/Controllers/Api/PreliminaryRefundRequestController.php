@@ -2,187 +2,74 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Models\TaxCase;
 use App\Models\PreliminaryRefundRequest;
-use Illuminate\Http\Request;
+use App\Models\TaxCase;
+use App\Services\PreliminaryRefundLifecycle;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class PreliminaryRefundRequestController extends ApiController
 {
-    /**
-     * Get preliminary refund request for a tax case
-     */
     public function show(TaxCase $taxCase): JsonResponse
     {
-        $request = $taxCase->preliminaryRefundRequest()->with(['taxCase', 'submittedBy', 'approvedBy'])->first();
-
-        if (!$request) {
+        $request = $taxCase->preliminaryRefundRequest()->withTrashed()->with(['submittedBy', 'approvedBy', 'submissionDocument', 'decisionDocument'])->first();
+        if (! $request) {
             return $this->error('No preliminary refund request found for this tax case', 404);
         }
 
         return $this->success($request);
     }
 
-    /**
-     * Create preliminary refund request
-     */
     public function store(Request $request, TaxCase $taxCase): JsonResponse
     {
-        // Check if case already has a preliminary refund request
-        if ($taxCase->preliminaryRefundRequest()->exists()) {
-            return $this->error('This tax case already has a preliminary refund request', 422);
-        }
+        $this->validateCommand($request);
+        $record = app(PreliminaryRefundLifecycle::class)->submit($taxCase->id, $request->all(), $request->file('document'));
 
-        // Validate input
-        $validated = $request->validate([
-            'submission_date' => 'required|date',
-            'requested_amount' => [
-                'required',
-                'numeric',
-                'min:0',
-                function ($attribute, $value, $fail) use ($taxCase) {
-                    if ($value > $taxCase->getAvailableRefundAmount()) {
-                        $fail('Requested amount cannot exceed available refund amount of ' . $taxCase->getAvailableRefundAmount());
-                    }
-                },
-            ],
-            'request_number' => 'nullable|string|unique:preliminary_refund_requests',
-            'notes' => 'nullable|string',
-        ]);
-
-        // Generate request number if not provided
-        if (empty($validated['request_number'])) {
-            $validated['request_number'] = 'PRR-' . now()->format('YmdHis') . '-' . $taxCase->id;
-        }
-
-        $validated['tax_case_id'] = $taxCase->id;
-        $validated['approval_status'] = PreliminaryRefundRequest::STATUS_PENDING;
-        $validated['submitted_by'] = auth()->id();
-        $validated['submitted_at'] = now();
-
-        $preliminaryRequest = PreliminaryRefundRequest::create($validated);
-
-        return $this->success(
-            $preliminaryRequest->load(['taxCase', 'submittedBy']),
-            'Preliminary refund request created successfully',
-            201
-        );
+        return $this->success($record->load(['submittedBy', 'submissionDocument']), 'Submission recorded with evidence', 201);
     }
 
-    /**
-     * Approve preliminary refund request
-     */
     public function approve(Request $request, TaxCase $taxCase, PreliminaryRefundRequest $preliminaryRequest): JsonResponse
     {
-        if ($preliminaryRequest->tax_case_id !== $taxCase->id) {
-            return $this->error('Request does not belong to this tax case', 422);
-        }
-
-        if (!$preliminaryRequest->isPending()) {
-            return $this->error('Only pending requests can be approved', 422);
-        }
-
-        $validated = $request->validate([
-            'approved_amount' => [
-                'required',
-                'numeric',
-                'min:0',
-                function ($attribute, $value, $fail) use ($preliminaryRequest) {
-                    if ($value > $preliminaryRequest->requested_amount) {
-                        $fail('Approved amount cannot exceed requested amount');
-                    }
-                },
-            ],
-        ]);
-
-        // Approve and create refund
-        $preliminaryRequest->approve($validated['approved_amount']);
-
-        return $this->success(
-            $preliminaryRequest->fresh(['taxCase', 'approvedBy']),
-            'Preliminary refund request approved and refund process created'
-        );
+        return $this->decision($request, $taxCase, $preliminaryRequest, 'approve');
     }
 
-    /**
-     * Reject preliminary refund request
-     */
     public function reject(Request $request, TaxCase $taxCase, PreliminaryRefundRequest $preliminaryRequest): JsonResponse
     {
-        if ($preliminaryRequest->tax_case_id !== $taxCase->id) {
-            return $this->error('Request does not belong to this tax case', 422);
-        }
-
-        if (!$preliminaryRequest->isPending()) {
-            return $this->error('Only pending requests can be rejected', 422);
-        }
-
-        $validated = $request->validate([
-            'reason' => 'required|string|min:10',
-        ]);
-
-        // Reject the request
-        $preliminaryRequest->reject($validated['reason']);
-
-        // TODO: Trigger KIAN reminder email job
-
-        return $this->success(
-            $preliminaryRequest->fresh(),
-            'Preliminary refund request rejected'
-        );
+        return $this->decision($request, $taxCase, $preliminaryRequest, 'reject');
     }
 
-    /**
-     * Update preliminary refund request
-     */
+    private function decision(Request $request, TaxCase $taxCase, PreliminaryRefundRequest $preliminaryRequest, string $outcome): JsonResponse
+    {
+        abort_unless((int) $preliminaryRequest->tax_case_id === $taxCase->id, 404);
+        $this->validateCommand($request);
+        $record = app(PreliminaryRefundLifecycle::class)->decide($taxCase->id, $preliminaryRequest->id, $outcome,
+            $request->input('approved_amount'), $request->input('reason'), $request->input('decision_date'), $request->file('document'));
+
+        return $this->success($record->load(['approvedBy', 'submissionDocument', 'decisionDocument']), 'Tax Office decision recorded');
+    }
+
+    private function validateCommand(Request $request): void
+    {
+        $request->validate([
+            'document' => 'required|file|extensions:pdf|mimetypes:application/pdf|max:10240',
+            'approval_status' => 'prohibited', 'status' => 'prohibited',
+            'submission_document_id' => 'prohibited', 'decision_document_id' => 'prohibited',
+            'documentable_id' => 'prohibited', 'documentable_type' => 'prohibited',
+        ]);
+    }
+
+    public function postpone(Request $request, TaxCase $taxCase, PreliminaryRefundRequest $preliminaryRequest): JsonResponse
+    {
+        return $this->error('POSTPONED is historical only. Record APPROVED or REJECTED for a documented SUBMITTED request.', 422);
+    }
+
     public function update(Request $request, TaxCase $taxCase, PreliminaryRefundRequest $preliminaryRequest): JsonResponse
     {
-        if ($preliminaryRequest->tax_case_id !== $taxCase->id) {
-            return $this->error('Request does not belong to this tax case', 422);
-        }
-
-        if (!$preliminaryRequest->isPending()) {
-            return $this->error('Only pending requests can be updated', 422);
-        }
-
-        $validated = $request->validate([
-            'submission_date' => 'sometimes|date',
-            'requested_amount' => [
-                'sometimes',
-                'numeric',
-                'min:0',
-                function ($attribute, $value, $fail) use ($taxCase) {
-                    if ($value > $taxCase->getAvailableRefundAmount()) {
-                        $fail('Requested amount cannot exceed available refund amount');
-                    }
-                },
-            ],
-            'notes' => 'nullable|string',
-        ]);
-
-        $preliminaryRequest->update($validated);
-
-        return $this->success(
-            $preliminaryRequest->fresh(),
-            'Preliminary refund request updated successfully'
-        );
+        return $this->error('Recorded submissions and historical requests are read-only. Separate review is required for corrections.', 422);
     }
 
-    /**
-     * Delete preliminary refund request (only if pending)
-     */
     public function destroy(TaxCase $taxCase, PreliminaryRefundRequest $preliminaryRequest): JsonResponse
     {
-        if ($preliminaryRequest->tax_case_id !== $taxCase->id) {
-            return $this->error('Request does not belong to this tax case', 422);
-        }
-
-        if (!$preliminaryRequest->isPending()) {
-            return $this->error('Only pending requests can be deleted', 422);
-        }
-
-        $preliminaryRequest->delete();
-
-        return $this->success(null, 'Preliminary refund request deleted successfully');
+        return $this->error('Authoritative and historical request evidence cannot be deleted.', 422);
     }
 }

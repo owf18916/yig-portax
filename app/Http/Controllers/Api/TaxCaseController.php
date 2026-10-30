@@ -114,10 +114,11 @@ class TaxCaseController extends ApiController
             'currency_id' => 'nullable|exists:currencies,id',
             'description' => 'nullable|string',
             // ✅ NEW: Support Preliminary Refund (Pengembalian Pendahuluan)
-            'spt_type' => 'nullable|in:SPT,Pengembalian Pendahuluan,Kurang Bayar',
+            'spt_type' => 'nullable|string|max:50',
             'spt_position_type' => 'required|in:LB,KB,NIHIL',
         ]);
 
+        app(\App\Services\SptFilingContract::class)->validate($validated);
         app(\App\Services\DecisionPointTaxExposure::class)->validatePosition($validated['spt_position_type'], (string) $validated['disputed_amount']);
         if ($validated['case_type'] === 'VAT') app(\App\Services\DecisionPointTaxExposure::class)->validateVatInputs($validated);
 
@@ -231,15 +232,14 @@ class TaxCaseController extends ApiController
         if ($taxCase->isPengembalianPendahuluan()) {
             $responseData['preliminary_refund_info'] = [
                 'label' => 'Pengembalian Pendahuluan (Preliminary Refund)',
-                'description' => 'An independent refund process that runs alongside the main SPT workflow',
+                'description' => 'Recorded approved Tax Office decision followed by one full confirmed receipt',
                 'available_actions' => [
-                    'create_refund' => true,
-                    'continue_sp2' => true,
-                    'both' => true,
+                    'administrative_request' => false,
+                    'continue_sp2' => false,
                 ],
                 'refund_details' => [
                     'stage_id' => 0,
-                    'can_create_now' => true,
+                    'can_create_now' => false,
                     'existing_refunds' => $taxCase->refundProcesses->filter(fn ($r) => $r->stage_id === 0)->values(),
                 ],
             ];
@@ -306,18 +306,18 @@ class TaxCaseController extends ApiController
 
         // ✅ NEW: ADD PRELIMINARY REFUND INFO FOR STAGE 1
         if ($taxCase->isPengembalianPendahuluan()) {
-            $taxCase->is_preliminary_refund = true;
+            $taxCase->is_preliminary_refund = $taxCase->case_type === 'VAT' && $taxCase->spt_position_type === 'LB';
+            $taxCase->preliminary_can_decide = Gate::allows('recordPreliminaryDecision', $taxCase);
             $taxCase->preliminary_refund_info = [
                 'label' => 'Pengembalian Pendahuluan (Preliminary Refund)',
-                'description' => 'An independent refund process that runs alongside the main SPT workflow',
+                'description' => 'Recorded approved Tax Office decision followed by one full confirmed receipt',
                 'available_actions' => [
-                    'create_refund' => true,
-                    'continue_sp2' => true,
-                    'both' => true,
+                    'administrative_request' => $taxCase->is_preliminary_refund && ! $workflowState['terminal'],
+                    'continue_sp2' => false,
                 ],
                 'refund_details' => [
                     'stage_id' => 0,
-                    'can_create_now' => true,
+                    'can_create_now' => false,
                     'existing_refunds' => $taxCase->refundProcesses->filter(fn ($r) => $r->stage_id === 0)->values(),
                 ],
             ];

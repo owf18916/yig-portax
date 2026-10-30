@@ -99,7 +99,7 @@
               type="date"
               required
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              :disabled="isSubmitting"
+              :disabled="receiptCompleted || isSubmitting"
             />
           </div>
 
@@ -110,14 +110,15 @@
               <span class="absolute left-4 top-2.5 text-gray-500">Rp</span>
               <FormField
                 v-model="formData.received_amount"
-                type="formatted-number"
+                :type="isPreliminary ? 'text' : 'formatted-number'"
+                inputmode="decimal"
                 :decimal-places="2"
                 step="0.01"
                 min="0"
                 placeholder="0.00"
                 required
                 class="w-full px-4 py-2 pl-9 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                :disabled="isSubmitting"
+                :disabled="receiptCompleted || isSubmitting"
               />
             </div>
             <p class="text-xs text-gray-500 mt-1">
@@ -140,7 +141,7 @@
               rows="3"
               placeholder="Add any notes about receipt or transfer..."
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              :disabled="isSubmitting"
+              :disabled="receiptCompleted || isSubmitting"
             ></textarea>
           </div>
 
@@ -150,14 +151,14 @@
               type="button"
               @click="$router.back()"
               class="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
-              :disabled="isSubmitting"
+              :disabled="receiptCompleted || isSubmitting"
             >
               Back
             </button>
             <button
               type="submit"
               class="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50"
-              :disabled="isSubmitting || !formData.received_amount"
+              :disabled="receiptCompleted || isSubmitting || !formData.received_amount"
             >
               {{ isSubmitting ? 'Completing...' : 'Complete Refund (Stage 4 - Final)' }}
             </button>
@@ -192,11 +193,13 @@ const refundId = route.params.refundId
 const isLoading = ref(false)
 const isSubmitting = ref(false)
 const apiError = ref('')
+const isPreliminary = ref(false)
 
 const refundNumber = ref('')
 const refundAmount = ref(0)
 const refundMethod = ref('')
 const refundStatus = ref('')
+const receiptCompleted = ref(false)
 
 const formData = ref({
   receipt_number: '',
@@ -215,6 +218,7 @@ const formatCurrency = (value) => {
 }
 
 const amountWarning = computed(() => {
+  if (isPreliminary.value) return 'A single receipt must equal the approved amount exactly.'
   if (!formData.value.received_amount || refundAmount.value === 0) return ''
   
   const diff = Math.abs(formData.value.received_amount - refundAmount.value)
@@ -244,11 +248,19 @@ const loadRefundData = async () => {
 
     const result = await response.json()
     const data = result.data || result
+    isPreliminary.value = !!data.is_preliminary
 
     refundNumber.value = data.refund_number || 'N/A'
     refundAmount.value = data.refund_amount || 0
     refundMethod.value = data.refund_method || 'N/A'
     refundStatus.value = data.refund_status || 'PENDING'
+    receiptCompleted.value = data.is_preliminary && data.refund_status?.toLowerCase() === 'completed'
+    if (receiptCompleted.value) {
+      formData.value.receipt_number = data.receipt_number || ''
+      formData.value.received_date = data.received_date?.slice(0, 10) || ''
+      formData.value.received_amount = data.received_amount
+      formData.value.notes = data.notes || ''
+    }
   } catch (error) {
     apiError.value = error.message
     console.error('Failed to load refund:', error)
@@ -285,7 +297,7 @@ const submitForm = async () => {
       body: JSON.stringify({
         receipt_number: formData.value.receipt_number,
         received_date: formData.value.received_date,
-        received_amount: formData.value.received_amount,
+        received_amount: String(formData.value.received_amount),
         notes: formData.value.notes || null
       })
     })

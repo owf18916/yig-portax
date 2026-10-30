@@ -199,6 +199,10 @@ class RefundStageController extends ApiController
             ]);
 
             $refundProcess = $this->getRefundProcess($taxCase, $refundId);
+            if (\App\Services\PreliminaryRefundLifecycle::concerns($taxCase, $refundProcess)) {
+                $transfer = app(\App\Services\PreliminaryRefundLifecycle::class)->payment($taxCase->id, (int) $refundId, 2, $validated);
+                return $this->success($transfer, 'Preliminary payment evidence saved');
+            }
 
             // Check if already has a bank transfer request (avoid duplicates in stage 2)
             $existingTransfer = $refundProcess->bankTransferRequests()
@@ -271,6 +275,7 @@ class RefundStageController extends ApiController
             // Return refund data (required) + bank transfer + instruction data (optional)
             $data = [
                 'refund_id' => $refundProcess->id,
+                'is_preliminary' => \App\Services\PreliminaryRefundLifecycle::concerns($taxCase, $refundProcess),
                 'refund_number' => $refundProcess->refund_number,
                 'refund_amount' => $refundProcess->refund_amount,
                 'current_stage' => $refundProcess->getCurrentRefundStage(),
@@ -334,6 +339,11 @@ class RefundStageController extends ApiController
             ]);
 
             $refundProcess = $this->getRefundProcess($taxCase, $refundId);
+            if (\App\Services\PreliminaryRefundLifecycle::concerns($taxCase, $refundProcess)) {
+                $transfer = app(\App\Services\PreliminaryRefundLifecycle::class)->payment($taxCase->id, (int) $refundId, 3, $validated);
+                return $this->success($transfer, 'Preliminary payment evidence saved');
+            }
+
             $bankTransfer = $refundProcess->bankTransferRequests()->latest()->first();
 
             if (!$bankTransfer) {
@@ -402,6 +412,7 @@ class RefundStageController extends ApiController
                 'refund_id' => $refundProcess->id,
                 'refund_number' => $refundProcess->refund_number,
                 'refund_amount' => $refundProcess->refund_amount,
+                'is_preliminary' => \App\Services\PreliminaryRefundLifecycle::concerns($taxCase, $refundProcess),
                 'refund_status' => $refundProcess->refund_status,
                 'current_stage' => $refundProcess->getCurrentRefundStage(),
             ];
@@ -454,6 +465,11 @@ class RefundStageController extends ApiController
             ]);
 
             $refundProcess = $this->getRefundProcess($taxCase, $refundId);
+            if (\App\Services\PreliminaryRefundLifecycle::concerns($taxCase, $refundProcess)) {
+                $transfer = app(\App\Services\PreliminaryRefundLifecycle::class)->payment($taxCase->id, (int) $refundId, 4, $validated);
+                return $this->success($transfer, 'Preliminary payment evidence saved');
+            }
+
             $bankTransfer = $refundProcess->bankTransferRequests()->latest()->first();
 
             if (!$bankTransfer) {

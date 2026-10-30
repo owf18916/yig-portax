@@ -13,11 +13,17 @@ class PreliminaryRefundRequest extends Model
     protected $table = 'preliminary_refund_requests';
 
     // Status constants
+    const STATUS_SUBMITTED = 'SUBMITTED';
+
     const STATUS_PENDING = 'PENDING';
     const STATUS_APPROVED = 'APPROVED';
     const STATUS_REJECTED = 'REJECTED';
+    const STATUS_POSTPONED = 'POSTPONED';
 
     protected $fillable = [
+        'submission_document_id',
+        'decision_document_id',
+        'decision_date',
         'tax_case_id',
         'request_number',
         'submission_date',
@@ -39,6 +45,7 @@ class PreliminaryRefundRequest extends Model
         'requested_amount' => 'decimal:2',
         'approved_amount' => 'decimal:2',
         'submission_date' => 'date',
+        'decision_date' => 'date',
         'approved_date' => 'date',
         'next_action_due_date' => 'date',
         'submitted_at' => 'datetime',
@@ -64,6 +71,16 @@ class PreliminaryRefundRequest extends Model
         return $this->belongsTo(User::class, 'approved_by');
     }
 
+    public function submissionDocument(): BelongsTo
+    {
+        return $this->belongsTo(Document::class, 'submission_document_id');
+    }
+
+    public function decisionDocument(): BelongsTo
+    {
+        return $this->belongsTo(Document::class, 'decision_document_id');
+    }
+
     // Status check methods
     public function isPending(): bool
     {
@@ -83,23 +100,12 @@ class PreliminaryRefundRequest extends Model
     /**
      * Approve the preliminary refund request
      * 
-     * @param float $amount
+     * @param string|int $amount
      * @return $this
      */
-    public function approve(float $amount)
+    public function approve(mixed $amount)
     {
-        $this->update([
-            'approval_status' => self::STATUS_APPROVED,
-            'approved_amount' => $amount,
-            'approved_date' => now()->toDateString(),
-            'approved_by' => auth()?->id(),
-            'approved_at' => now(),
-        ]);
-
-        // Create refund process with stage_source PRELIMINARY
-        $this->createRefundIfApproved();
-
-        return $this;
+        return app(\App\Services\PreliminaryRefundLifecycle::class)->decide($this->tax_case_id, $this->id, 'approve', $amount);
     }
 
     /**
@@ -110,17 +116,12 @@ class PreliminaryRefundRequest extends Model
      */
     public function reject(string $reason)
     {
-        $this->update([
-            'approval_status' => self::STATUS_REJECTED,
-            'status_comment' => $reason,
-            'approved_by' => auth()?->id(),
-            'approved_at' => now(),
-        ]);
+        return app(\App\Services\PreliminaryRefundLifecycle::class)->decide($this->tax_case_id, $this->id, 'reject', null, $reason);
+    }
 
-        // Trigger KIAN email reminder if needed
-        // This will be handled by controller after rejection
-
-        return $this;
+    public function postpone(string $reason)
+    {
+        return app(\App\Services\PreliminaryRefundLifecycle::class)->decide($this->tax_case_id, $this->id, 'postpone', null, $reason);
     }
 
     /**
@@ -130,38 +131,13 @@ class PreliminaryRefundRequest extends Model
      */
     public function createRefundIfApproved(): ?RefundProcess
     {
-        if (!$this->isApproved()) {
+        if (! $this->isApproved()) {
             return null;
         }
 
-        // Check if refund already exists for this preliminary request
-        $existingRefund = RefundProcess::where('tax_case_id', $this->tax_case_id)
-            ->where('stage_source', RefundProcess::STAGE_SOURCE_PRELIMINARY)
-            ->first();
-
-        if ($existingRefund) {
-            return $existingRefund;
-        }
-
-        // Generate refund number
-        $refundNumber = 'PRF-' . now()->format('YmdHis') . '-' . $this->id;
-
-        // Create refund process
-        return RefundProcess::create([
-            'tax_case_id' => $this->tax_case_id,
-            'refund_number' => $refundNumber,
-            'refund_date' => now()->toDateString(),
-            'refund_method' => 'BANK_TRANSFER',
-            'refund_amount' => $this->approved_amount,
-            'refund_status' => 'PENDING',
-            'stage_source' => RefundProcess::STAGE_SOURCE_PRELIMINARY,
-            'sequence_number' => RefundProcess::getNextSequenceNumber($this->tax_case_id),
-            'triggered_by_decision_id' => $this->id,
-            'triggered_by_decision_type' => self::class,
-            'submitted_by' => auth()?->id(),
-            'submitted_at' => now(),
-            'status' => 'submitted',
-            'notes' => 'Automatically created from approved preliminary refund request',
-        ]);
+        $this->approve($this->approved_amount);
+        return RefundProcess::where('tax_case_id', $this->tax_case_id)
+            ->where('triggered_by_decision_type', self::class)
+            ->where('triggered_by_decision_id', $this->id)->sole();
     }
 }

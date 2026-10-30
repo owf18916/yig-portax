@@ -170,7 +170,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         ]);
     })->middleware('can:view,taxCase')->name('next-action.update');
     
-    Route::prefix('{taxCase}')->middleware('can:view,taxCase')->group(function () {
+    Route::prefix('{taxCase}')->middleware(['can:view,taxCase', \App\Http\Middleware\GuardPreliminaryRefundWrites::class])->group(function () {
         Route::get('/', [TaxCaseController::class, 'show'])->name('tax-cases.show');
         Route::put('/', [TaxCaseController::class, 'update'])->name('tax-cases.update');
         Route::get('/workflow-history', [TaxCaseController::class, 'workflowHistory'])->name('tax-cases.workflow-history');
@@ -317,6 +317,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                 }
 
                 if ($stage === 1) {
+                    app(\App\Services\SptFilingContract::class)->validate($request->all(), $taxCase);
                     $request->validate(['disputed_amount' => 'sometimes|required|numeric|min:0', 'spt_position_type' => 'sometimes|required|in:LB,KB,NIHIL']);
                 } elseif ($stage === 2) {
                     $request->validate([
@@ -375,7 +376,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                         $updateData['spt_position_type'] = $request->input('spt_position_type');
                     }
                     if ($request->has('disputed_amount')) $updateData['disputed_amount'] = $request->input('disputed_amount');
-                    if ($request->has('spt_type') && !empty($request->input('spt_type'))) {
+                    if (array_key_exists('spt_type', $request->all())) {
                         $updateData['spt_type'] = $request->input('spt_type');
                     }
                 }
@@ -898,10 +899,11 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         // Preliminary Refund Requests - For Pengembalian Pendahuluan cases
         Route::get('/preliminary-refund-request', [PreliminaryRefundRequestController::class, 'show'])->name('preliminary-refund-requests.show');
         Route::post('/preliminary-refund-request', [PreliminaryRefundRequestController::class, 'store'])->name('preliminary-refund-requests.store');
-        Route::put('/preliminary-refund-request', [PreliminaryRefundRequestController::class, 'update'])->name('preliminary-refund-requests.update');
-        Route::delete('/preliminary-refund-request', [PreliminaryRefundRequestController::class, 'destroy'])->name('preliminary-refund-requests.destroy');
-        Route::post('/preliminary-refund-request/approve', [PreliminaryRefundRequestController::class, 'approve'])->name('preliminary-refund-requests.approve');
-        Route::post('/preliminary-refund-request/reject', [PreliminaryRefundRequestController::class, 'reject'])->name('preliminary-refund-requests.reject');
+        Route::put('/preliminary-refund-request/{preliminaryRequest}', [PreliminaryRefundRequestController::class, 'update'])->name('preliminary-refund-requests.update');
+        Route::delete('/preliminary-refund-request/{preliminaryRequest}', [PreliminaryRefundRequestController::class, 'destroy'])->name('preliminary-refund-requests.destroy');
+        Route::post('/preliminary-refund-request/{preliminaryRequest}/approve', [PreliminaryRefundRequestController::class, 'approve'])->name('preliminary-refund-requests.approve');
+        Route::post('/preliminary-refund-request/{preliminaryRequest}/reject', [PreliminaryRefundRequestController::class, 'reject'])->name('preliminary-refund-requests.reject');
+        Route::post('/preliminary-refund-request/{preliminaryRequest}/postpone', [PreliminaryRefundRequestController::class, 'postpone'])->name('preliminary-refund-requests.postpone');
         
         // KIAN Submissions - Stage 12
         Route::post('/kian-submissions', [KianSubmissionController::class, 'store'])->name('kian-submissions.store');
@@ -972,7 +974,7 @@ Route::middleware('auth')->group(function () {
     // ============================================================================
     // DOCUMENT UPLOAD & DOWNLOAD ROUTES
     // ============================================================================
-    Route::prefix('documents')->group(function () {
+    Route::prefix('documents')->middleware(\App\Http\Middleware\GuardPreliminaryRefundWrites::class)->group(function () {
         Route::get('/', [DocumentController::class, 'index'])->name('documents.index');
         Route::post('/', [DocumentController::class, 'store'])->name('documents.store');
         Route::get('/{document}/view', [DocumentController::class, 'view'])->name('documents.view');

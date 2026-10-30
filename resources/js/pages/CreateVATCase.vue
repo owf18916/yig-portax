@@ -77,17 +77,19 @@
               <p class="text-lg font-bold text-gray-900">IDR {{ calculateDispute().toLocaleString() }}</p>
             </div>
             <div>
-              <p class="text-xs text-gray-600">Direction</p>
+              <p class="text-xs text-gray-600">Posisi SPT</p>
               <p class="text-lg font-bold" :class="getDirectionColor()">
-                {{ getDirection() }}
+                {{ vatPosition }}
               </p>
             </div>
           </div>
         </div>
 
+        <SptFilingMethod v-if="vatPosition === 'LB'" v-model="formData.spt_type"
+          :position="vatPosition" case-type="VAT" required />
         <!-- SPT Type Badge -->
         <div class="p-3 bg-purple-50 rounded-lg">
-          <p class="text-sm text-gray-600">SPT Type</p>
+          <p class="text-sm text-gray-600">Jenis Pajak</p>
           <span class="inline-block px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-800">
             VAT (Value Added Tax)
           </span>
@@ -122,6 +124,7 @@ import Card from '../components/Card.vue'
 import Button from '../components/Button.vue'
 import FormField from '../components/FormField.vue'
 import Alert from '../components/Alert.vue'
+import SptFilingMethod from '../components/SptFilingMethod.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -147,7 +150,11 @@ const usedPeriodIds = ref([])  // Store period_ids already used in tax_case
 const loadingCompany = ref(true)
 const loadingAvailablePeriods = ref(false)
 
+const vatPosition = computed(() => Number(formData.ppn_masukan) > Number(formData.ppn_keluaran) ? 'LB'
+  : Number(formData.ppn_masukan) < Number(formData.ppn_keluaran) ? 'KB' : 'NIHIL')
+
 const formData = reactive({
+  spt_type: null,
   period_id: '',
   ppn_masukan: '',
   ppn_keluaran: ''
@@ -437,8 +444,8 @@ const submitForm = async () => {
         vat_in_amount: formData.ppn_masukan,
         vat_out_amount: formData.ppn_keluaran,
         disputed_amount: calculateDispute().toFixed(2),
-        spt_position_type: Number(formData.ppn_masukan) > Number(formData.ppn_keluaran) ? 'LB'
-          : Number(formData.ppn_masukan) < Number(formData.ppn_keluaran) ? 'KB' : 'NIHIL'
+        spt_position_type: vatPosition.value,
+        ...(vatPosition.value === 'LB' ? { spt_type: formData.spt_type } : {})
       })
     })
 

@@ -170,7 +170,7 @@ class RefundProcess extends Model
      */
     public function isPreliminary(): bool
     {
-        return $this->stage_id === self::STAGE_ID_PRELIMINARY;
+        return (string) $this->stage_id === '0' || $this->stage_source === self::STAGE_SOURCE_PRELIMINARY;
     }
 
     /**
@@ -250,18 +250,23 @@ class RefundProcess extends Model
             return 1;
         }
 
+        // Read legacy preliminary tokens without rewriting persisted evidence.
+        $transferStatus = $this->isPreliminary()
+            ? strtolower((string) $latestTransfer->transfer_status)
+            : $latestTransfer->transfer_status;
+
         // Stage 4: Transfer completed
-        if ($latestTransfer->transfer_status === 'completed' && $latestTransfer->received_date) {
+        if ($transferStatus === 'completed' && $latestTransfer->received_date) {
             return 4;
         }
 
         // Stage 3: Instruction received (processing status + instruction_received_date)
-        if ($latestTransfer->transfer_status === 'processing' && $latestTransfer->instruction_received_date) {
+        if ($transferStatus === 'processing' && $latestTransfer->instruction_received_date) {
             return 3;
         }
 
         // Stage 2: Transfer request created (pending or processing without instruction yet)
-        if ($latestTransfer->transfer_status === 'pending' || $latestTransfer->transfer_status === 'processing') {
+        if ($transferStatus === 'pending' || $transferStatus === 'processing') {
             return 2;
         }
 

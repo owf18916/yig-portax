@@ -47,6 +47,18 @@ if ($driver === 'sqlite') {
     }
     echo 'Verified SQLite :memory:; testing; no cached config or DB_URL.'.PHP_EOL;
 }
+if (in_array($argv[2] ?? '', ['preliminary-schema', 'preliminary-races', 'preliminary-worker'], true)) {
+    if ($driver !== 'pgsql') {
+        throw new RuntimeException('Preliminary PostgreSQL verification requires the isolated PostgreSQL gates.');
+    }
+    try {
+        require __DIR__.'/support/preliminary-pg-verification.php';
+    } catch (Throwable $failure) {
+        fwrite(STDERR, (string) $failure.PHP_EOL);
+        exit(1);
+    }
+    exit(0);
+}
 if (($argv[2] ?? '') === 'migrate') {
     $code = Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true], new Symfony\Component\Console\Output\ConsoleOutput);
     echo json_encode($connection->getSchemaBuilder()->getIndexes('kian_submissions'), JSON_PRETTY_PRINT).PHP_EOL;

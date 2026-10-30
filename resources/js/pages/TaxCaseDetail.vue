@@ -140,34 +140,12 @@
             >
               <div v-show="expandedSections.main" class="space-y-4 p-4 bg-gray-50">
                 <!-- ✅ NEW: Preliminary Refund Section for Stage 1 -->
-                <div v-if="caseData.is_preliminary_refund && caseData.current_stage === 1" class="border-2 border-orange-300 rounded-lg bg-orange-50 p-4">
-                  <div class="mb-4">
-                    <h4 class="font-bold text-orange-900 text-lg">🔄 Preliminary Refund (Pengembalian Pendahuluan)</h4>
-                    <p class="text-sm text-orange-700 mt-1">Independent refund process at Stage 1. You can create a refund and/or continue to SP2.</p>
-                  </div>
-                  <div class="space-y-3">
-                    <!-- Refund Button -->
-                    <Button
-                      @click="navigateToPreliminaryRefund()"
-                      variant="primary"
-                      class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3"
-                      :disabled="!caseData.preliminary_refund_info?.refund_details?.can_create_now"
-                    >
-                      💰 Create Refund
-                    </Button>
-                    
-                    <!-- Continue to SP2 Button -->
-                    <Button
-                      @click="continueToNextStage(2)"
-                      variant="primary"
-                      class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3"
-                    >
-                      ➜ Continue to Stage 2 (SP2)
-                    </Button>
-                  </div>
-                  <p class="text-xs text-orange-600 mt-3 italic">Both actions are independent. You can do them in any order or just one.</p>
+                <div v-if="caseData.is_preliminary_refund" class="rounded-lg border border-orange-300 bg-orange-50 p-4">
+                  <h4 class="font-bold">Pengembalian Pendahuluan: pengajuan dan keputusan Kantor Pajak</h4>
+                  <p class="my-3 text-sm">A recorded approved Tax Office decision enables one Refund. The case closes after one full confirmed receipt. A later audit requires a separate case.</p>
+                  <Button @click="navigateToPreliminaryRefund()" variant="primary">Pengajuan / Keputusan / Dokumen</Button>
                 </div>
-                
+
                 <div v-for="stage in getStagesByBranch('main')" :key="stage.id" class="flex items-center space-x-3 p-3 rounded-lg bg-white border border-gray-200 hover:border-blue-300 transition">
                   <div
                     :class="[
@@ -649,6 +627,7 @@ const getStagesByBranch = (branch) => {
 const getRefundsByStageSource = () => {
   const refundMap = {}
   const stageLabels = {
+    0: 'Pengembalian Pendahuluan (historis / aktif)',
     4: 'SKP Assessment',
     7: 'Objection Decision',
     10: 'Appeal Decision',

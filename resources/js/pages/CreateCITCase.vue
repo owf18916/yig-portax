@@ -80,7 +80,7 @@
         </div>
 
         <div>
-          <label class="block text-sm font-semibold text-gray-700 mb-2">SPT Tax Position *</label>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">Posisi SPT *</label>
           <select v-model="formData.spt_position_type" required class="w-full px-4 py-2 border border-gray-300 rounded-lg">
             <option value="">Select tax position</option>
             <option value="LB">Lebih Bayar (LB)</option>
@@ -99,9 +99,11 @@
           :error="formErrors.amount"
         />
 
+        <SptFilingMethod v-if="formData.spt_position_type === 'LB'" v-model="formData.spt_type"
+          :position="formData.spt_position_type" case-type="CIT" required />
         <!-- SPT Type Badge -->
         <div class="p-3 bg-blue-50 rounded-lg">
-          <p class="text-sm text-gray-600">SPT Type</p>
+          <p class="text-sm text-gray-600">Jenis Pajak</p>
           <span class="inline-block px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
             CIT (Corporate Income Tax)
           </span>
@@ -136,6 +138,7 @@ import Card from '../components/Card.vue'
 import Button from '../components/Button.vue'
 import FormField from '../components/FormField.vue'
 import Alert from '../components/Alert.vue'
+import SptFilingMethod from '../components/SptFilingMethod.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -172,6 +175,7 @@ const currentFiscalYear = computed(() => {
 })
 
 const formData = reactive({
+  spt_type: null,
   fiscal_year: new Date().getFullYear(),
   amount: '',
   spt_position_type: '',
@@ -503,6 +507,7 @@ const submitForm = async () => {
         status: 'PENDING',
         disputed_amount: formData.amount,
         spt_position_type: formData.spt_position_type,
+        ...(formData.spt_position_type === 'LB' ? { spt_type: formData.spt_type } : {}),
         currency_id: formData.currency_id
       })
     })

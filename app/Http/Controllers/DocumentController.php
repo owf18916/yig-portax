@@ -30,6 +30,9 @@ class DocumentController extends Controller
         $taxCase = TaxCase::findOrFail($request->integer('tax_case_id'));
         Gate::authorize('view', $taxCase);
 
+        abort_if($request->input('documentable_type') === \App\Models\PreliminaryRefundRequest::class
+            || str_starts_with((string) $request->input('document_type'), 'preliminary_'), 422, 'Use the preliminary recording command to attach evidence.');
+
         $isSupplementary = $request->input('document_type') === Document::SPHP_OTHER_FINDINGS;
         // Office containers may be detected as ZIP, including XLSB/XLSM.
         // Check both the filename extension and detected MIME; keep PDF rules unchanged.
@@ -129,7 +132,7 @@ class DocumentController extends Controller
 
         try {
             // Check if document exists and file is available
-            $disk = config('filesystems.default');
+            $disk = $document->isPreliminaryEvidence() ? 'local' : config('filesystems.default');
             
             if (!Storage::disk($disk)->exists($document->file_path)) {
                 return response()->json([
@@ -150,7 +153,7 @@ class DocumentController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to view document: ' . $e->getMessage(),
+                'message' => $document->isPreliminaryEvidence() ? 'Unable to view preliminary evidence.' : 'Failed to view document: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -166,7 +169,7 @@ class DocumentController extends Controller
 
         try {
             // Check if document exists and file is available
-            $disk = config('filesystems.default');
+            $disk = $document->isPreliminaryEvidence() ? 'local' : config('filesystems.default');
             
             if (!Storage::disk($disk)->exists($document->file_path)) {
                 return response()->json([
@@ -187,7 +190,7 @@ class DocumentController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to download document: ' . $e->getMessage(),
+                'message' => $document->isPreliminaryEvidence() ? 'Unable to download preliminary evidence.' : 'Failed to download document: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -262,6 +265,7 @@ class DocumentController extends Controller
     public function destroy(Document $document)
     {
         $this->authorizeDocument($document);
+        abort_if($document->isPreliminaryEvidence(), 422, 'Preliminary evidence cannot be deleted.');
 
         try {
             // Soft delete the document
@@ -297,5 +301,10 @@ class DocumentController extends Controller
         $taxCase = $document->taxCase;
         abort_if($taxCase === null, 403, 'Document has no valid tax case ownership.');
         Gate::authorize('view', $taxCase);
+        if ($document->isPreliminaryEvidence()) {
+            $owner = \App\Models\PreliminaryRefundRequest::withTrashed()->whereKey($document->documentable_id)->where('tax_case_id', $taxCase->id)->firstOrFail();
+            $column = $document->document_type === 'preliminary_submission' ? 'submission_document_id' : 'decision_document_id';
+            abort_unless((int) $owner->$column === $document->id, 404);
+        }
     }
 }

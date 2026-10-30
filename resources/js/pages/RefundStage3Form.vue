@@ -175,7 +175,8 @@
               <label class="block text-sm font-medium text-gray-700 mb-2">Transfer Amount</label>
               <FormField
                 v-model="formData.transfer_amount"
-                type="formatted-number"
+                :type="isPreliminary ? 'text' : 'formatted-number'"
+                inputmode="decimal"
                 :decimal-places="2"
                 step="0.01"
                 min="0"
@@ -246,6 +247,7 @@ const refundId = route.params.refundId
 const isLoading = ref(false)
 const isSubmitting = ref(false)
 const apiError = ref('')
+const isPreliminary = ref(false)
 
 const refundNumber = ref('')
 const refundAmount = ref(0)
@@ -289,6 +291,7 @@ const loadRefundData = async () => {
 
     const result = await response.json()
     const data = result.data || result
+    isPreliminary.value = !!data.is_preliminary
 
     refundNumber.value = data.refund_number || 'N/A'
     refundAmount.value = data.refund_amount || 0
@@ -340,7 +343,7 @@ const submitForm = async () => {
         account_number: formData.value.account_number,
         account_holder: formData.value.account_holder,
         account_name: formData.value.account_name || null,
-        transfer_amount: formData.value.transfer_amount || null,
+        transfer_amount: formData.value.transfer_amount ? String(formData.value.transfer_amount) : null,
         notes: formData.value.notes || null
       })
     })

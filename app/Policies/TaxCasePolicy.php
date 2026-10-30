@@ -22,6 +22,13 @@ class TaxCasePolicy
                 || (int) $taxCase->entity_id === (int) $user->entity_id);
     }
 
+    public function recordPreliminaryDecision(User $user, TaxCase $taxCase): bool
+    {
+        return $user->is_active
+            && $user->hasPermission('submit_cases')
+            && $this->update($user, $taxCase);
+    }
+
     public function create(User $user, TaxCase $taxCase): bool
     {
         return $this->view($user, $taxCase);

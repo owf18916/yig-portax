@@ -108,6 +108,10 @@
 
             <!-- Dynamic Text/Email/Date Fields -->
             <div v-for="field in selectedFields" :key="field" class="mb-3">
+              <SptFilingMethod v-if="field === 'spt_type'"
+                v-model="proposedValues.spt_type"
+                :position="selectedFields.includes('spt_position_type') ? proposedValues.spt_position_type : taxCase.spt_position_type"
+                :case-type="taxCase.case_type" />
               <!-- Text Input -->
               <div v-if="getFieldType(field) === 'text' && field !== 'supporting_docs'" class="mb-3">
                 <label class="form-label text-sm">{{ fieldLabel(field) }}</label>
@@ -327,6 +331,7 @@
 </template>
 
 <script setup>
+import SptFilingMethod from './SptFilingMethod.vue'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useToast } from '@/composables/useToast'
 import FormField from './FormField.vue'
@@ -352,7 +357,7 @@ const props = defineProps({
 // legacy form aliases.  The server remains the authority and validates this
 // same contract on every request.
 const REVISION_FIELDS_BY_STAGE = {
-  1: ['spt_number', 'spt_type', 'filing_date', 'received_date', 'reported_amount', 'disputed_amount', 'vat_in_amount', 'vat_out_amount', 'description'],
+  1: ['spt_position_type', 'spt_number', 'spt_type', 'filing_date', 'received_date', 'reported_amount', 'disputed_amount', 'vat_in_amount', 'vat_out_amount', 'description'],
   2: ['sp2_number', 'issue_date', 'receipt_date', 'auditor_name', 'auditor_position', 'auditor_phone', 'auditor_email', 'notes'],
   3: ['sphp_number', 'sphp_issue_date', 'sphp_receipt_date', 'royalty_finding', 'service_finding', 'other_finding', 'other_finding_notes'],
   4: ['skp_number', 'issue_date', 'receipt_date', 'skp_due_date', 'skp_type', 'skp_amount', 'royalty_correction', 'service_correction', 'other_correction', 'correction_notes', 'create_refund', 'refund_amount', 'continue_to_next_stage'],
@@ -433,6 +438,8 @@ const fieldLabel = (field) => {
   
   // Fallback to hardcoded labels for common fields
   const labels = {
+    'spt_position_type': 'Posisi SPT',
+    'spt_type': 'Jenis Pengajuan Lebih Bayar',
     'period_id': 'Fiscal Period',
     'currency_id': 'Currency',
     'disputed_amount': disputedAmountLabel.value,
@@ -478,6 +485,7 @@ const fieldLabel = (field) => {
 }
 
 const getFieldType = (field) => {
+  if (field === 'spt_type') return 'spt-method'
   // Look for the field type in the fields array
   if (props.fields && props.fields.length > 0) {
     const fieldDef = props.fields.find(f => f.key === field)
@@ -491,7 +499,8 @@ const getFieldType = (field) => {
     'period_id': 'select',
     'currency_id': 'select',
     'spt_number': 'text',
-    'spt_type': 'text',
+    'spt_type': 'spt-method',
+    'spt_position_type': 'select',
     'filing_date': 'date',
     'received_date': 'date',
     'reported_amount': 'number',
@@ -574,6 +583,7 @@ const getFieldOptions = (field) => {
   
   // Fallback to hardcoded options for common select fields
   const options = {
+    spt_position_type: ['LB', 'KB', 'NIHIL'].map(value => ({ value, label: value })),
     'decision_type': [
       { value: 'granted', label: 'Dikabulkan (Granted - Accepted)' },
       { value: 'partially_granted', label: 'Dikabulkan Sebagian (Partially Granted)' },
@@ -600,6 +610,8 @@ const handleFieldToggle = () => {
     if (!(field in proposedValues.value)) {
       if (field === 'supporting_docs') {
         // Already handled by proposedDocChanges
+      } else if (['spt_type', 'spt_position_type'].includes(field)) {
+        proposedValues.value[field] = props.taxCase[field] ?? null
       } else if (getFieldType(field) === 'number') {
         proposedValues.value[field] = null
       } else {
@@ -658,6 +670,7 @@ const submit = async () => {
     if (checkboxFields.includes(field)) {
       return proposedValues.value[field] !== null && proposedValues.value[field] !== undefined
     }
+    if (field === 'spt_type') return proposedValues.value[field] !== props.taxCase.spt_type
     // For other fields, check for non-null and non-empty
     return proposedValues.value[field] !== null && proposedValues.value[field] !== ''
   })

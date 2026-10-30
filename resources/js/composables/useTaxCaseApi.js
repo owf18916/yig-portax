@@ -327,27 +327,27 @@ export const useTaxCaseApi = () => {
         },
 
         createPreliminaryRefundRequest: async (caseId, payload) => {
-            const { data } = await api.post(`/tax-cases/${caseId}/preliminary-refund-request`, payload)
+            const { data } = await api.post(`/tax-cases/${caseId}/preliminary-refund-request`, payload, { headers: { 'Content-Type': 'multipart/form-data' } })
             return data
         },
 
-        updatePreliminaryRefundRequest: async (caseId, payload) => {
-            const { data } = await api.put(`/tax-cases/${caseId}/preliminary-refund-request`, payload)
+        updatePreliminaryRefundRequest: async (caseId, requestId, payload) => {
+            const { data } = await api.put(`/tax-cases/${caseId}/preliminary-refund-request/${requestId}`, payload)
             return data
         },
 
-        approvePreliminaryRefundRequest: async (caseId, payload) => {
-            const { data } = await api.post(`/tax-cases/${caseId}/preliminary-refund-request/approve`, payload)
+        approvePreliminaryRefundRequest: async (caseId, requestId, payload) => {
+            const { data } = await api.post(`/tax-cases/${caseId}/preliminary-refund-request/${requestId}/approve`, payload, { headers: { 'Content-Type': 'multipart/form-data' } })
             return data
         },
 
-        rejectPreliminaryRefundRequest: async (caseId, payload) => {
-            const { data } = await api.post(`/tax-cases/${caseId}/preliminary-refund-request/reject`, payload)
+        rejectPreliminaryRefundRequest: async (caseId, requestId, payload) => {
+            const { data } = await api.post(`/tax-cases/${caseId}/preliminary-refund-request/${requestId}/reject`, payload, { headers: { 'Content-Type': 'multipart/form-data' } })
             return data
         },
 
-        deletePreliminaryRefundRequest: async (caseId) => {
-            const { data } = await api.delete(`/tax-cases/${caseId}/preliminary-refund-request`)
+        deletePreliminaryRefundRequest: async (caseId, requestId) => {
+            const { data } = await api.delete(`/tax-cases/${caseId}/preliminary-refund-request/${requestId}`)
             return data
         },
         
