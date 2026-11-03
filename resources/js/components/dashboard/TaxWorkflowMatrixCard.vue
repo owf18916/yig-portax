@@ -73,6 +73,8 @@
 </template>
 
 <script setup>
+import { apiFetch as fetch } from '../../composables/useSessionApi.js'
+
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import Card from '../Card.vue'

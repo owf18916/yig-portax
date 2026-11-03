@@ -115,13 +115,16 @@
 </template>
 
 <script setup>
+import { useCurrentUser } from '../composables/useCurrentUser.js'
+import { apiFetch as fetch } from '../composables/useSessionApi.js'
+
 import { onMounted, reactive, ref } from 'vue'
 import ConfirmationDialog from '../components/ConfirmationDialog.vue'
 import FormField from '../components/FormField.vue'
 import { useToast } from '../composables/useToast'
 
 const { showSuccess, showError } = useToast()
-const storedUser = JSON.parse(localStorage.getItem('user') || '{}')
+const storedUser = useCurrentUser().currentUser.value || {}
 const currentUserId = storedUser.id
 const users = ref([]), roles = ref([]), entities = ref([]), loading = ref(false), pageError = ref('')
 const saving = ref(false), formOpen = ref(false), editingUser = ref(null), formError = ref(''), validationErrors = ref({}), statusLoadingId = ref(null)

@@ -244,6 +244,8 @@
 </template>
 
 <script setup>
+import { apiFetch as fetch } from '../composables/useSessionApi.js'
+
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import Card from '../components/Card.vue'

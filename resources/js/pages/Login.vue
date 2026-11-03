@@ -77,12 +77,14 @@
 
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { useCurrentUser } from '../composables/useCurrentUser'
+import { useRouter, useRoute } from 'vue-router'
+import { safeReturnPath } from '../auth/session.js'
+import { session, logoutPending, useCurrentUser } from '../composables/useCurrentUser'
 
 const logoUrl = '/images/portax-logo.webp'
 
 const router = useRouter()
+const route = useRoute()
 const { setCurrentUser } = useCurrentUser()
 
 const email = ref('admin@portax.co.id')
@@ -91,12 +93,15 @@ const error = ref('')
 const loading = ref(false)
 
 const handleLogin = async () => {
+  if (logoutPending.value) { error.value = 'Waiting for logout to finish. Please try again shortly.'; return }
+  const generation = session.state.generation
   error.value = ''
   loading.value = true
 
   try {
     const response = await fetch('/api/login', {
       method: 'POST',
+      signal: AbortSignal.timeout(10000),
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
@@ -115,19 +120,18 @@ const handleLogin = async () => {
     }
 
     const data = await response.json()
-    
-    console.log('Login response:', data)
-    
+
     // Check if login response is successful
     if (!data.success || !data.data?.user) {
       throw new Error(data.message || 'Login response invalid')
     }
     
+    if (generation !== session.state.generation) throw new Error('Session changed while signing in. Please try again.')
     const userToStore = data.data.user
     setCurrentUser(userToStore)
 
     // Redirect to dashboard
-    await router.push('/')
+    await router.push(safeReturnPath(route.query.returnTo))
   } catch (err) {
     error.value = err.message || 'Failed to login. Please try again.'
     console.error('Login error:', err)

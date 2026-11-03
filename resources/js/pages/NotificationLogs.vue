@@ -1,5 +1,6 @@
 <template>
   <div class="space-y-6">
+    <p v-if="pageError" role="alert" class="text-red-700">{{ pageError }}</p>
     <div><h1 class="text-3xl font-bold text-gray-900">Notification Logs</h1><p class="text-gray-600">KIAN delivery history and recipient snapshots.</p></div>
     <div class="bg-white border rounded-lg p-4 flex flex-wrap gap-3">
       <input v-model="filters.tax_case" placeholder="Search tax case" class="border rounded px-3 py-2" @keyup.enter="load" />
@@ -12,12 +13,43 @@
   </div>
 </template>
 <script setup>
+import { useCurrentUser } from '../composables/useCurrentUser.js'
+import { apiFetch as fetch } from '../composables/useSessionApi.js'
+
 import { onMounted, ref } from 'vue'; import { useRoute } from 'vue-router';
 const route=useRoute(), logs=ref([]), detail=ref(null), retrying=ref(false), filters=ref({tax_case:'',current_status:'',stage_id:''}), statuses=['SENT','QUEUED','NOT_ELIGIBLE','SKIPPED_NO_RECIPIENT','FAILED'];
-const user=JSON.parse(localStorage.getItem('user') || '{}'), isAdmin=user.role?.name==='Admin';
+const user=(useCurrentUser().currentUser.value || {}), isAdmin=user.role?.name==='Admin';
 const label=s=>({SENT:'Sent',QUEUED:'Queued',PROCESSING:'Queued',NOT_ELIGIBLE:'Not Eligible',SKIPPED_NO_RECIPIENT:'No Recipient',FAILED:'Failed'}[s]||s), date=d=>d?new Date(d).toLocaleString():'—';
-async function load(){const p=new URLSearchParams(Object.entries(filters.value).filter(([,v])=>v!==''));const r=await fetch(`/api/notification-logs?${p}`,{credentials:'include'});const j=await r.json();logs.value=j.data||[];}
-async function open(id){const r=await fetch(`/api/notification-logs/${id}`,{credentials:'include'});if(r.ok)detail.value=await r.json();}
-async function retry(){if(!confirm('Retry this notification? Recipients will be resolved again using the current configuration.'))return;retrying.value=true;const r=await fetch(`/api/notification-logs/${detail.value.id}/retry`,{method:'POST',credentials:'include',headers:{'X-CSRF-TOKEN':document.querySelector('meta[name="csrf-token"]')?.content||'',Accept:'application/json'}});retrying.value=false;if(r.ok){await open(detail.value.id);await load();}else alert((await r.json()).message||'Unable to queue retry.');}
+const pageError = ref('')
+async function request(url, options = {}) {
+  const response = await fetch(url, options)
+  const result = await response.json()
+  if (!response.ok) throw new Error(result.message || `Request failed (${response.status})`)
+  return result
+}
+async function load() {
+  pageError.value = ''
+  try {
+    const p = new URLSearchParams(Object.entries(filters.value).filter(([,v]) => v !== ''))
+    const result = await request(`/api/notification-logs?${p}`)
+    logs.value = result.data || []
+  } catch (e) { pageError.value = e.message }
+}
+async function open(id) {
+  try { detail.value = await request(`/api/notification-logs/${id}`) }
+  catch (e) { pageError.value = e.message }
+}
+async function retry() {
+  if (!confirm('Retry this notification? Recipients will be resolved again using the current configuration.')) return
+  retrying.value = true
+  try {
+    await request(`/api/notification-logs/${detail.value.id}/retry`, {
+      method: 'POST', headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '' }
+    })
+    await open(detail.value.id)
+    await load()
+  } catch (e) { pageError.value = e.message }
+  finally { retrying.value = false }
+}
 onMounted(async()=>{await load();if(route.query.selected)open(route.query.selected)});
 </script>

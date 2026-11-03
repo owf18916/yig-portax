@@ -47,6 +47,8 @@
 </template>
 
 <script setup>
+import { apiFetch as fetch } from '../composables/useSessionApi.js'
+
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useRevisionAPI } from '@/composables/useRevisionAPI'
@@ -205,9 +207,9 @@ const loadDocuments = async () => {
 
 const loadCurrentUser = async () => {
   try {
-    const userRes = await fetch('/api/users/current')
+    const userRes = await fetch('/api/me')
     if (userRes.ok) {
-      currentUser.value = await userRes.json()
+      currentUser.value = (await userRes.json()).data
     }
   } catch (error) {
     console.error('Error loading current user:', error)

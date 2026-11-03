@@ -214,6 +214,8 @@
 </template>
 
 <script setup>
+import { apiFetch as fetch } from '../composables/useSessionApi.js'
+
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useRevisionAPI } from '@/composables/useRevisionAPI'

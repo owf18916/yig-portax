@@ -1,3 +1,4 @@
+import { session } from '../composables/useCurrentUser'
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { useTaxCaseApi } from '../composables/useTaxCaseApi'
@@ -36,6 +37,34 @@ export const useTaxCaseStore = defineStore('taxCase', () => {
     const documents = ref([])
     const bankTransfers = ref([])
     
+    session.onReset(() => {
+        currentCase.value = null
+        cases.value = []
+        loading.value = false
+        error.value = null
+        success.value = null
+        sp2Data.value = null
+        sphpData.value = null
+        skpData.value = null
+        objectionSubmissionData.value = null
+        spuhData.value = null
+        objectionDecisionData.value = null
+        appealSubmissionData.value = null
+        appealExplanationData.value = null
+        appealDecisionData.value = null
+        supremeCourtSubmissionData.value = null
+        supremeCourtDecisionData.value = null
+        refundProcessData.value = null
+        kianData.value = null
+        entities.value = []
+        fiscalYears.value = []
+        currencies.value = []
+        caseStatuses.value = []
+        workflowHistory.value = []
+        documents.value = []
+        bankTransfers.value = []
+    })
+
     // ============= COMPUTED =============
     const currentStage = computed(() => currentCase.value?.current_stage || 0)
     const caseStatus = computed(() => currentCase.value?.status || 'DRAFT')

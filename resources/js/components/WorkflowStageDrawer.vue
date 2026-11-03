@@ -129,6 +129,8 @@
 </template>
 
 <script setup>
+import { apiFetch as fetch } from '../composables/useSessionApi.js'
+
 import { ref, computed, onMounted, watch } from 'vue'
 import { findWorkflowStage } from '../constants/workflowStages'
 

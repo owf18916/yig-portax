@@ -1,3 +1,4 @@
+import { installAxios } from './useSessionApi.js'
 import axios from 'axios'
 
 const API_BASE_URL = '/api'
@@ -11,6 +12,8 @@ const api = axios.create({
         'X-Requested-With': 'XMLHttpRequest',
     },
 })
+
+installAxios(api)
 
 // Add CSRF token to requests
 api.interceptors.request.use((config) => {

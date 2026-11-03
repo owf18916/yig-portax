@@ -331,6 +331,8 @@
 </template>
 
 <script setup>
+import { apiFetch as fetch } from '../composables/useSessionApi.js'
+
 import SptFilingMethod from './SptFilingMethod.vue'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useToast } from '@/composables/useToast'

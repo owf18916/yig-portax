@@ -229,6 +229,9 @@
 </template>
 
 <script setup>
+import { apiFetch as fetch } from '../composables/useSessionApi.js'
+
+import { useCurrentUser } from '../composables/useCurrentUser'
 import { ref, computed, onMounted } from 'vue'
 import Card from '../components/Card.vue'
 import Button from '../components/Button.vue'
@@ -246,7 +249,7 @@ const allCases = ref([])
 const loading = ref(true)
 const chartDataLoading = ref(true)
 const announcements = ref([])
-const currentUser = ref(null)
+const { currentUser } = useCurrentUser()
 const showAnnouncementModal = ref(false)
 const selectedAnnouncement = ref(null)
 const showExchangeRateModal = ref(false)
@@ -446,28 +449,6 @@ const getStatusBadge = (status) => {
   return badges[status] || badges['draft']
 }
 
-const getCurrentUser = async () => {
-  try {
-    const response = await fetch('/api/me', {
-      headers: {
-        'Accept': 'application/json'
-      },
-      credentials: 'include'
-    })
-
-    if (response.ok) {
-      const responseData = await response.json()
-      // API returns {success, message, data: user}
-      if (responseData.success && responseData.data) {
-        currentUser.value = responseData.data
-        console.log('Current user loaded:', responseData.data)
-      }
-    }
-  } catch (error) {
-    console.error('Failed to load current user:', error)
-  }
-}
-
 const loadAnnouncements = async () => {
   try {
     const response = await fetch('/api/announcements', {
@@ -501,18 +482,6 @@ const loadAnnouncements = async () => {
 
 const loadCases = async () => {
   try {
-    // First check if user is authenticated
-    const meResponse = await fetch('/api/me', {
-      headers: {
-        'Accept': 'application/json'
-      },
-      credentials: 'include'
-    })
-    
-    if (!meResponse.ok) {
-      throw new Error('Not authenticated')
-    }
-    
     const response = await fetch('/api/tax-cases?limit=1000', {
       headers: {
         'Accept': 'application/json'
@@ -614,7 +583,6 @@ const handleExchangeRateSuccess = () => {
 
 onMounted(async () => {
   await Promise.all([
-    getCurrentUser(),
     loadCases(),
     loadChartData(),
     loadAnnouncements()

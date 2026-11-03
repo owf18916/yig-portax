@@ -29,7 +29,7 @@ class TaxCaseNumberGenerationTest extends TestCase
             'id' => 1,
             'code' => 'ADMIN',
             'name' => 'Administrator',
-            'permissions' => json_encode(['manage_cases']),
+            'permissions' => json_encode(['manage_cases', 'submit_cases']),
             'is_active' => true,
             'created_at' => now(),
             'updated_at' => now(),
@@ -92,6 +92,7 @@ class TaxCaseNumberGenerationTest extends TestCase
         $this->user = User::factory()->create([
             'entity_id' => $this->entity->id,
             'role_id' => 1,
+            'is_active' => true,
         ]);
     }
 

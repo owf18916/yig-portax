@@ -31,7 +31,9 @@ class TaxCasePolicy
 
     public function create(User $user, TaxCase $taxCase): bool
     {
-        return $this->view($user, $taxCase);
+        return $user->is_active
+            && $user->hasPermission('submit_cases')
+            && $this->view($user, $taxCase);
     }
 
     public function update(User $user, TaxCase $taxCase): bool

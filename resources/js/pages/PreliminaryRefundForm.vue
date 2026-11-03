@@ -23,7 +23,7 @@
         <p v-if="request.notes">{{ request.notes }}</p>
         <p v-if="historical" role="status">Historical evidence is read-only and has not been asserted compliant with the current document requirements. Separate review is required; outcomes cannot be amended here.</p>
         <p v-if="request.submission_document">Bukti Pengajuan:
-          <a :href="download(request.submission_document.id)" class="text-blue-700 underline">{{ request.submission_document.original_filename }}</a>
+          <a href="#" @click.prevent="downloadEvidence(request.submission_document)" class="text-blue-700 underline">{{ request.submission_document.original_filename }}</a>
         </p>
         <template v-if="request.approved_by">
           <p>Source: external Tax Office decision. PorTax recorder: {{ request.approved_by }} at {{ request.approved_at }}</p>
@@ -32,7 +32,7 @@
           <p v-if="request.approval_status === 'APPROVED'">Approved: {{ request.approved_amount }} {{ caseData.currency?.code }}</p>
         </template>
         <p v-if="request.decision_document">Dokumen Keputusan:
-          <a :href="download(request.decision_document.id)" class="text-blue-700 underline">{{ request.decision_document.original_filename }}</a>
+          <a href="#" @click.prevent="downloadEvidence(request.decision_document)" class="text-blue-700 underline">{{ request.decision_document.original_filename }}</a>
         </p>
         <form v-if="request.approval_status === 'SUBMITTED' && !historical && caseData.preliminary_can_decide && !closed" @submit.prevent="send(outcome)" class="space-y-3">
           <h2 class="text-xl font-bold">Catat Keputusan Kantor Pajak</h2>
@@ -53,6 +53,8 @@
 </template>
 
 <script setup>
+import { apiFetch as fetch, downloadPrivateDocument } from '../composables/useSessionApi.js'
+
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import Button from '../components/Button.vue'
@@ -74,7 +76,10 @@ const closed = computed(() => caseData.value.is_completed || caseData.value.stat
 const eligible = computed(() => caseData.value.case_type === 'VAT' && caseData.value.spt_position_type === 'LB' && caseData.value.spt_type === 'Pengembalian Pendahuluan' && caseData.value.workflow_state?.completed_stages?.includes(1))
 const historical = computed(() => request.value && (request.value.deleted_at || ['PENDING', 'POSTPONED'].includes(request.value.approval_status) || !request.value.submission_document || (['APPROVED', 'REJECTED'].includes(request.value.approval_status) && !request.value.decision_document)))
 const refunds = computed(() => (caseData.value.refund_processes || []).filter(r => Number(r.stage_id) === 0 || r.stage_source === 'PRELIMINARY'))
-const download = id => `/api/documents/${id}/download`
+async function downloadEvidence(doc) {
+  try { await downloadPrivateDocument(doc.id, doc.original_filename) }
+  catch (e) { error.value = e.message }
+}
 function chooseFile(event) { documentFile.value = event.target.files?.[0] || null }
 async function api(url, options = {}) {
   const response = await fetch(url, { credentials: 'include', ...options, headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', ...(document.querySelector('meta[name="csrf-token"]')?.content ? { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content } : {}) } })

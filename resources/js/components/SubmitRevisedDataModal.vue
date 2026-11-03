@@ -251,6 +251,8 @@
 </template>
 
 <script setup>
+import { apiFetch as fetch } from '../composables/useSessionApi.js'
+
 import { ref, computed } from 'vue'
 import { useRevisionFields } from '@/composables/useRevisionFields'
 import { useToast } from '@/composables/useToast'

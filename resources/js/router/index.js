@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { defineAsyncComponent } from 'vue'
 import { useCurrentUser } from '../composables/useCurrentUser'
+import { safeReturnPath } from '../auth/session.js'
 
 // Lazy load all page components for better code splitting
 const Login = defineAsyncComponent(() => import('../pages/Login.vue'))
@@ -256,31 +257,15 @@ const router = createRouter({
   routes
 })
 
-// Auth guard
-router.beforeEach(async (to, from, next) => {
-  const requiresAuth = to.meta.requiresAuth !== false
-  const { currentUser } = useCurrentUser()
-  const isLoggedIn = Boolean(currentUser.value)
-
-  console.log('Router guard check:', { 
-    toPath: to.path, 
-    requiresAuth, 
-    isLoggedIn: !!isLoggedIn 
-  })
-
-  if (requiresAuth && !isLoggedIn) {
-    // Redirect to login if not authenticated
-    console.log('Not authenticated, redirecting to login')
-    next('/login')
-  } else if (to.meta.permission && !currentUser.value?.role?.permissions?.includes(to.meta.permission)) {
-    next('/')
-  } else if (to.path === '/login' && isLoggedIn) {
-    // Redirect to dashboard if already logged in
-    console.log('Already logged in, redirecting to dashboard')
-    next('/')
-  } else {
-    next()
-  }
+// Initial navigation is always checked against the server, never browser storage.
+router.beforeEach(async to => {
+  const { currentUser, verifySession } = useCurrentUser()
+  const status = await verifySession()
+  if (to.meta.requiresAuth !== false && status === 'unauthenticated') return { path: '/login', query: { returnTo: safeReturnPath(to.fullPath) } }
+  // Unknown/unavailable is rendered as the shell's bounded retry screen.
+  if (status === 'authenticated' && to.meta.permission && !currentUser.value?.role?.permissions?.includes(to.meta.permission)) return '/'
+  if (to.path === '/login' && status === 'authenticated') return '/'
+  return true
 })
 
 export default router

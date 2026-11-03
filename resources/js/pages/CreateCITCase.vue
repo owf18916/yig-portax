@@ -132,6 +132,9 @@
 </template>
 
 <script setup>
+import { session, useCurrentUser } from '../composables/useCurrentUser.js'
+import { apiFetch as fetch } from '../composables/useSessionApi.js'
+
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Card from '../components/Card.vue'
@@ -208,72 +211,35 @@ const previewCaseNumber = computed(() => {
   return `${entityCode}${yearCode}MarC`
 })
 
-onMounted(() => {
-  loadCurrentUser()
-  fetchPeriods()
-  fetchAvailableMarchPeriods()
-  fetchCurrencies()
+onMounted(async () => {
+  if (!await loadCurrentUser()) return
+  await Promise.all([fetchPeriods(), fetchAvailableMarchPeriods(), fetchCurrencies()])
 })
 
-const loadCurrentUser = () => {
+const loadCurrentUser = async () => {
   loadingEntities.value = true
   try {
-    // Get user from localStorage (set during login)
-    const userStr = localStorage.getItem('user')
-    if (!userStr) {
-      throw new Error('User not found in localStorage')
-    }
-    
-    const user = JSON.parse(userStr)
-    
-    if (user && user.entity_id) {
-      selectedEntityId.value = prefill.entity_id || user.entity_id
-      
-      // Use entity data from user object if available
-      if (user.entity && (!prefill.entity_id || prefill.entity_id === user.entity.id)) {
-        entities.value = [user.entity]
-      } else {
-        // Otherwise fetch entity details
-        fetchEntityDetails(selectedEntityId.value)
-      }
-    } else {
-      console.warn('No entity_id found in user:', user)
-      apiError.value = 'User does not have an assigned company'
-    }
+    const { currentUser, verifySession } = useCurrentUser()
+    if (await verifySession() !== 'authenticated') throw new Error('Verify your session before creating a case')
+    const user = currentUser.value
+    if (!user?.is_active || !user.role?.is_active || !user.role?.permissions?.includes('submit_cases')) throw new Error('Forbidden: submit_cases permission is required (403)')
+    if (!user.entity_id || !user.entity) throw new Error('Your user must have an assigned company')
+    const entityId = prefill.entity_id || user.entity_id
+    if (user.entity.entity_type !== 'HOLDING' && Number(entityId) !== Number(user.entity_id)) throw new Error('Forbidden: selected company is outside your entity (403)')
+    const response = await fetch('/api/entities')
+    const result = await response.json()
+    if (!response.ok) throw new Error(result.message || `Unable to load companies (${response.status})`)
+    const scoped = result.data || result
+    const entity = Array.isArray(scoped) ? scoped.find(item => Number(item.id) === Number(entityId)) : null
+    if (!entity) throw new Error('Selected company is not available for your user')
+    entities.value = [entity]
+    selectedEntityId.value = entity.id
+    return true
   } catch (error) {
     apiError.value = error.message || 'Failed to load user company'
-    console.error('Error loading current user:', error)
+    return false
   } finally {
     loadingEntities.value = false
-  }
-}
-
-const fetchEntityDetails = async (entityId) => {
-  try {
-    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
-    
-    const response = await fetch('/api/entities', {
-      credentials: 'include',
-      headers: {
-        'Accept': 'application/json',
-        ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken })
-      }
-    })
-    
-    if (response.ok) {
-      const result = await response.json()
-      const scopedEntities = result.data || result
-      const entityData = Array.isArray(scopedEntities) ? scopedEntities.find(entity => entity.id === entityId) : null
-      if (entityData) {
-        entities.value = [entityData]
-      } else {
-        apiError.value = 'Selected company is not available for your user'
-      }
-    } else {
-      console.error('Failed to fetch entity:', response.status)
-    }
-  } catch (error) {
-    console.error('Error fetching entity:', error)
   }
 }
 
@@ -461,7 +427,8 @@ const validateForm = async () => {
         }
       }
     } catch (error) {
-      console.error('Error checking duplicate:', error)
+      apiError.value = error.message
+      isValid = false
     }
   }
 
@@ -469,11 +436,13 @@ const validateForm = async () => {
 }
 
 const submitForm = async () => {
+  const generation = session.state.generation
   if (!(await validateForm())) {
-    apiError.value = 'Please fix errors and try again'
+    apiError.value ||= 'Please fix errors and try again'
     return
   }
 
+  if (generation !== session.state.generation || session.state.status !== 'authenticated') { apiError.value = 'Session changed. Review the form after signing in; no write was sent.'; return }
   submitting.value = true
   apiError.value = ''
   successMessage.value = ''
@@ -529,6 +498,7 @@ const submitForm = async () => {
     
     // Redirect to case detail
     setTimeout(() => {
+      if (generation !== session.state.generation) return
       document.body.style.cursor = 'auto'
       router.push(`/tax-cases/${caseId}`)
     }, 1000)

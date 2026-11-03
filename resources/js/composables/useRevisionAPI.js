@@ -1,3 +1,4 @@
+import { apiFetch as fetch } from './useSessionApi.js'
 import { ref, computed } from 'vue'
 
 /**

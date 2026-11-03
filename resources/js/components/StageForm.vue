@@ -202,7 +202,7 @@
                     class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 disabled:opacity-50" />
                   <p class="text-xs text-gray-500">DOC, DOCX, XLS, XLSX, XLSB, XLSM; maximum 10MB. {{ supplementaryUploading ? 'Uploading...' : '' }}</p>
                   <div v-for="file in supplementaryFiles" :key="file.id" class="flex items-center justify-between p-1.5 bg-gray-50 rounded border border-gray-200 text-xs">
-                    <a :href="`/api/documents/${file.id}/download`" @click.prevent="downloadDocument(file.id, file.name)" class="text-blue-700 truncate">{{ file.name }} ({{ file.size }} MB)</a>
+                    <a href="#" @click.prevent="downloadDocument(file.id, file.name)" class="text-blue-700 truncate">{{ file.name }} ({{ file.size }} MB)</a>
                     <button v-if="!fieldsDisabled && !submissionComplete" type="button" @click="removeFile(file.id)" class="px-1.5 py-0.5 text-xs bg-red-50 text-red-700 rounded">Remove</button>
                   </div>
                 </div>
@@ -457,7 +457,10 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch, computed } from 'vue'
+import { session } from '../composables/useCurrentUser.js'
+import { apiFetch as fetch, inspectUpload } from '../composables/useSessionApi.js'
+
+import { ref, reactive, onMounted, onUnmounted, watch, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import Card from './Card.vue'
 import Button from './Button.vue'
@@ -961,6 +964,7 @@ const uploadFile = async (file, documentType = 'supporting_document') => {
 
       // Use XMLHttpRequest for progress tracking
       const xhr = new XMLHttpRequest()
+      const uploadGeneration = session.state.generation
       const fileId = `${file.name}-${Date.now()}` // Temporary ID for progress tracking
 
       // IMPORTANT: Set up ALL event listeners BEFORE calling open()
@@ -976,6 +980,7 @@ const uploadFile = async (file, documentType = 'supporting_document') => {
 
       xhr.addEventListener('load', () => {
         try {
+          inspectUpload(xhr, uploadGeneration)
           if (xhr.status >= 200 && xhr.status < 300) {
             const result = JSON.parse(xhr.responseText)
 
@@ -1010,6 +1015,7 @@ const uploadFile = async (file, documentType = 'supporting_document') => {
       })
 
       xhr.addEventListener('error', () => {
+        session.notify('Upload result unconfirmed because the connection failed. Check the document list before uploading again; it was not retried.')
         toastRef.value?.addToast('Upload Error', 'Network error during upload', 'error', 5000)
         delete uploadingFiles.value[fileId]
         uploadProgress.value = 0
@@ -1025,6 +1031,8 @@ const uploadFile = async (file, documentType = 'supporting_document') => {
 
       // NOW open the request
       xhr.open('POST', '/api/documents')
+      xhr.setRequestHeader('Accept', 'application/json')
+      xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest')
       xhr.withCredentials = true // Include cookies for session auth
       
       // Set headers AFTER open() but BEFORE send()
@@ -1186,6 +1194,8 @@ const downloadDocument = async (fileId, fileName) => {
     toastRef.value?.addToast('Document Error', 'Failed to download document. Please try again.', 'error', 4000)
   }
 }
+
+onUnmounted(() => closePdfViewer())
 
 const closePdfViewer = () => {
   if (pdfViewerUrl.value.startsWith('blob:')) {

@@ -175,6 +175,8 @@
 </template>
 
 <script setup>
+import { apiFetch as fetch } from '../composables/useSessionApi.js'
+
 import { ref, computed, watch } from 'vue'
 
 const props = defineProps({

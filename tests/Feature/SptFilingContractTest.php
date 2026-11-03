@@ -23,8 +23,8 @@ class SptFilingContractTest extends TestCase
         parent::setUp();
         Queue::fake();
         $entity = Entity::create(['code'=>'SPT','name'=>'SPT contract','entity_type'=>'AFFILIATE','tax_id'=>'SPT']);
-        $role = Role::create(['code'=>'STAFF','name'=>'Staff']);
-        $this->user = User::factory()->create(['entity_id'=>$entity->id,'role_id'=>$role->id]);
+        $role = Role::create(['code'=>'STAFF','name'=>'Staff','permissions'=>['submit_cases']]);
+        $this->user = User::factory()->create(['entity_id'=>$entity->id,'role_id'=>$role->id,'is_active'=>true]);
         $year = FiscalYear::create(['year'=>2026,'start_date'=>'2026-01-01','end_date'=>'2026-12-31']);
         Currency::forceCreate(['id'=>1,'code'=>'IDR','name'=>'Rupiah','symbol'=>'Rp']);
         CaseStatus::forceCreate(['id'=>1,'code'=>'OPEN','name'=>'Open']);
