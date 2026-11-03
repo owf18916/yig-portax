@@ -66,21 +66,6 @@ Route::middleware(['auth', 'manage-users'])->group(function () {
     Route::patch('/users/{user}/status', [UserController::class, 'updateStatus']);
 });
 
-// Development: Quick login for testing
-if (config('app.debug')) {
-    Route::post('/dev-login', function () {
-        $user = \App\Models\User::first() ?? \App\Models\User::create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-            'password' => \Illuminate\Support\Facades\Hash::make('password'),
-            'is_active' => true,
-        ]);
-        
-        \Illuminate\Support\Facades\Auth::login($user);
-        return response()->json(['success' => true, 'message' => 'Dev login successful', 'user' => $user]);
-    });
-}
-
 // ============================================================================
 // HEALTH & TEST ENDPOINTS
 // ============================================================================

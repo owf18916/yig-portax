@@ -16,14 +16,13 @@ return Application::configure(basePath: dirname(__DIR__))
             'manage-users' => \App\Http\Middleware\EnsureCanManageUsers::class,
         ]);
 
-        // For API routes: use token-based auth (no CSRF needed)
+        // API routes use the existing web session guard.
         $middleware->api(prepend: [
             \Illuminate\Cookie\Middleware\EncryptCookies::class,
             \Illuminate\Session\Middleware\StartSession::class,
             \Illuminate\View\Middleware\ShareErrorsFromSession::class,
             // Note: VerifyCsrfToken is NOT applied to /api routes by default in Laravel 12
             // Only web routes use it
-            \App\Http\Middleware\DevAutoLogin::class,
         ]);
         
         // Web routes use CSRF protection (this is default in Laravel)
