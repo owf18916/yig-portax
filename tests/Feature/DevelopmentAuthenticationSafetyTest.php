@@ -16,6 +16,17 @@ class DevelopmentAuthenticationSafetyTest extends TestCase
 {
     use RefreshDatabase;
 
+    private function sessionPost(string $url, array $data = [])
+    {
+        // Local/production environment fixtures execute the real verifier too.
+        $this->withCookie(config('session.cookie'), session()->getId());
+        $response = $this->getJson('/api/csrf-token')->assertNoContent();
+        $cookie = collect($response->headers->getCookies())->first(fn ($cookie) => $cookie->getName() === 'XSRF-TOKEN');
+
+        return $this->withCookie(config('session.cookie'), session()->getId())
+            ->postJson($url, $data, ['X-XSRF-TOKEN' => $cookie->getValue()]);
+    }
+
     private function localFixture(): void
     {
         // The runner must prove isolation before any process-local environment change.
@@ -37,7 +48,7 @@ class DevelopmentAuthenticationSafetyTest extends TestCase
         $this->getJson('/api/tax-cases/1')->assertUnauthorized();
         $this->getJson('/api/documents/1/download')->assertUnauthorized();
         $this->getJson('/api/notification-logs')->assertUnauthorized();
-        $this->postJson('/api/logout')->assertUnauthorized();
+        $this->sessionPost('/api/logout')->assertUnauthorized();
         $this->assertGuest('web');
         $this->assertNull(session()->get(Auth::guard('web')->getName()));
         $this->assertDatabaseCount('users', $users);
@@ -49,15 +60,15 @@ class DevelopmentAuthenticationSafetyTest extends TestCase
     {
         $this->localFixture();
         $this->assertGuestEndpoints(0);
-        $this->postJson('/api/login', [])->assertUnprocessable();
+        $this->sessionPost('/api/login', [])->assertUnprocessable();
         // The web SPA GET catch-all yields 405 for this absent POST route.
         $this->postJson('/api/dev-login')->assertStatus(405);
         $this->assertDatabaseCount('users', 0);
         $user = User::factory()->create(['is_active' => true]);
         $this->assertGuestEndpoints(1);
-        $this->postJson('/api/login', ['email' => $user->email, 'password' => 'incorrect'])->assertUnauthorized();
+        $this->sessionPost('/api/login', ['email' => $user->email, 'password' => 'incorrect'])->assertUnauthorized();
         $user->update(['is_active' => false]);
-        $this->postJson('/api/login', ['email' => $user->email, 'password' => 'password'])->assertForbidden();
+        $this->sessionPost('/api/login', ['email' => $user->email, 'password' => 'password'])->assertForbidden();
         $this->assertGuestEndpoints(1);
     }
 
@@ -66,18 +77,18 @@ class DevelopmentAuthenticationSafetyTest extends TestCase
         $this->localFixture();
         $a = User::factory()->create(['is_active' => true]);
         $b = User::factory()->create(['is_active' => true]);
-        $this->postJson('/api/login', ['email' => $a->email, 'password' => 'password'])
+        $this->sessionPost('/api/login', ['email' => $a->email, 'password' => 'password'])
             ->assertOk()->assertJsonPath('data.user.id', $a->id);
         $oldCookie = session()->getId();
         Auth::forgetGuards();
         $this->withCookie(config('session.cookie'), $oldCookie)->getJson('/api/me')
             ->assertOk()->assertJsonPath('data.id', $a->id);
-        $this->postJson('/api/logout')->assertOk();
+        $this->sessionPost('/api/logout')->assertOk();
         $this->assertNotSame($oldCookie, session()->getId());
         Auth::forgetGuards();
         $this->withCookie(config('session.cookie'), $oldCookie);
         $this->assertGuestEndpoints(2);
-        $this->postJson('/api/login', ['email' => $b->email, 'password' => 'password'])
+        $this->sessionPost('/api/login', ['email' => $b->email, 'password' => 'password'])
             ->assertOk()->assertJsonPath('data.user.id', $b->id);
         $bCookie = session()->getId();
         Auth::forgetGuards();
@@ -161,7 +172,7 @@ class DevelopmentAuthenticationSafetyTest extends TestCase
             ->postJson('/api/dev-login')->assertNotFound();
         $user = User::factory()->create(['is_active' => true]);
         $this->assertGuestEndpoints(1);
-        $this->postJson('/api/login', ['email' => $user->email, 'password' => 'password'])->assertOk();
+        $this->sessionPost('/api/login', ['email' => $user->email, 'password' => 'password'])->assertOk();
         $cookie = session()->getId();
         Auth::forgetGuards();
         $this->withCookie(config('session.cookie'), $cookie)->getJson('/api/health')->assertOk();

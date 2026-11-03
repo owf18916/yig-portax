@@ -80,6 +80,7 @@ import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { safeReturnPath } from '../auth/session.js'
 import { session, logoutPending, useCurrentUser } from '../composables/useCurrentUser'
+import { sessionFetch } from '../composables/useSessionApi.js'
 
 const logoUrl = '/images/portax-logo.webp'
 
@@ -99,13 +100,12 @@ const handleLogin = async () => {
   loading.value = true
 
   try {
-    const response = await fetch('/api/login', {
+    const response = await sessionFetch('/api/login', {
       method: 'POST',
       signal: AbortSignal.timeout(10000),
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
       },
       body: JSON.stringify({
         email: email.value,

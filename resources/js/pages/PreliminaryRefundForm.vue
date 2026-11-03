@@ -82,7 +82,7 @@ async function downloadEvidence(doc) {
 }
 function chooseFile(event) { documentFile.value = event.target.files?.[0] || null }
 async function api(url, options = {}) {
-  const response = await fetch(url, { credentials: 'include', ...options, headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', ...(document.querySelector('meta[name="csrf-token"]')?.content ? { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content } : {}) } })
+  const response = await fetch(url, { credentials: 'include', ...options, headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
   const result = await response.json()
   if (!response.ok) throw new Error(Object.values(result.errors || {}).flat().join(' ') || result.message || 'Request failed')
   return result.data

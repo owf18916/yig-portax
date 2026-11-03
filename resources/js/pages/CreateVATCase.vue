@@ -388,15 +388,12 @@ const submitForm = async () => {
       throw new Error('Selected period not found')
     }
     
-    // Get CSRF token from meta tag
-    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
 
     const response = await fetch('/api/tax-cases', {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken })
       },
       credentials: 'include',
       body: JSON.stringify({

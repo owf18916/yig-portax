@@ -15,15 +15,6 @@ const api = axios.create({
 
 installAxios(api)
 
-// Add CSRF token to requests
-api.interceptors.request.use((config) => {
-    const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
-    if (token) {
-        config.headers['X-CSRF-TOKEN'] = token
-    }
-    return config
-})
-
 /**
  * API Service for all tax case operations
  */

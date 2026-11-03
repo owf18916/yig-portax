@@ -3,6 +3,9 @@ import assert from 'node:assert/strict'
 import axios from 'axios'
 import { createSessionOwner } from '../resources/js/auth/session.js'
 import { createTransport } from '../resources/js/auth/transport.js'
+// Browser cookie/origin fixture; no HTTP or browser claims from this adapter harness.
+globalThis.document = { cookie: 'XSRF-TOKEN=fixture-cookie' }
+globalThis.location = { origin: 'http://localhost' }
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 const owner = () => {
   const value = createSessionOwner({ probe: async () => json({}, 401) })
@@ -30,11 +33,12 @@ test('20 simultaneous protected fetch 401s cause one invalidation and no replay'
   assert.equal(requests, 20)
   assert.match(session.state.notice, /Session expired/)
 })
-test('fetch checks JSON headers, preserves multipart body and existing CSRF header', async () => {
+test('fetch checks JSON headers, preserves multipart body and replaces competing CSRF headers', async () => {
   const session = owner(), body = new FormData()
   const { apiFetch } = createTransport(session, async (url, options) => {
     assert.equal(options.headers.get('Accept'), 'application/json')
-    assert.equal(options.headers.get('X-CSRF-TOKEN'), 'fixture')
+    assert.equal(options.headers.get('X-CSRF-TOKEN'), null)
+    assert.equal(options.headers.get('X-XSRF-TOKEN'), 'fixture-cookie')
     assert.equal(options.headers.has('Content-Type'), false)
     assert.equal(options.body, body)
     return json({ ok: true })
@@ -69,6 +73,7 @@ test('stale headers and stale body reads cannot publish account A data', async (
   const pending = new Promise(resolve => { finish = resolve })
   const { apiFetch } = createTransport(session, () => pending)
   const oldRead = apiFetch('/api/case')
+  await new Promise(resolve => setImmediate(resolve))
   session.accept({ id: 2 }, false)
   finish(json({ secret: 'fixture' }))
   await assert.rejects(oldRead, /previous account response/)
@@ -87,6 +92,7 @@ test('stale successful writes retain completion evidence, no automatic replay', 
   const pending = new Promise(resolve => { finish = resolve })
   const { apiFetch } = createTransport(session, () => { requests++; return pending })
   const write = apiFetch('/api/case', { method: 'POST' })
+  await new Promise(resolve => setImmediate(resolve))
   session.accept({ id: 2 }, false)
   finish(json({}, 201))
   await assert.rejects(write, /HTTP 201.*reported completion/)
@@ -122,7 +128,7 @@ for (const [name, client] of [['default', axios], ['custom', axios.create({ base
     createTransport(session).installAxios(client)
     for (const status of [403, 422, 401]) {
       const adapter = async config => {
-        assert.equal(config.headers.Accept, 'application/json')
+        assert.equal(config.headers.get('Accept'), 'application/json')
         const response = { status, data: { errors: { field: ['invalid'] } }, headers: { 'content-type': 'application/json' }, config }
         throw new axios.AxiosError('fixture', 'ERR_BAD_REQUEST', config, {}, response)
       }

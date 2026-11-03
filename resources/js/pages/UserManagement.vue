@@ -135,7 +135,7 @@ const emptyForm = () => ({ name: '', email: '', role_id: '', entity_id: '', phon
 const form = reactive(emptyForm())
 
 function request(url, options = {}) {
-  return fetch(url, { credentials: 'include', headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '', ...options.headers }, ...options })
+  return fetch(url, { credentials: 'include', headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...options.headers }, ...options })
 }
 async function responseJson(response) { try { return await response.json() } catch { return {} } }
 async function loadOptions() {

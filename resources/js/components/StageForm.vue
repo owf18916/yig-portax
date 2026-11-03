@@ -458,7 +458,7 @@
 
 <script setup>
 import { session } from '../composables/useCurrentUser.js'
-import { apiFetch as fetch, inspectUpload } from '../composables/useSessionApi.js'
+import { apiFetch as fetch, inspectUpload, prepareUpload } from '../composables/useSessionApi.js'
 
 import { ref, reactive, onMounted, onUnmounted, watch, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
@@ -959,9 +959,6 @@ const uploadFile = async (file, documentType = 'supporting_document') => {
       formData.append('stage_code', props.stageId.toString())
       formData.append('document_type', documentType)
 
-      // Get CSRF token from meta tag
-      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
-
       // Use XMLHttpRequest for progress tracking
       const xhr = new XMLHttpRequest()
       const uploadGeneration = session.state.generation
@@ -1031,17 +1028,16 @@ const uploadFile = async (file, documentType = 'supporting_document') => {
 
       // NOW open the request
       xhr.open('POST', '/api/documents')
-      xhr.setRequestHeader('Accept', 'application/json')
-      xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest')
       xhr.withCredentials = true // Include cookies for session auth
       
-      // Set headers AFTER open() but BEFORE send()
-      if (csrfToken) {
-        xhr.setRequestHeader('X-CSRF-TOKEN', csrfToken)
-      }
-      
-      // Finally send the request
-      xhr.send(formData)
+      prepareUpload(xhr, '/api/documents', formData, uploadGeneration)
+        .then(() => xhr.send(formData))
+        .catch(error => {
+          delete uploadingFiles.value[fileId]
+          uploadProgress.value = 0
+          toastRef.value?.addToast('Upload Error', error.message, 'error', 5000)
+          reject(error)
+        })
     } catch (error) {
       toastRef.value?.addToast('Upload Error', error.message, 'error', 5000)
       uploadProgress.value = 0
@@ -1091,15 +1087,12 @@ const confirmDelete = async () => {
     const file = uploadedFiles.value.find(f => f.id === fileId)
 
     if (file && file.isUploaded) {
-      // Get CSRF token from meta tag
-      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
 
       // Delete from server
       const response = await fetch(`/api/documents/${fileId}`, {
         method: 'DELETE',
         credentials: 'include',
         headers: {
-          ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken })
         }
       })
 
@@ -1280,8 +1273,6 @@ const executeSubmitForm = async () => {
   successMessage.value = ''
 
   try {
-    // Get CSRF token from meta tag
-    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
 
     const payload = {
       ...formData,
@@ -1304,7 +1295,6 @@ const executeSubmitForm = async () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken })
       },
       credentials: 'include',
       body: JSON.stringify(payload)
@@ -1364,8 +1354,6 @@ const executeSaveDraft = async () => {
   successMessage.value = ''
 
   try {
-    // Get CSRF token from meta tag
-    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
 
     const payload = {
       ...formData,
@@ -1389,7 +1377,6 @@ const executeSaveDraft = async () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken })
       },
       credentials: 'include',
       body: JSON.stringify(payload)

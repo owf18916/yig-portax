@@ -1,5 +1,9 @@
+import { createCsrf } from './csrf.js'
 const writing = method => !['GET', 'HEAD', 'OPTIONS'].includes((method || 'GET').toUpperCase())
-export function createTransport(owner, nativeFetch = (...args) => globalThis.fetch(...args)) {
+export function createTransport(owner, nativeFetch = (...args) => globalThis.fetch(...args), csrf = createCsrf(owner)) {
+  function beforeSend(generation) {
+    if (generation !== owner.state.generation) throw new Error('Session changed before sending. No write was sent.')
+  }
   function checkGeneration(generation, method, status) {
     if (generation === owner.state.generation) return
     const outcome = status >= 200 && status < 300 ? 'The server reported completion.' : status >= 400 && status < 500 ? 'The server rejected the request.' : 'Its completion is uncertain.'
@@ -30,11 +34,13 @@ export function createTransport(owner, nativeFetch = (...args) => globalThis.fet
     if (owner.state.status !== 'authenticated') throw new Error('Verify your session before making protected requests. No write was sent.')
     const method = options.method || input?.method || 'GET'
     const generation = owner.state.generation
-    const headers = new Headers(input?.headers)
+    let headers = new Headers(input?.headers)
     new Headers(options.headers).forEach((value, key) => headers.set(key, value))
     // JSON failures even when the success body is PDF/XLSX. No multipart Content-Type override.
     headers.set('Accept', 'application/json')
     headers.set('X-Requested-With', 'XMLHttpRequest')
+    headers = await csrf.headers(input, method, headers, options.body)
+    beforeSend(generation)
     let response
     try {
       response = await nativeFetch(input, { credentials: 'include', ...options, headers })
@@ -59,11 +65,17 @@ export function createTransport(owner, nativeFetch = (...args) => globalThis.fet
     } })
   }
   function installAxios(client) {
-    client.interceptors.request.use(config => {
+    client.interceptors.request.use(async config => {
       if (owner.state.status !== 'authenticated') throw new Error('Verify your session before making protected requests. No write was sent.')
       config.sessionGeneration = owner.state.generation
       config.headers.Accept = 'application/json'
       config.headers['X-Requested-With'] = 'XMLHttpRequest'
+      const headers = await csrf.headers(client.getUri(config), config.method, config.headers, config.data)
+      config.headers = Object.fromEntries(headers)
+      // The shared provider owns injection, including when Axios has different defaults.
+      config.withXSRFToken = false
+      config.xsrfCookieName = null
+      beforeSend(config.sessionGeneration)
       return config
     })
     const inspect = response => {
@@ -83,5 +95,22 @@ export function createTransport(owner, nativeFetch = (...args) => globalThis.fet
     // 401 has invalidated this upload; do not consume its body as a successful write.
     if (xhr.status >= 200 && xhr.status < 300) checkGeneration(generation, 'POST', xhr.status)
   }
-  return { apiFetch, installAxios, inspectUpload, classify, checkGeneration }
+  async function prepareUpload(xhr, url, body, generation) {
+    const headers = await csrf.headers(url, 'POST', { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, body)
+    beforeSend(generation)
+    headers.forEach((value, key) => xhr.setRequestHeader(key, value))
+  }
+  // Explicit login/logout operate even while the protected identity owner is locked.
+  async function sessionFetch(url, options = {}) {
+    const generation = owner.state.generation
+    const headers = await csrf.headers(url, options.method, options.headers, options.body, { refresh: url === '/api/login' })
+    headers.set('Accept', 'application/json')
+    headers.set('X-Requested-With', 'XMLHttpRequest')
+    beforeSend(generation)
+    const response = await nativeFetch(url, { ...options, credentials: 'same-origin', headers })
+    checkGeneration(generation, options.method, response.status)
+    if (response.status === 419) classify({ status: 419, generation, method: options.method })
+    return response
+  }
+  return { apiFetch, installAxios, inspectUpload, prepareUpload, sessionFetch, classify, checkGeneration }
 }

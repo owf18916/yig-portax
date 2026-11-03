@@ -19,12 +19,18 @@ return Application::configure(basePath: dirname(__DIR__))
         // API routes use the existing web session guard.
         $middleware->api(prepend: [
             \Illuminate\Cookie\Middleware\EncryptCookies::class,
+            \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
             \Illuminate\Session\Middleware\StartSession::class,
             \Illuminate\View\Middleware\ShareErrorsFromSession::class,
-            // Note: VerifyCsrfToken is NOT applied to /api routes by default in Laravel 12
-            // Only web routes use it
+            \Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class,
         ]);
-        
+        // Protected guests keep the established JSON 401 before token checking.
+        // Anonymous login still traverses the verifier; bindings/policies follow it.
+        $middleware->appendToPriorityList(
+            \Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests::class,
+            \Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class,
+        );
+
         // Web routes use CSRF protection (this is default in Laravel)
         // No explicit setup needed here as it's automatic for web middleware group
     })

@@ -288,7 +288,6 @@ const submitForm = async () => {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content
       },
       body: JSON.stringify({
         stage_id: stageId,  // Use the stageId from route params (0 for preliminary, 4/7/10/12 for decision stages)

@@ -44,7 +44,7 @@ async function retry() {
   retrying.value = true
   try {
     await request(`/api/notification-logs/${detail.value.id}/retry`, {
-      method: 'POST', headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '' }
+      method: 'POST'
     })
     await open(detail.value.id)
     await load()

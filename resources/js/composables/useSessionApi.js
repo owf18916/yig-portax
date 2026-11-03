@@ -1,6 +1,6 @@
 import { session } from './useCurrentUser.js'
 import { createTransport } from '../auth/transport.js'
-export const { apiFetch, installAxios, inspectUpload } = createTransport(session)
+export const { apiFetch, installAxios, inspectUpload, prepareUpload, sessionFetch } = createTransport(session)
 
 // Private links use authenticated bytes with status/MIME checks, never a public file URL.
 export async function downloadPrivateDocument(id, filename) {

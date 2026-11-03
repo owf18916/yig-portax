@@ -246,12 +246,10 @@ const deleteAnnouncement = async () => {
   errorMessage.value = ''
 
   try {
-    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
     const response = await fetch(`/api/announcements/${props.editData.id}`, {
       method: 'DELETE',
       headers: {
         'Accept': 'application/json',
-        'X-CSRF-TOKEN': csrfToken || ''
       },
       credentials: 'include'
     })

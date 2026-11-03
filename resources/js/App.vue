@@ -85,6 +85,7 @@ import { useRouter, useRoute } from 'vue-router'
 import Toast from './components/Toast.vue'
 import { setToastComponent } from './composables/useToast'
 import { session, logoutPending, useCurrentUser } from './composables/useCurrentUser'
+import { sessionFetch } from './composables/useSessionApi.js'
 
 const logoUrl = '/images/portax-logo.webp'
 
@@ -140,9 +141,9 @@ const handleLogout = async () => {
   clearCurrentUser()
   const logoutGeneration = session.state.generation
   try {
-    const response = await fetch('/api/logout', {
+    const response = await sessionFetch('/api/logout', {
       method: 'POST', credentials: 'include', signal: AbortSignal.timeout(10000),
-      headers: { Accept: 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '' }
+      headers: { Accept: 'application/json' }
     })
     if (!response.ok || response.redirected || !response.headers.get('content-type')?.includes('application/json') || !(await response.json()).success) throw new Error('Logout not confirmed')
   } catch {

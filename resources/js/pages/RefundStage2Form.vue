@@ -267,7 +267,6 @@ const submitForm = async () => {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content
       },
       body: JSON.stringify({
         request_number: formData.value.request_number,

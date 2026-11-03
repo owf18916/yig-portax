@@ -6,6 +6,7 @@ globalThis.localStorage = { getItem: key => values.get(key), setItem: (key, valu
 const localLocks = new Map()
 globalThis.sessionStorage = { getItem: key => localLocks.get(key), setItem: (key, value) => localLocks.set(key, value), removeItem: key => localLocks.delete(key) }
 globalThis.window = { addEventListener: (name, handler) => handlers.set(name, handler) }
+globalThis.location = { origin: 'http://localhost' }
 const { session, useCurrentUser } = await import('../resources/js/composables/useCurrentUser.js')
 const response = id => new Response(JSON.stringify({ success: true, data: { id, entity_id: id } }), { headers: { 'Content-Type': 'application/json' } })
 test('actual browser adapter ignores stale storage, handles logout/login storage events and suppresses old probe', async () => {

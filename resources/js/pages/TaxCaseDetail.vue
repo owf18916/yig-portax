@@ -1225,7 +1225,6 @@ const saveNextAction = async (formData) => {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content
       },
       body: JSON.stringify(formData)
     })
@@ -1274,7 +1273,6 @@ const continueToNextStage = async (nextStageId) => {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content
       },
       body: JSON.stringify({
         stage_id: 1,

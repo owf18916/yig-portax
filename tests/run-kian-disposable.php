@@ -80,11 +80,11 @@ if (($argv[2] ?? '') === 'concurrency') {
 // The PHPUnit application inherits exactly the verified environment above.
 $args = array_slice($argv, 2);
 if (($args[0] ?? '') === 'artisan-test') {
-    passthru(escapeshellarg(PHP_BINARY).' '.escapeshellarg(__DIR__.'/../artisan').' test --compact', $code);
+    passthru(escapeshellarg(PHP_BINARY).' '.escapeshellarg(__DIR__.'/../artisan').' test --compact --do-not-cache-result', $code);
     exit($code);
 }
 if (! $args) {
     $args = ['--filter=KianMultiStageConstraintTest|DecisionPointContractNormalizationTest|EntityAuthorizationHardeningTest'];
 }
-passthru(escapeshellarg(PHP_BINARY).' '.escapeshellarg(__DIR__.'/../vendor/phpunit/phpunit/phpunit').' '.implode(' ', array_map('escapeshellarg', $args)), $code);
+passthru(escapeshellarg(PHP_BINARY).' '.escapeshellarg(__DIR__.'/../vendor/phpunit/phpunit/phpunit').' --do-not-cache-result '.implode(' ', array_map('escapeshellarg', $args)), $code);
 exit($code);

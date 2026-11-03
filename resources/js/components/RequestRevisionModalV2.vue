@@ -698,13 +698,6 @@ const submit = async () => {
   loading.value = true
 
   try {
-    // Get CSRF token
-    const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
-    
-    if (!token) {
-      throw new Error('CSRF token not found')
-    }
-
     // Build both collections from the same canonical selected business keys.
     // Presence is deliberately used here: false, 0, an empty string, and null
     // are legitimate values whose acceptance is determined by server rules.
@@ -749,7 +742,6 @@ const submit = async () => {
       {
         method: 'POST',
         headers: {
-          'X-CSRF-TOKEN': token,
           'Accept': 'application/json'
         },
         credentials: 'include',

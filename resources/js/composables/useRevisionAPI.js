@@ -17,13 +17,6 @@ export function useRevisionAPI() {
   const successMessage = ref(null)
 
   /**
-   * Get CSRF token from meta tag
-   */
-  const getCsrfToken = () => {
-    return document.querySelector('meta[name="csrf-token"]')?.content || ''
-  }
-
-  /**
    * Build endpoint URL for any model type
    * Examples:
    *   buildUrl('tax-cases', 123, 'revisions/request')
@@ -74,7 +67,6 @@ export function useRevisionAPI() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-CSRF-TOKEN': getCsrfToken()
         },
         body: JSON.stringify({
           fields,
@@ -128,7 +120,6 @@ export function useRevisionAPI() {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'X-CSRF-TOKEN': getCsrfToken()
         },
         body: JSON.stringify(payload)
       })
@@ -161,7 +152,6 @@ export function useRevisionAPI() {
       
       const response = await fetch(url, {
         headers: {
-          'X-CSRF-TOKEN': getCsrfToken()
         }
       })
 
@@ -191,7 +181,6 @@ export function useRevisionAPI() {
       
       const response = await fetch(url, {
         headers: {
-          'X-CSRF-TOKEN': getCsrfToken()
         }
       })
 

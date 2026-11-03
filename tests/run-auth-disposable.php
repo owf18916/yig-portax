@@ -8,9 +8,9 @@ foreach (['app/private', 'app/public', 'app/nas', 'framework/testing/disks', 'fr
         throw new RuntimeException('Could not create isolated test storage.');
     }
 }
-foreach (['LARAVEL_STORAGE_PATH' => $root, 'FILESYSTEM_DISK' => 'local', 'NAS_PATH' => $root.'/app/nas', 'VIEW_COMPILED_PATH' => $root.'/framework/views'] as $key => $value) {
+foreach (['LARAVEL_STORAGE_PATH' => $root, 'APP_KEY' => 'base64:'.base64_encode(random_bytes(32)), 'APP_PREVIOUS_KEYS' => '', 'FILESYSTEM_DISK' => 'local', 'NAS_PATH' => $root.'/app/nas', 'VIEW_COMPILED_PATH' => $root.'/framework/views'] as $key => $value) {
     putenv("$key=$value");
     $_ENV[$key] = $_SERVER[$key] = $value;
 }
-echo 'Verified fresh task-owned temporary storage; fake disks are confined to it.'.PHP_EOL;
+echo 'Verified fresh task-owned temporary storage: '.$root.'; fake disks are confined to it.'.PHP_EOL;
 require __DIR__.'/run-kian-disposable.php';

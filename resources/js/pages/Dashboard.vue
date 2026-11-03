@@ -361,12 +361,10 @@ const deleteAnnouncementQuick = async (announcement) => {
   if (!confirm(`Delete "${announcement.title}"?`)) return
 
   try {
-    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
     const response = await fetch(`/api/announcements/${announcement.id}`, {
       method: 'DELETE',
       headers: {
         'Accept': 'application/json',
-        'X-CSRF-TOKEN': csrfToken || ''
       },
       credentials: 'include'
     })
@@ -407,15 +405,12 @@ const handleAnnouncementSubmit = async (formData) => {
       expires_at: formData.expires_at ? new Date(formData.expires_at).toISOString() : null
     }
 
-    // Get CSRF token from meta tag
-    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
 
     const response = await fetch(url, {
       method,
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'X-CSRF-TOKEN': csrfToken || ''
       },
       credentials: 'include',
       body: JSON.stringify(payload)
