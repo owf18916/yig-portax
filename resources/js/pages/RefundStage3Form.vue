@@ -79,7 +79,7 @@
               placeholder="e.g., INSTR-20260224-001"
               required
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              :disabled="isSubmitting"
+              :disabled="isSubmitting || !canSubmit"
             />
           </div>
 
@@ -92,7 +92,7 @@
                 type="date"
                 required
                 class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                :disabled="isSubmitting"
+                :disabled="isSubmitting || !canSubmit"
               />
             </div>
             <div>
@@ -102,7 +102,7 @@
                 type="date"
                 required
                 class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                :disabled="isSubmitting"
+                :disabled="isSubmitting || !canSubmit"
               />
             </div>
           </div>
@@ -119,7 +119,7 @@
                   type="text"
                   placeholder="e.g., 008"
                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  :disabled="isSubmitting"
+                  :disabled="isSubmitting || !canSubmit"
                 />
               </div>
               <div>
@@ -130,7 +130,7 @@
                   placeholder="e.g., Bank Indonesia"
                   required
                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  :disabled="isSubmitting"
+                  :disabled="isSubmitting || !canSubmit"
                 />
               </div>
             </div>
@@ -144,7 +144,7 @@
                   placeholder="e.g., 123456789012"
                   required
                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  :disabled="isSubmitting"
+                  :disabled="isSubmitting || !canSubmit"
                 />
               </div>
               <div>
@@ -155,7 +155,7 @@
                   placeholder="e.g., PT XYZ"
                   required
                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  :disabled="isSubmitting"
+                  :disabled="isSubmitting || !canSubmit"
                 />
               </div>
             </div>
@@ -167,7 +167,7 @@
                 type="text"
                 placeholder="e.g., Main Account"
                 class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                :disabled="isSubmitting"
+                :disabled="isSubmitting || !canSubmit"
               />
             </div>
 
@@ -175,14 +175,15 @@
               <label class="block text-sm font-medium text-gray-700 mb-2">Transfer Amount</label>
               <FormField
                 v-model="formData.transfer_amount"
-                :type="isPreliminary ? 'text' : 'formatted-number'"
+                :readonly="!isPreliminary"
+                type="text"
                 inputmode="decimal"
                 :decimal-places="2"
                 step="0.01"
                 min="0"
-                placeholder="Amount to transfer (if different from refund amount)"
+                placeholder="Authorized transfer amount"
                 class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                :disabled="isSubmitting"
+                :disabled="isSubmitting || !canSubmit"
               />
             </div>
           </div>
@@ -192,10 +193,11 @@
             <label class="block text-sm font-medium text-gray-700 mb-2">Notes (Optional)</label>
             <textarea
               v-model="formData.notes"
+              :readonly="!isPreliminary"
               rows="3"
               placeholder="Add any notes..."
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              :disabled="isSubmitting"
+              :disabled="isSubmitting || !canSubmit"
             ></textarea>
           </div>
 
@@ -212,7 +214,7 @@
             <button
               type="submit"
               class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50"
-              :disabled="isSubmitting"
+              :disabled="isSubmitting || !canSubmit"
             >
               {{ isSubmitting ? 'Updating...' : 'Update Instruction (Stage 3)' }}
             </button>
@@ -248,6 +250,7 @@ const refundId = route.params.refundId
 
 const isLoading = ref(false)
 const isSubmitting = ref(false)
+const canSubmit = ref(false)
 const apiError = ref('')
 const isPreliminary = ref(false)
 
@@ -279,9 +282,8 @@ const formatCurrency = (value) => {
 const loadRefundData = async () => {
   try {
     isLoading.value = true
-    const endpoint = refundId
-      ? `/api/tax-cases/${caseId}/refunds/${refundId}/refund-stages/3`
-      : `/api/tax-cases/${caseId}/refund-stages/3`
+    if (!refundId) throw new Error('Select a Refund explicitly from the case before saving payment evidence.')
+    const endpoint = `/api/tax-cases/${caseId}/refunds/${refundId}/refund-stages/3`
 
     const response = await fetch(endpoint, {
       method: 'GET',
@@ -293,11 +295,17 @@ const loadRefundData = async () => {
 
     const result = await response.json()
     const data = result.data || result
+    canSubmit.value = !!data.can_submit
     isPreliminary.value = !!data.is_preliminary
+    formData.value.notes = data.notes || ''
 
     refundNumber.value = data.refund_number || 'N/A'
     refundAmount.value = data.refund_amount || 0
     
+    formData.value.transfer_amount = data.transfer_amount || data.refund_amount
+    for (const key of ['instruction_number', 'instruction_issue_date', 'instruction_received_date']) {
+      if (data[key]) formData.value[key] = key.endsWith('date') ? data[key].slice(0, 10) : data[key]
+    }
     // Pre-fill bank details if available
     if (data.bank_code) formData.value.bank_code = data.bank_code
     if (data.bank_name) formData.value.bank_name = data.bank_name
@@ -316,6 +324,7 @@ const submitForm = async () => {
   try {
     isSubmitting.value = true
     apiError.value = ''
+    if (!canSubmit.value) throw new Error('This payment stage is locked or its predecessor is incomplete. Reload the selected Refund.')
 
     if (!formData.value.instruction_number) throw new Error('Instruction number is required')
     if (!formData.value.instruction_issue_date) throw new Error('Instruction issue date is required')
@@ -324,9 +333,8 @@ const submitForm = async () => {
     if (!formData.value.account_number) throw new Error('Account number is required')
     if (!formData.value.account_holder) throw new Error('Account holder is required')
 
-    const endpoint = refundId
-      ? `/api/tax-cases/${caseId}/refunds/${refundId}/refund-stages/3`
-      : `/api/tax-cases/${caseId}/refund-stages/3`
+    if (!refundId) throw new Error('Select a Refund explicitly from the case before saving payment evidence.')
+    const endpoint = `/api/tax-cases/${caseId}/refunds/${refundId}/refund-stages/3`
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -351,7 +359,7 @@ const submitForm = async () => {
 
     if (!response.ok) {
       const error = await response.json()
-      throw new Error(error.message || error.error || `API Error: ${response.status}`)
+      throw new Error(Object.values(error.errors || {}).flat().join(' ') || error.message || error.error || `API Error: ${response.status}`)
     }
 
     showSuccess('Success', 'Instruction updated! Proceeding to Stage 4...')
@@ -359,7 +367,7 @@ const submitForm = async () => {
     setTimeout(() => {
       router.push({
         name: 'RefundStage4FormWithId',
-        params: { id: caseId, refundId: refundId || route.params.refundId }
+        params: { id: caseId, refundId }
       })
     }, 1500)
   } catch (error) {

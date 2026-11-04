@@ -207,32 +207,7 @@ class RefundProcessController extends ApiController
             return $this->error('Refund not found for this tax case', 404);
         }
 
-        if ($refundProcess->refund_method !== 'BANK_TRANSFER') {
-            return $this->error('Refund method is not bank transfer', 422);
-        }
-
-        $validated = $request->validate([
-            'transfer_date' => 'required|date',
-            'transfer_amount' => 'required|numeric|min:0',
-            'bank_code' => 'required|string',
-            'bank_name' => 'required|string',
-            'account_number' => 'required|string',
-            'account_name' => 'required|string',
-            'notes' => 'nullable|string',
-        ]);
-
-        $validated['refund_process_id'] = $refundProcess->id;
-        $validated['transfer_number'] = $this->generateTransferNumber($refundProcess->id);
-        $validated['transfer_status'] = 'PENDING';
-        $validated['created_by'] = auth()->id();
-
-        $bankTransfer = BankTransferRequest::create($validated);
-
-        return $this->success(
-            $bankTransfer->load(['refundProcess', 'createdBy']),
-            'Bank transfer request created successfully',
-            201
-        );
+        return $this->error('Use explicit Refund stages 2-4; direct transfer mutation and corrections are unsupported.', 422);
     }
 
     /**
@@ -248,25 +223,7 @@ class RefundProcessController extends ApiController
             return $this->error('Transfer not found for this refund', 404);
         }
 
-        if ($transfer->transfer_status !== 'PENDING') {
-            return $this->error('Transfer is not in pending status', 422);
-        }
-
-        $transfer->update(['transfer_status' => 'COMPLETED']);
-
-        // If all transfers completed, mark refund as completed
-        $pendingTransfers = $refundProcess->bankTransferRequests()
-            ->where('transfer_status', '!=', 'COMPLETED')
-            ->count();
-
-        if ($pendingTransfers === 0) {
-            $refundProcess->update(['refund_status' => 'COMPLETED']);
-        }
-
-        return $this->success(
-            $transfer->fresh(),
-            'Bank transfer processed successfully'
-        );
+        return $this->error('Use explicit Refund stages 2-4; direct transfer mutation and corrections are unsupported.', 422);
     }
 
     /**
@@ -282,19 +239,7 @@ class RefundProcessController extends ApiController
             return $this->error('Transfer not found for this refund', 404);
         }
 
-        $validated = $request->validate([
-            'rejection_reason' => 'required|string|min:10',
-        ]);
-
-        $transfer->update([
-            'transfer_status' => 'REJECTED',
-            'rejection_reason' => $validated['rejection_reason'],
-        ]);
-
-        return $this->success(
-            $transfer->fresh(),
-            'Bank transfer rejected'
-        );
+        return $this->error('Use explicit Refund stages 2-4; direct transfer mutation and corrections are unsupported.', 422);
     }
 
     /**

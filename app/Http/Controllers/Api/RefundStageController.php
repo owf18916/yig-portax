@@ -37,7 +37,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
  *   - Confirm receipt of funds
  *   - Update: received_date, received_amount
  *   - Status: processing → completed
- *   - TaxCase status: → CLOSED_REFUNDED
+ *   - Ordinary settlement leaves the TaxCase unchanged
  * 
  * IMPORTANT:
  * - Multiple refunds allowed for PRELIMINARY stage (stage_id=0)
@@ -172,6 +172,8 @@ class RefundStageController extends ApiController
                 $data['notes'] = $bankTransfer->notes;
             }
 
+            $data['can_submit'] = $this->canSubmitPayment($taxCase, $refundProcess, 2);
+
             return $this->success($data);
         } catch (ModelNotFoundException $e) {
             return $this->error('Tax case or refund process not found', 404);
@@ -190,67 +192,16 @@ class RefundStageController extends ApiController
      */
     public function createRefundStage2(Request $request, TaxCase $taxCase, $refundId = null): JsonResponse
     {
-        try {
-            $validated = $request->validate([
-                'request_number' => 'required|string',
-                'request_date' => 'required|date',
-                'transfer_date' => 'required|date',
-                'notes' => 'nullable|string',
-            ]);
-
-            $refundProcess = $this->getRefundProcess($taxCase, $refundId);
-            if (\App\Services\PreliminaryRefundLifecycle::concerns($taxCase, $refundProcess)) {
-                $transfer = app(\App\Services\PreliminaryRefundLifecycle::class)->payment($taxCase->id, (int) $refundId, 2, $validated);
-                return $this->success($transfer, 'Preliminary payment evidence saved');
-            }
-
-            // Check if already has a bank transfer request (avoid duplicates in stage 2)
-            $existingTransfer = $refundProcess->bankTransferRequests()
-                ->whereNull('deleted_at')
-                ->first();
-
-            if ($existingTransfer) {
-                return $this->success(
-                    $existingTransfer->fresh()->load(['refundProcess', 'createdBy']),
-                    'Bank transfer request already exists for this refund. Updating Refund Stage 2...',
-                    200
-                );
-            }
-
-            // Create bank transfer request (Refund Stage 2)
-            $bankTransfer = BankTransferRequest::create([
-                'refund_process_id' => $refundProcess->id,
-                'request_number' => $validated['request_number'],
-                'request_date' => $validated['request_date'],
-                'transfer_number' => 'TRN-' . $refundProcess->id . '-' . now()->timestamp,
-                'transfer_date' => $validated['transfer_date'],
-                'transfer_amount' => $refundProcess->refund_amount,  // Transfer amount = refund amount
-                'transfer_status' => 'pending',  // Refund Stage 2: Transfer request submitted
-                'notes' => $validated['notes'] ?? null,
-                'created_by' => auth()->id(),
-            ]);
-
-            // Update refund_processes status to show we're in stage 2
-            $refundProcess->update([
-                'refund_status' => 'approved',  // Moving to next stage
-            ]);
-
-            return $this->success(
-                $bankTransfer->fresh()->load(['refundProcess', 'createdBy']),
-                'Bank transfer request created successfully (Refund Stage 2/4)',
-                201
-            );
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return $this->error('Validation failed', 422, $e->errors());
-        } catch (ModelNotFoundException $e) {
-            return $this->error('Tax case or refund process not found', 404);
-        } catch (\Exception $e) {
-            Log::error('RefundStageController::createRefundStage2 error', [
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            return $this->error('Failed to create bank transfer request: ' . $e->getMessage(), 500);
+        // Identity is required before any fallback lookup or financial validation.
+        $requestId = validator(['refund_process_id' => $refundId], ['refund_process_id' => 'required|integer|min:1'])->validate();
+        $refund = $taxCase->refundProcesses()->whereKey($requestId['refund_process_id'])->firstOrFail();
+        if (\App\Services\PreliminaryRefundLifecycle::concerns($taxCase, $refund)) {
+            $transfer = app(\App\Services\PreliminaryRefundLifecycle::class)->payment($taxCase->id, (int) $refundId, 2, $request->all());
+        } else {
+            $transfer = app(\App\Services\OrdinaryRefundPayment::class)->payment($taxCase->id, $refundId, 2, $request->all());
         }
+
+        return $this->success($transfer->load(['refundProcess', 'createdBy']), 'Payment evidence saved');
     }
 
     /**
@@ -302,6 +253,8 @@ class RefundStageController extends ApiController
                 $data['notes'] = $bankTransfer->notes;
             }
 
+            $data['can_submit'] = $this->canSubmitPayment($taxCase, $refundProcess, 3);
+
             return $this->success($data);
         } catch (ModelNotFoundException $e) {
             return $this->error('Tax case or refund process not found', 404);
@@ -324,68 +277,16 @@ class RefundStageController extends ApiController
      */
     public function updateRefundStage3(Request $request, TaxCase $taxCase, $refundId = null): JsonResponse
     {
-        try {
-            $validated = $request->validate([
-                'instruction_number' => 'required|string',
-                'instruction_issue_date' => 'required|date',
-                'instruction_received_date' => 'required|date',
-                'bank_code' => 'nullable|string',
-                'bank_name' => 'nullable|string',
-                'account_number' => 'nullable|string',
-                'account_holder' => 'nullable|string',
-                'account_name' => 'nullable|string',
-                'transfer_amount' => 'nullable|numeric|min:0',
-                'notes' => 'nullable|string',
-            ]);
-
-            $refundProcess = $this->getRefundProcess($taxCase, $refundId);
-            if (\App\Services\PreliminaryRefundLifecycle::concerns($taxCase, $refundProcess)) {
-                $transfer = app(\App\Services\PreliminaryRefundLifecycle::class)->payment($taxCase->id, (int) $refundId, 3, $validated);
-                return $this->success($transfer, 'Preliminary payment evidence saved');
-            }
-
-            $bankTransfer = $refundProcess->bankTransferRequests()->latest()->first();
-
-            if (!$bankTransfer) {
-                return $this->error('No bank transfer request found. Please complete Refund Stage 2 first.', 422);
-            }
-
-            // Update bank transfer with instruction details (Refund Stage 3)
-            $bankTransfer->update([
-                'instruction_number' => $validated['instruction_number'],
-                'instruction_issue_date' => $validated['instruction_issue_date'],
-                'instruction_received_date' => $validated['instruction_received_date'],
-                'bank_code' => $validated['bank_code'] ?? $bankTransfer->bank_code,
-                'bank_name' => $validated['bank_name'] ?? $bankTransfer->bank_name,
-                'account_number' => $validated['account_number'] ?? $bankTransfer->account_number,
-                'account_holder' => $validated['account_holder'] ?? $bankTransfer->account_holder,
-                'account_name' => $validated['account_name'] ?? $bankTransfer->account_name,
-                'transfer_amount' => $validated['transfer_amount'] ?? $bankTransfer->transfer_amount,
-                'transfer_status' => 'processing',  // Refund Stage 3: Instruction received, awaiting payment
-                'notes' => $validated['notes'] ?? $bankTransfer->notes,
-            ]);
-
-            // Update refund status to show progression
-            $refundProcess->update([
-                'refund_status' => 'processed',
-            ]);
-
-            return $this->success(
-                $bankTransfer->fresh()->load(['refundProcess', 'createdBy']),
-                'Transfer instruction updated successfully (Refund Stage 3/4)',
-                200
-            );
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return $this->error('Validation failed', 422, $e->errors());
-        } catch (ModelNotFoundException $e) {
-            return $this->error('Tax case or refund process not found', 404);
-        } catch (\Exception $e) {
-            Log::error('RefundStageController::updateRefundStage3 error', [
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            return $this->error('Failed to update transfer instruction: ' . $e->getMessage(), 500);
+        // Identity is required before any fallback lookup or financial validation.
+        $requestId = validator(['refund_process_id' => $refundId], ['refund_process_id' => 'required|integer|min:1'])->validate();
+        $refund = $taxCase->refundProcesses()->whereKey($requestId['refund_process_id'])->firstOrFail();
+        if (\App\Services\PreliminaryRefundLifecycle::concerns($taxCase, $refund)) {
+            $transfer = app(\App\Services\PreliminaryRefundLifecycle::class)->payment($taxCase->id, (int) $refundId, 3, $request->all());
+        } else {
+            $transfer = app(\App\Services\OrdinaryRefundPayment::class)->payment($taxCase->id, $refundId, 3, $request->all());
         }
+
+        return $this->success($transfer->load(['refundProcess', 'createdBy']), 'Payment evidence saved');
     }
 
     /**
@@ -432,6 +333,8 @@ class RefundStageController extends ApiController
                 $data['notes'] = $bankTransfer->notes;
             }
 
+            $data['can_submit'] = $this->canSubmitPayment($taxCase, $refundProcess, 4);
+
             return $this->success($data);
         } catch (ModelNotFoundException $e) {
             return $this->error('Tax case or refund process not found', 404);
@@ -444,7 +347,7 @@ class RefundStageController extends ApiController
      * Final stage: Confirm receipt of refund funds
      * Updates:
      * - received_date: When funds were received
-     * - received_amount: Actual amount received (may differ from requested)
+     * - received_amount: Full authorized amount received (exact decimal equality)
      * - receipt_number: Bank receipt confirmation number
      * - refund_status → 'completed'
      * - transfer_status → 'completed'
@@ -456,76 +359,16 @@ class RefundStageController extends ApiController
      */
     public function completeRefundStage4(Request $request, TaxCase $taxCase, $refundId = null): JsonResponse
     {
-        try {
-            $validated = $request->validate([
-                'receipt_number' => 'required|string',
-                'received_date' => 'required|date',
-                'received_amount' => 'required|numeric|min:0',
-                'notes' => 'nullable|string',
-            ]);
-
-            $refundProcess = $this->getRefundProcess($taxCase, $refundId);
-            if (\App\Services\PreliminaryRefundLifecycle::concerns($taxCase, $refundProcess)) {
-                $transfer = app(\App\Services\PreliminaryRefundLifecycle::class)->payment($taxCase->id, (int) $refundId, 4, $validated);
-                return $this->success($transfer, 'Preliminary payment evidence saved');
-            }
-
-            $bankTransfer = $refundProcess->bankTransferRequests()->latest()->first();
-
-            if (!$bankTransfer) {
-                return $this->error('No bank transfer found. Please complete Refund Stages 2-3 first.', 422);
-            }
-
-            // Validate received amount doesn't exceed transfer amount by unreasonable margin
-            if ($validated['received_amount'] > $bankTransfer->transfer_amount * 1.1) {
-                return $this->error(
-                    'Received amount cannot exceed transfer amount by more than 10%. ' .
-                    'Transfer: ' . $bankTransfer->transfer_amount . ', Received: ' . $validated['received_amount'],
-                    422
-                );
-            }
-
-            // Complete refund process - Refund Stage 4 (FINAL)
-            $bankTransfer->update([
-                'receipt_number' => $validated['receipt_number'],
-                'received_date' => $validated['received_date'],
-                'received_amount' => $validated['received_amount'],
-                'transfer_status' => 'completed',
-                'notes' => $validated['notes'] ?? $bankTransfer->notes,
-            ]);
-
-            // Update refund process to completed
-            $refundProcess->update([
-                'refund_status' => 'completed',
-                'approved_by' => auth()->id(),
-                'approved_at' => now(),
-            ]);
-
-            // For PRELIMINARY refund, update TaxCase status to CLOSED_REFUNDED
-            if ($refundProcess->isPreliminary()) {
-                $taxCase->update([
-                    'status' => 'CLOSED_REFUNDED',
-                    'completed_date' => now(),
-                    'is_completed' => true,
-                ]);
-            }
-
-            return $this->success(
-                $bankTransfer->fresh()->load(['refundProcess', 'createdBy']),
-                'Refund completed successfully (Refund Stage 4/4 - CLOSED)',
-                200
-            );
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return $this->error('Validation failed', 422, $e->errors());
-        } catch (ModelNotFoundException $e) {
-            return $this->error('Tax case or refund process not found', 404);
-        } catch (\Exception $e) {
-            Log::error('RefundStageController::completeRefundStage4 error', [
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            return $this->error('Failed to complete refund: ' . $e->getMessage(), 500);
+        // Identity is required before any fallback lookup or financial validation.
+        $requestId = validator(['refund_process_id' => $refundId], ['refund_process_id' => 'required|integer|min:1'])->validate();
+        $refund = $taxCase->refundProcesses()->whereKey($requestId['refund_process_id'])->firstOrFail();
+        if (\App\Services\PreliminaryRefundLifecycle::concerns($taxCase, $refund)) {
+            $transfer = app(\App\Services\PreliminaryRefundLifecycle::class)->payment($taxCase->id, (int) $refundId, 4, $request->all());
+        } else {
+            $transfer = app(\App\Services\OrdinaryRefundPayment::class)->payment($taxCase->id, $refundId, 4, $request->all());
         }
+
+        return $this->success($transfer->load(['refundProcess', 'createdBy']), 'Payment evidence saved');
     }
 
     /**
@@ -536,6 +379,14 @@ class RefundStageController extends ApiController
      * @return RefundProcess
      * @throws ModelNotFoundException
      */
+    private function canSubmitPayment(TaxCase $case, RefundProcess $refund, int $stage): bool
+    {
+        if (\App\Services\PreliminaryRefundLifecycle::concerns($case, $refund)) {
+            return true; // Preserve the separate Preliminary UI contract.
+        }
+        return app(\App\Services\OrdinaryRefundPayment::class)->canSubmit($case, $refund, $stage);
+    }
+
     private function getRefundProcess(TaxCase $taxCase, $refundId = null): RefundProcess
     {
         if ($refundId) {

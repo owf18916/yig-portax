@@ -87,7 +87,7 @@
               placeholder="e.g., REQN-20260224-001"
               required
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              :disabled="isSubmitting"
+              :disabled="isSubmitting || !canSubmit"
             />
           </div>
 
@@ -99,7 +99,7 @@
               type="date"
               required
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              :disabled="isSubmitting"
+              :disabled="isSubmitting || !canSubmit"
             />
           </div>
 
@@ -111,7 +111,7 @@
               type="date"
               required
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              :disabled="isSubmitting"
+              :disabled="isSubmitting || !canSubmit"
             />
           </div>
 
@@ -123,7 +123,7 @@
               rows="3"
               placeholder="Add any notes..."
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              :disabled="isSubmitting"
+              :disabled="isSubmitting || !canSubmit"
             ></textarea>
           </div>
 
@@ -140,7 +140,7 @@
             <button
               type="submit"
               class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50"
-              :disabled="isSubmitting"
+              :disabled="isSubmitting || !canSubmit"
             >
               {{ isSubmitting ? 'Submitting...' : 'Submit Transfer Request (Stage 2)' }}
             </button>
@@ -175,6 +175,7 @@ const refundId = route.params.refundId
 
 const isLoading = ref(false)
 const isSubmitting = ref(false)
+const canSubmit = ref(false)
 const isReadOnly = ref(false)  // Track if stage is read-only (completed)
 const currentRefundStage = ref(2)  // Track current stage
 const apiError = ref('')
@@ -202,9 +203,8 @@ const formatCurrency = (value) => {
 const loadRefundData = async () => {
   try {
     isLoading.value = true
-    const endpoint = refundId 
-      ? `/api/tax-cases/${caseId}/refunds/${refundId}/refund-stages/2`
-      : `/api/tax-cases/${caseId}/refund-stages/2`
+    if (!refundId) throw new Error('Select a Refund explicitly from the case before saving payment evidence.')
+    const endpoint = `/api/tax-cases/${caseId}/refunds/${refundId}/refund-stages/2`
 
     console.log('[RefundStage2] Loading from endpoint:', endpoint)
 
@@ -226,10 +226,14 @@ const loadRefundData = async () => {
     console.log('[RefundStage2] Successfully loaded refund data:', result)
     
     const data = result.data || result
+    canSubmit.value = !!data.can_submit
     
+    for (const key of ['request_number', 'request_date', 'transfer_date', 'notes']) {
+      if (data[key]) formData.value[key] = key.endsWith('date') ? data[key].slice(0, 10) : data[key]
+    }
     // Track current stage and set read-only flag
     currentRefundStage.value = data.current_stage || 2
-    isReadOnly.value = currentRefundStage.value > 2  // Read-only if past Stage 2
+    isReadOnly.value = !canSubmit.value || currentRefundStage.value > 2  // Read-only if past Stage 2
 
     refundNumber.value = data.refund_number || 'N/A'
     refundAmount.value = data.refund_amount || 0
@@ -246,6 +250,7 @@ const submitForm = async () => {
   try {
     isSubmitting.value = true
     apiError.value = ''
+    if (!canSubmit.value) throw new Error('This payment stage is locked or its predecessor is incomplete. Reload the selected Refund.')
 
     if (!formData.value.request_number) {
       throw new Error('Request number is required')
@@ -257,9 +262,8 @@ const submitForm = async () => {
       throw new Error('Transfer date is required')
     }
 
-    const endpoint = refundId
-      ? `/api/tax-cases/${caseId}/refunds/${refundId}/refund-stages/2`
-      : `/api/tax-cases/${caseId}/refund-stages/2`
+    if (!refundId) throw new Error('Select a Refund explicitly from the case before saving payment evidence.')
+    const endpoint = `/api/tax-cases/${caseId}/refunds/${refundId}/refund-stages/2`
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -278,7 +282,7 @@ const submitForm = async () => {
 
     if (!response.ok) {
       const error = await response.json()
-      throw new Error(error.message || error.error || `API Error: ${response.status}`)
+      throw new Error(Object.values(error.errors || {}).flat().join(' ') || error.message || error.error || `API Error: ${response.status}`)
     }
 
     showSuccess('Success', 'Transfer request submitted! Proceeding to Stage 3...')
@@ -286,7 +290,7 @@ const submitForm = async () => {
     setTimeout(() => {
       router.push({
         name: 'RefundStage3FormWithId',
-        params: { id: caseId, refundId: refundId || route.params.refundId }
+        params: { id: caseId, refundId }
       })
     }, 1500)
   } catch (error) {

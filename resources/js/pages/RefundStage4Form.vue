@@ -87,7 +87,7 @@
               placeholder="e.g., RCPT-20260224-001"
               required
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              :disabled="isSubmitting"
+              :disabled="isSubmitting || !canSubmit"
             />
           </div>
 
@@ -99,7 +99,7 @@
               type="date"
               required
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              :disabled="receiptCompleted || isSubmitting"
+              :disabled="receiptCompleted || isSubmitting || !canSubmit"
             />
           </div>
 
@@ -110,7 +110,7 @@
               <span class="absolute left-4 top-2.5 text-gray-500">Rp</span>
               <FormField
                 v-model="formData.received_amount"
-                :type="isPreliminary ? 'text' : 'formatted-number'"
+                type="text"
                 inputmode="decimal"
                 :decimal-places="2"
                 step="0.01"
@@ -118,11 +118,11 @@
                 placeholder="0.00"
                 required
                 class="w-full px-4 py-2 pl-9 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                :disabled="receiptCompleted || isSubmitting"
+                :disabled="receiptCompleted || isSubmitting || !canSubmit"
               />
             </div>
             <p class="text-xs text-gray-500 mt-1">
-              Must match or be close to the original refund amount ({{ formatCurrency(refundAmount) }})
+              Must equal the authorized transfer amount exactly ({{ formatCurrency(refundAmount) }})
             </p>
           </div>
 
@@ -138,10 +138,11 @@
             <label class="block text-sm font-medium text-gray-700 mb-2">Notes (Optional)</label>
             <textarea
               v-model="formData.notes"
+              :readonly="!isPreliminary"
               rows="3"
               placeholder="Add any notes about receipt or transfer..."
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              :disabled="receiptCompleted || isSubmitting"
+              :disabled="receiptCompleted || isSubmitting || !canSubmit"
             ></textarea>
           </div>
 
@@ -151,14 +152,14 @@
               type="button"
               @click="$router.back()"
               class="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
-              :disabled="receiptCompleted || isSubmitting"
+              :disabled="receiptCompleted || isSubmitting || !canSubmit"
             >
               Back
             </button>
             <button
               type="submit"
               class="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50"
-              :disabled="receiptCompleted || isSubmitting || !formData.received_amount"
+              :disabled="receiptCompleted || isSubmitting || !canSubmit || !formData.received_amount"
             >
               {{ isSubmitting ? 'Completing...' : 'Complete Refund (Stage 4 - Final)' }}
             </button>
@@ -194,6 +195,7 @@ const refundId = route.params.refundId
 
 const isLoading = ref(false)
 const isSubmitting = ref(false)
+const canSubmit = ref(false)
 const apiError = ref('')
 const isPreliminary = ref(false)
 
@@ -219,26 +221,13 @@ const formatCurrency = (value) => {
   }).format(value)
 }
 
-const amountWarning = computed(() => {
-  if (isPreliminary.value) return 'A single receipt must equal the approved amount exactly.'
-  if (!formData.value.received_amount || refundAmount.value === 0) return ''
-  
-  const diff = Math.abs(formData.value.received_amount - refundAmount.value)
-  const percentage = (diff / refundAmount.value) * 100
-  
-  if (percentage > 10) {
-    return `Received amount differs from refund amount by ${percentage.toFixed(2)}%. Please verify!`
-  }
-  
-  return ''
-})
+const amountWarning = computed(() => 'A single receipt must equal the authorized transfer amount exactly. Partial and excess payments are rejected.')
 
 const loadRefundData = async () => {
   try {
     isLoading.value = true
-    const endpoint = refundId
-      ? `/api/tax-cases/${caseId}/refunds/${refundId}/refund-stages/4`
-      : `/api/tax-cases/${caseId}/refund-stages/4`
+    if (!refundId) throw new Error('Select a Refund explicitly from the case before saving payment evidence.')
+    const endpoint = `/api/tax-cases/${caseId}/refunds/${refundId}/refund-stages/4`
 
     const response = await fetch(endpoint, {
       method: 'GET',
@@ -250,13 +239,15 @@ const loadRefundData = async () => {
 
     const result = await response.json()
     const data = result.data || result
+    canSubmit.value = !!data.can_submit
     isPreliminary.value = !!data.is_preliminary
+    formData.value.notes = data.notes || ''
 
     refundNumber.value = data.refund_number || 'N/A'
     refundAmount.value = data.refund_amount || 0
     refundMethod.value = data.refund_method || 'N/A'
     refundStatus.value = data.refund_status || 'PENDING'
-    receiptCompleted.value = data.is_preliminary && data.refund_status?.toLowerCase() === 'completed'
+    receiptCompleted.value = data.refund_status?.toLowerCase() === 'completed'
     if (receiptCompleted.value) {
       formData.value.receipt_number = data.receipt_number || ''
       formData.value.received_date = data.received_date?.slice(0, 10) || ''
@@ -275,6 +266,7 @@ const submitForm = async () => {
   try {
     isSubmitting.value = true
     apiError.value = ''
+    if (!canSubmit.value) throw new Error('This payment stage is locked or its predecessor is incomplete. Reload the selected Refund.')
 
     if (!formData.value.receipt_number) throw new Error('Receipt number is required')
     if (!formData.value.received_date) throw new Error('Received date is required')
@@ -284,9 +276,8 @@ const submitForm = async () => {
       throw new Error('Received amount must be greater than 0')
     }
 
-    const endpoint = refundId
-      ? `/api/tax-cases/${caseId}/refunds/${refundId}/refund-stages/4`
-      : `/api/tax-cases/${caseId}/refund-stages/4`
+    if (!refundId) throw new Error('Select a Refund explicitly from the case before saving payment evidence.')
+    const endpoint = `/api/tax-cases/${caseId}/refunds/${refundId}/refund-stages/4`
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -305,7 +296,7 @@ const submitForm = async () => {
 
     if (!response.ok) {
       const error = await response.json()
-      throw new Error(error.message || error.error || `API Error: ${response.status}`)
+      throw new Error(Object.values(error.errors || {}).flat().join(' ') || error.message || error.error || `API Error: ${response.status}`)
     }
 
     showSuccess('Success', 'Refund completed successfully!')

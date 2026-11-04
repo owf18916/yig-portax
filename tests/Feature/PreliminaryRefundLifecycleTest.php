@@ -396,6 +396,9 @@ class PreliminaryRefundLifecycleTest extends TestCase
     {
         $refund = $this->paymentReady();
         $this->assertSame('800.12', $refund->refund_amount);
+        foreach ([2, 3, 4] as $stage) {
+            $this->getJson($this->paymentUrl($refund, $stage))->assertOk()->assertJsonPath('data.can_submit', true);
+        }
         $this->assertFalse($this->case->fresh()->is_completed);
         $this->commandPost($this->paymentUrl($refund, 4), $this->receipt())->assertOk();
         $case = $this->case->fresh('status');
@@ -601,13 +604,13 @@ class PreliminaryRefundLifecycleTest extends TestCase
         $this->assertFalse($this->case->fresh()->is_completed);
     }
 
-    public function test_ordinary_refund_receipt_keeps_existing_partial_semantics(): void
+    public function test_ordinary_refund_partial_receipt_is_rejected(): void
     {
         $this->case->update(['spt_type' => 'Restitusi']);
         $refund = RefundProcess::create(['tax_case_id' => $this->case->id, 'stage_id' => 4, 'stage_source' => 'SKP', 'refund_number' => 'NORMAL', 'refund_amount' => '800.12', 'refund_status' => 'processed', 'refund_method' => 'bank_transfer']);
         BankTransferRequest::create(['refund_process_id' => $refund->id, 'request_number' => 'NORMAL', 'transfer_amount' => '800.12', 'transfer_status' => 'processing', 'created_by' => $this->staff->id]);
-        $this->commandPost($this->paymentUrl($refund, 4), $this->receipt('400.06'))->assertOk();
-        $this->assertSame('completed', $refund->fresh()->refund_status);
+        $this->commandPost($this->paymentUrl($refund, 4), $this->receipt('400.06'))->assertUnprocessable();
+        $this->assertSame('processed', $refund->fresh()->refund_status);
         $this->assertFalse($this->case->fresh()->is_completed);
     }
 
