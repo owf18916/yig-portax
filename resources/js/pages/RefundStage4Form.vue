@@ -170,7 +170,7 @@
       <!-- Info Box -->
       <div class="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
         <p class="text-sm text-blue-900">
-          <strong>Stage 4 - Final Stage:</strong> Confirm receipt of the refund. Once completed, the refund process will be marked as finished and the Tax SPT status will be updated.
+          <strong>Stage 4 - Final Stage:</strong> {{ completionMessage }}
         </p>
       </div>
     </div>
@@ -184,6 +184,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useToast } from '@/composables/useToast'
 import FormField from '@/components/FormField.vue'
+import { formatRefundMethod } from '../utils/refundPresentation.js'
 
 const { showSuccess, showError } = useToast()
 
@@ -222,6 +223,9 @@ const formatCurrency = (value) => {
 }
 
 const amountWarning = computed(() => 'A single receipt must equal the authorized transfer amount exactly. Partial and excess payments are rejected.')
+const completionMessage = computed(() => isPreliminary.value
+  ? 'For an approved Preliminary Refund, confirming a single receipt equal to the full approved amount completes the Refund and automatically closes the eligible TaxCase/SPT (CLOSED).'
+  : 'Confirm receipt to complete only the selected Refund. Ordinary Refund completion leaves the TaxCase/SPT status and main workflow unchanged and does not close the case.')
 
 const loadRefundData = async () => {
   try {
@@ -245,7 +249,7 @@ const loadRefundData = async () => {
 
     refundNumber.value = data.refund_number || 'N/A'
     refundAmount.value = data.refund_amount || 0
-    refundMethod.value = data.refund_method || 'N/A'
+    refundMethod.value = formatRefundMethod(data.refund_method) || 'N/A'
     refundStatus.value = data.refund_status || 'PENDING'
     receiptCompleted.value = data.refund_status?.toLowerCase() === 'completed'
     if (receiptCompleted.value) {

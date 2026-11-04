@@ -85,6 +85,7 @@
 <script setup>
 import { computed } from 'vue'
 import Card from '../components/Card.vue'
+import { formatRefundMethod } from '../utils/refundPresentation.js'
 
 const props = defineProps({
   refunds: {
@@ -152,17 +153,7 @@ const formatStatus = (status) => {
   return statusMap[status?.toLowerCase()] || status
 }
 
-const formatMethod = (method) => {
-  const methodMap = {
-    'BANK_TRANSFER': 'Bank Transfer',
-    'CHEQUE': 'Cheque',
-    'CASH': 'Cash',
-    'bank_transfer': 'Bank Transfer',
-    'check': 'Cheque',
-    'credit': 'Credit',
-  }
-  return methodMap[method] || method
-}
+const formatMethod = formatRefundMethod
 
 const formatStageSource = (source) => {
   const sourceMap = {

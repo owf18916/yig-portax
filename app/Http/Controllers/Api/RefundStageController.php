@@ -313,6 +313,7 @@ class RefundStageController extends ApiController
                 'refund_id' => $refundProcess->id,
                 'refund_number' => $refundProcess->refund_number,
                 'refund_amount' => $refundProcess->refund_amount,
+                'refund_method' => $refundProcess->refund_method,
                 'is_preliminary' => \App\Services\PreliminaryRefundLifecycle::concerns($taxCase, $refundProcess),
                 'refund_status' => $refundProcess->refund_status,
                 'current_stage' => $refundProcess->getCurrentRefundStage(),
