@@ -36,7 +36,7 @@ class RefundStage4ReadResponseTest extends TestCase
                 $transfer = (object) ['id' => $id + 100, 'refund_process_id' => $id,
                     'transfer_status' => 'completed', 'received_date' => '2026-11-04',
                     'received_amount' => '800.12', 'receipt_number' => 'RCPT-'.$id];
-                $connection->shouldReceive('select')->times(3)->andReturnUsing(function ($sql, $bindings) use ($refund, $transfer, $id) {
+                $connection->shouldReceive('select')->times(2)->andReturnUsing(function ($sql, $bindings) use ($refund, $transfer, $id) {
                     if (str_contains($sql, 'from "refund_processes"')) {
                         $this->assertSame([$id, 9], $bindings);
 

@@ -90,6 +90,133 @@ class OrdinaryRefundPaymentTest extends TestCase
         return $refund;
     }
 
+    public static function stageReadHistories(): array
+    {
+        $cases = [];
+        foreach ([false, true] as $preliminary) {
+            foreach ([[0, 0], [1, 0], [2, 0], [60, 0], [0, 1], [1, 1], [60, 2]] as [$live, $deleted]) {
+                $cases[($preliminary ? 'preliminary' : 'ordinary')." live=$live deleted=$deleted"] = [$live, $deleted, $preliminary];
+            }
+        }
+
+        return $cases;
+    }
+
+    #[DataProvider('stageReadHistories')]
+    public function test_stage_reads_bound_materialization_and_preserve_selected_identity(int $live, int $deleted, bool $preliminary): void
+    {
+        // Synthetic data in the disposable runner's SQLite :memory: database.
+        // No payment commands or historical verification fixtures are used here.
+        $a = $this->refund();
+        $b = $this->refund(7);
+        $a->forceFill(['created_at' => '2026-10-01', 'refund_status' => $live + $deleted ? 'processed' : 'pending'])->save();
+        $b->forceFill(['created_at' => '2026-10-02', 'refund_status' => 'processed'])->save();
+        if ($preliminary) {
+            foreach ([$a, $b] as $refund) {
+                $refund->update(['stage_id' => 0, 'stage_source' => 'PRELIMINARY']);
+            }
+        }
+        foreach ([[$a, $live, $deleted], [$b, 1, 0]] as [$refund, $activeCount, $deletedCount]) {
+            for ($i = 0; $i < $activeCount + $deletedCount; $i++) {
+                // Last two live records tie on created_at. Lowest ID wins the tie;
+                // the newer deleted rows must never become display evidence.
+                $date = $i >= max(0, $activeCount - 2) ? '2026-11-02' : '2026-11-01';
+                \Illuminate\Support\Facades\DB::table('bank_transfer_requests')->insert([
+                    'refund_process_id' => $refund->id, 'request_number' => 'REQ-'.$refund->id.'-'.$i,
+                    'transfer_number' => 'TR-'.$refund->id.'-'.$i, 'request_date' => '2026-11-01',
+                    'transfer_date' => '2026-11-02', 'transfer_amount' => '800.12', 'transfer_status' => 'processing',
+                    'instruction_number' => 'INS-'.$refund->id.'-'.$i, 'instruction_issue_date' => '2026-11-02',
+                    'instruction_received_date' => '2026-11-03', 'created_by' => $this->staff->id,
+                    'created_at' => $i >= $activeCount ? '2026-11-04' : $date, 'updated_at' => $date,
+                    'deleted_at' => $i >= $activeCount ? '2026-11-04' : null,
+                ]);
+            }
+        }
+
+        $db = \Illuminate\Support\Facades\DB::connection();
+        $dispatcher = BankTransferRequest::getEventDispatcher();
+        BankTransferRequest::setEventDispatcher(clone $dispatcher);
+        $hydrated = 0;
+        BankTransferRequest::retrieved(function () use (&$hydrated) { $hydrated++; });
+        $db->enableQueryLog();
+        try {
+            // Null means the existing read-only latest-Refund compatibility route.
+            foreach ([[$a, $a->id, $live, $deleted], [$b, $b->id, 1, 0], [$b, null, 1, 0]] as [$refund, $selectedId, $activeCount, $deletedCount]) {
+                foreach ([1, 2, 3, 4] as $stage) {
+                    $db->flushQueryLog();
+                    $hydrated = 0;
+                    $url = $selectedId === null ? $this->base.'/refund-stages/'.$stage : $this->url($refund, $stage);
+                    $data = $this->getJson($url)->assertOk()->json('data');
+                    $this->assertSame($refund->id, $data[$stage === 1 ? 'id' : 'refund_id']);
+                    $this->assertSame($refund->refund_number, $data['refund_number']);
+                    $this->assertSame($activeCount ? 3 : 1, $data['current_stage']);
+                    $this->assertArrayNotHasKey('bank_transfer_requests', $data);
+                    $keys = match ($stage) {
+                        1 => ['id', 'refund_number', 'refund_amount', 'refund_method', 'refund_status', 'stage_label', 'is_preliminary', 'current_stage', 'submitted_by_name', 'submitted_at', 'notes'],
+                        2 => ['refund_id', 'refund_number', 'refund_amount', 'refund_method', 'refund_status', 'current_stage', 'can_submit'],
+                        3 => ['refund_id', 'is_preliminary', 'refund_number', 'refund_amount', 'current_stage', 'can_submit'],
+                        4 => ['refund_id', 'refund_number', 'refund_amount', 'refund_method', 'is_preliminary', 'refund_status', 'current_stage', 'can_submit'],
+                    };
+                    if ($activeCount && $stage >= 2) {
+                        $keys = array_merge($keys, ['transfer_number', 'transfer_date', 'transfer_amount', 'transfer_status', 'notes']);
+                        if ($stage <= 3) {
+                            $keys = array_merge($keys, ['request_number', 'request_date']);
+                        }
+                        if ($stage >= 3) {
+                            $keys = array_merge($keys, ['instruction_number', 'instruction_issue_date', 'instruction_received_date']);
+                            $keys = array_merge($keys, $stage === 3
+                                ? ['bank_code', 'bank_name', 'account_number', 'account_holder', 'account_name']
+                                : ['receipt_number', 'received_date', 'received_amount']);
+                        }
+                    }
+                    $actualKeys = array_keys($data);
+                    sort($keys);
+                    sort($actualKeys);
+                    $this->assertSame($keys, $actualKeys);
+                    if ($stage >= 2) {
+                        $this->assertSame($preliminary || ($activeCount + $deletedCount === 0 ? $stage === 2 : ($activeCount === 1 && $deletedCount === 0 && $stage === 4)), $data['can_submit']);
+                        if ($activeCount) {
+                            $index = max(0, $activeCount - 2);
+                            $this->assertSame('TR-'.$refund->id.'-'.$index, $data['transfer_number']);
+                            $this->assertSame('800.12', $data['transfer_amount']);
+                            if ($stage >= 3) {
+                                $this->assertSame('INS-'.$refund->id.'-'.$index, $data['instruction_number']);
+                            }
+                        } else {
+                            $this->assertArrayNotHasKey('transfer_number', $data);
+                        }
+                    }
+                    if ($stage === 4) {
+                        $this->assertSame('bank_transfer', $data['refund_method']);
+                        $this->assertSame($preliminary, $data['is_preliminary']);
+                    }
+                    $queries = collect($db->getQueryLog())->pluck('query');
+                    $transfers = $queries->filter(fn ($sql) => str_contains($sql, 'from "bank_transfer_requests"'))->values();
+                    $ordinaryEligibility = ! $preliminary && $stage >= 2;
+                    $this->assertCount($ordinaryEligibility ? 2 : 1, $transfers);
+                    $this->assertStringContainsString('"deleted_at" is null', $transfers[0]);
+                    $this->assertStringContainsString('order by "created_at" desc, "id" asc limit 1', $transfers[0]);
+                    if ($ordinaryEligibility) {
+                        $this->assertStringContainsString('order by "id" asc limit 2', $transfers[1]);
+                        $this->assertStringNotContainsString('"deleted_at" is null', $transfers[1]);
+                    }
+                    $this->assertSame(min(1, $activeCount) + ($ordinaryEligibility ? min(2, $activeCount + $deletedCount) : 0), $hydrated);
+                    $this->assertTrue($queries->every(fn ($sql) => str_starts_with(strtolower($sql), 'select ')));
+                }
+            }
+            foreach ([1, 2, 3, 4] as $stage) {
+                $other = $this->case->replicate();
+                $other->case_number = 'C3-FOREIGN-'.$stage;
+                $other->save();
+                $this->getJson('/api/tax-cases/'.$other->id.'/refunds/'.$a->id.'/refund-stages/'.$stage)->assertNotFound();
+                $this->getJson($this->base.'/refunds/999999/refund-stages/'.$stage)->assertNotFound();
+            }
+        } finally {
+            $db->disableQueryLog();
+            BankTransferRequest::setEventDispatcher($dispatcher);
+        }
+    }
+
     public function test_changed_origin_amount_disables_new_request_without_mutation(): void
     {
         $refund = $this->refund();

@@ -149,7 +149,7 @@ class RefundStageController extends ApiController
     {
         try {
             $refundProcess = $this->getRefundProcess($taxCase, $refundId);
-            $bankTransfer = $refundProcess->bankTransferRequests()->latest()->first();
+            $bankTransfer = $refundProcess->bankTransferRequests->first();
 
             // Return refund data (required) + bank transfer data (optional)
             $data = [
@@ -221,7 +221,7 @@ class RefundStageController extends ApiController
     {
         try {
             $refundProcess = $this->getRefundProcess($taxCase, $refundId);
-            $bankTransfer = $refundProcess->bankTransferRequests()->latest()->first();
+            $bankTransfer = $refundProcess->bankTransferRequests->first();
 
             // Return refund data (required) + bank transfer + instruction data (optional)
             $data = [
@@ -306,7 +306,7 @@ class RefundStageController extends ApiController
     {
         try {
             $refundProcess = $this->getRefundProcess($taxCase, $refundId);
-            $bankTransfer = $refundProcess->bankTransferRequests()->latest()->first();
+            $bankTransfer = $refundProcess->bankTransferRequests->first();
 
             // Return refund data (required) + bank transfer + receipt data (optional)
             $data = [
@@ -391,15 +391,22 @@ class RefundStageController extends ApiController
     private function getRefundProcess(TaxCase $taxCase, $refundId = null): RefundProcess
     {
         if ($refundId) {
-            return RefundProcess::where('id', $refundId)
+            $refund = RefundProcess::where('id', $refundId)
                 ->where('tax_case_id', $taxCase->id)
-                ->with('bankTransferRequests')
+                ->firstOrFail();
+        } else {
+            $refund = RefundProcess::where('tax_case_id', $taxCase->id)
+                ->latest()
                 ->firstOrFail();
         }
 
-        return RefundProcess::where('tax_case_id', $taxCase->id)
-            ->with('bankTransferRequests')
-            ->latest()
-            ->firstOrFail();
+        // These private read results never serialize transfer history. Reuse one
+        // live transfer for display and getCurrentRefundStage(), without lazy loads.
+        // Preserve latest(created_at); lowest ID resolves previously unspecified ties.
+        // Ordinary eligibility independently checks up to two rows WITH trashed.
+        $refund->setRelation('bankTransferRequests', $refund->bankTransferRequests()
+            ->latest()->orderBy('id')->limit(1)->get());
+
+        return $refund;
     }
 }
