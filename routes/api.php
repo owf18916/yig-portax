@@ -45,7 +45,10 @@ Route::post('/login', [AuthController::class, 'login']);
 // Safe anonymous bootstrap only: the API verifier issues the framework XSRF cookie.
 Route::get('/csrf-token', fn () => response()->noContent()->header('Cache-Control', 'no-store, private'));
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth');
-Route::get('/me', [AuthController::class, 'me'])->middleware('auth');
+Route::get('/me', [AuthController::class, 'me'])->middleware([
+    'auth',
+    \App\Http\Middleware\PreventIdentityProbeCookieRefresh::class,
+]);
 
 Route::middleware('auth')->group(function () {
     Route::get('/notification-logs', [NotificationLogController::class, 'index']);

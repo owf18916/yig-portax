@@ -133,6 +133,76 @@ class SessionApiCsrfTest extends TestCase
         return $user;
     }
 
+    public function test_delayed_identity_response_cannot_replace_new_login_cookies(): void
+    {
+        $a = $this->login();
+        $old = $this->jar;
+        $delayed = $this->http('GET', '/api/me')->assertOk()->assertJsonPath('data.id', $a->id);
+
+        $this->http('POST', '/api/logout', [], $this->jar['XSRF-TOKEN'])->assertOk();
+        $b = User::factory()->create(['entity_id' => $a->entity_id, 'role_id' => $a->role_id, 'is_active' => true]);
+        $this->http('GET', '/api/csrf-token')->assertNoContent();
+        $this->http('POST', '/api/login', ['email' => $b->email, 'password' => 'password'], $this->jar['XSRF-TOKEN'])->assertOk();
+        $this->http('GET', '/api/me')->assertOk()->assertJsonPath('data.id', $b->id);
+        $new = $this->jar;
+
+        // Model browser arrival order, independent of frontend generation guards.
+        foreach ($delayed->headers->getCookies() as $cookie) {
+            $this->jar[$cookie->getName()] = $cookie->getValue();
+        }
+        $this->assertTrue($new === $this->jar, 'Late identity response must not replace session or CSRF cookies');
+        $this->http('GET', '/api/me')->assertOk()->assertJsonPath('data.id', $b->id);
+        $this->http('POST', '/api/logout', [], $this->jar['XSRF-TOKEN'])->assertOk();
+        $this->jar = $old;
+        $this->http('GET', '/api/me')->assertUnauthorized();
+    }
+
+    public function test_cached_routes_preserve_identity_probe_cookie_boundary(): void
+    {
+        $this->cachedRoutes();
+        $this->test_delayed_identity_response_cannot_replace_new_login_cookies();
+    }
+
+    public function test_identity_probe_does_not_refresh_cookies_but_session_and_bootstrap_still_work(): void
+    {
+        $user = $this->login();
+        $before = $this->jar;
+        $this->http('GET', '/api/me')->assertOk()->assertJsonPath('data.id', $user->id)
+            ->assertHeader('Cache-Control', 'no-store, private');
+        $this->assertTrue($before === $this->jar, 'Identity probe must not replace cookies');
+        $this->http('HEAD', '/api/me')->assertOk();
+        $this->assertTrue($before === $this->jar, 'HEAD identity probe must not replace cookies');
+        // Other endpoints retain Laravel's session/XSRF refresh behavior.
+        $health = $this->http('GET', '/api/health')->assertOk();
+        $expiry = collect($health->headers->getCookies())->firstWhere(fn ($cookie) => $cookie->getName() === config('session.cookie'))->getExpiresTime();
+        $this->assertTrue($before[config('session.cookie')] !== $this->jar[config('session.cookie')], 'Other endpoints still emit the session cookie');
+        $this->travel(30)->seconds();
+        $health = $this->http('GET', '/api/health')->assertOk();
+        $this->assertGreaterThan($expiry, collect($health->headers->getCookies())->firstWhere(fn ($cookie) => $cookie->getName() === config('session.cookie'))->getExpiresTime());
+        $this->travelBack();
+        $this->http('GET', '/api/csrf-token')->assertNoContent();
+        $this->assertTrue($before['XSRF-TOKEN'] !== $this->jar['XSRF-TOKEN'], 'Bootstrap still emits the XSRF cookie');
+        $this->http('POST', '/api/logout', [], $this->jar['XSRF-TOKEN'])->assertOk();
+        $guest = $this->http('GET', '/api/me')->assertUnauthorized();
+        $this->assertSame([], $guest->headers->getCookies(), 'Guest identity probes must not replace newer cookies either');
+    }
+
+    public function test_identity_probe_still_persists_database_session_activity(): void
+    {
+        config(['session.driver' => 'database']);
+        app('session')->forgetDrivers();
+        app()->forgetInstance('session.store');
+        $user = $this->login();
+        $id = session()->getId();
+        $before = DB::table('sessions')->where('id', $id)->value('last_activity');
+        $cookies = $this->jar;
+        $this->travel(30)->seconds();
+        $this->http('GET', '/api/me')->assertOk()->assertJsonPath('data.id', $user->id);
+        $this->assertTrue($cookies === $this->jar, 'Database session persistence must not emit probe cookies');
+        $this->assertGreaterThan($before, DB::table('sessions')->where('id', $id)->value('last_activity'));
+        $this->travelBack();
+    }
+
     private function createCase(string $type, string $method): TaxCase
     {
         $user = $this->login();

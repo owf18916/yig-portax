@@ -30,6 +30,12 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests::class,
             \Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class,
         );
+        // Only /api/me attaches this response filter. It must unwind after the
+        // framework has emitted and encrypted its session and XSRF cookies.
+        $middleware->prependToPriorityList(
+            \Illuminate\Cookie\Middleware\EncryptCookies::class,
+            \App\Http\Middleware\PreventIdentityProbeCookieRefresh::class,
+        );
 
         // Web routes use CSRF protection (this is default in Laravel)
         // No explicit setup needed here as it's automatic for web middleware group
