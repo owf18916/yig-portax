@@ -79,7 +79,7 @@
               placeholder="e.g., INSTR-20260224-001"
               required
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              :disabled="isSubmitting || !canSubmit"
+              :disabled="isReadOnly || isSubmitting || !canSubmit"
             />
           </div>
 
@@ -92,7 +92,7 @@
                 type="date"
                 required
                 class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                :disabled="isSubmitting || !canSubmit"
+                :disabled="isReadOnly || isSubmitting || !canSubmit"
               />
             </div>
             <div>
@@ -102,7 +102,7 @@
                 type="date"
                 required
                 class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                :disabled="isSubmitting || !canSubmit"
+                :disabled="isReadOnly || isSubmitting || !canSubmit"
               />
             </div>
           </div>
@@ -119,7 +119,7 @@
                   type="text"
                   placeholder="e.g., 008"
                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  :disabled="isSubmitting || !canSubmit"
+                  :disabled="isReadOnly || isSubmitting || !canSubmit"
                 />
               </div>
               <div>
@@ -130,7 +130,7 @@
                   placeholder="e.g., Bank Indonesia"
                   required
                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  :disabled="isSubmitting || !canSubmit"
+                  :disabled="isReadOnly || isSubmitting || !canSubmit"
                 />
               </div>
             </div>
@@ -144,7 +144,7 @@
                   placeholder="e.g., 123456789012"
                   required
                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  :disabled="isSubmitting || !canSubmit"
+                  :disabled="isReadOnly || isSubmitting || !canSubmit"
                 />
               </div>
               <div>
@@ -155,7 +155,7 @@
                   placeholder="e.g., PT XYZ"
                   required
                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  :disabled="isSubmitting || !canSubmit"
+                  :disabled="isReadOnly || isSubmitting || !canSubmit"
                 />
               </div>
             </div>
@@ -167,7 +167,7 @@
                 type="text"
                 placeholder="e.g., Main Account"
                 class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                :disabled="isSubmitting || !canSubmit"
+                :disabled="isReadOnly || isSubmitting || !canSubmit"
               />
             </div>
 
@@ -183,7 +183,7 @@
                 min="0"
                 placeholder="Authorized transfer amount"
                 class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                :disabled="isSubmitting || !canSubmit"
+                :disabled="isReadOnly || isSubmitting || !canSubmit"
               />
             </div>
           </div>
@@ -197,7 +197,7 @@
               rows="3"
               placeholder="Add any notes..."
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              :disabled="isSubmitting || !canSubmit"
+              :disabled="isReadOnly || isSubmitting || !canSubmit"
             ></textarea>
           </div>
 
@@ -214,7 +214,7 @@
             <button
               type="submit"
               class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50"
-              :disabled="isSubmitting || !canSubmit"
+              :disabled="isReadOnly || isSubmitting || !canSubmit"
             >
               {{ isSubmitting ? 'Updating...' : 'Update Instruction (Stage 3)' }}
             </button>
@@ -251,6 +251,7 @@ const refundId = route.params.refundId
 const isLoading = ref(false)
 const isSubmitting = ref(false)
 const canSubmit = ref(false)
+const isReadOnly = ref(false)
 const apiError = ref('')
 const isPreliminary = ref(false)
 
@@ -296,6 +297,8 @@ const loadRefundData = async () => {
     const result = await response.json()
     const data = result.data || result
     canSubmit.value = !!data.can_submit
+    // Advisory replay capability does not make completed evidence editable.
+    isReadOnly.value = !canSubmit.value || (data.current_stage || 3) > 3
     isPreliminary.value = !!data.is_preliminary
     formData.value.notes = data.notes || ''
 

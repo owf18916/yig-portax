@@ -87,7 +87,7 @@
               placeholder="e.g., RCPT-20260224-001"
               required
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              :disabled="isSubmitting || !canSubmit"
+              :disabled="receiptCompleted || isSubmitting || !canSubmit"
             />
           </div>
 

@@ -87,7 +87,7 @@
               placeholder="e.g., REQN-20260224-001"
               required
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              :disabled="isSubmitting || !canSubmit"
+              :disabled="isReadOnly || isSubmitting || !canSubmit"
             />
           </div>
 
@@ -99,7 +99,7 @@
               type="date"
               required
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              :disabled="isSubmitting || !canSubmit"
+              :disabled="isReadOnly || isSubmitting || !canSubmit"
             />
           </div>
 
@@ -111,7 +111,7 @@
               type="date"
               required
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              :disabled="isSubmitting || !canSubmit"
+              :disabled="isReadOnly || isSubmitting || !canSubmit"
             />
           </div>
 
@@ -123,7 +123,7 @@
               rows="3"
               placeholder="Add any notes..."
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              :disabled="isSubmitting || !canSubmit"
+              :disabled="isReadOnly || isSubmitting || !canSubmit"
             ></textarea>
           </div>
 
@@ -140,7 +140,7 @@
             <button
               type="submit"
               class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50"
-              :disabled="isSubmitting || !canSubmit"
+              :disabled="isReadOnly || isSubmitting || !canSubmit"
             >
               {{ isSubmitting ? 'Submitting...' : 'Submit Transfer Request (Stage 2)' }}
             </button>
