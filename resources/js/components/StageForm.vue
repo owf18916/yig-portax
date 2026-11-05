@@ -629,6 +629,7 @@ const pendingAction = ref(null) // 'submit' or 'draft'
 
 // Compute next stage ID if not provided via props
 const computedNextStageId = computed(() => {
+  if (Object.hasOwn(props.prefillData || {}, 'kianSubmissionStatus')) return null
   const next = props.nextStageId || (props.stageId < 12 ? props.stageId + 1 : null)
   // Stage 1 uses the persisted server capability, including after submit/refresh.
   if (props.stageId === 1 && !props.workflowState?.stages?.some(s => s.stage === next && s.submittable)) return null
@@ -638,8 +639,8 @@ const computedNextStageId = computed(() => {
 // Compute whether fields should be disabled based on case status
 const fieldsDisabled = computed(() => {
   // ✅ NEW: Check KIAN submission status first (for KIAN branch actions)
-  if (props.prefillData?.kianSubmissionStatus) {
-    return props.prefillData.kianSubmissionStatus === 'submitted' || props.prefillData.kianSubmissionStatus === 'approved'
+  if (Object.hasOwn(props.prefillData || {}, 'kianSubmissionStatus')) {
+    return props.prefillData.kianSubmissionStatus !== 'draft'
   }
   
   // ✅ EXISTING: Check workflowHistories (for main workflow stages 1-12)
@@ -1258,6 +1259,7 @@ const validateForm = () => {
 }
 
 const submitForm = async () => {
+  if (fieldsDisabled.value || submitting.value || props.isLoading) return
   if (!validateForm()) {
     // Validation errors are shown inline under each field, no need for toast
     return
@@ -1270,14 +1272,16 @@ const submitForm = async () => {
   }
 
   // Show confirmation dialog
-  confirmDialogTitle.value = 'Submit & Continue to Next Stage'
-  confirmDialogMessage.value = 'You are about to submit this form to the system. Your data will be saved and you will proceed to the next stage. This action cannot be undone.'
+  const isKian = Object.hasOwn(props.prefillData || {}, 'kianSubmissionStatus')
+  confirmDialogTitle.value = isKian ? 'Submit KIAN' : 'Submit & Continue to Next Stage'
+  confirmDialogMessage.value = isKian ? 'Submit this stage’s KIAN? Submission details will become read-only. This does not advance the tax case.' : 'You are about to submit this form to the system. Your data will be saved and you will proceed to the next stage. This action cannot be undone.'
   confirmDialogVariant.value = 'default'
   pendingAction.value = 'submit'
   showConfirmDialog.value = true
 }
 
 const executeSubmitForm = async () => {
+  if (fieldsDisabled.value || submitting.value || props.isLoading) return
   submitting.value = true
   apiError.value = ''
   successMessage.value = ''
@@ -1318,7 +1322,7 @@ const executeSubmitForm = async () => {
     const result = await response.json()
 
     // Show success toast for submission
-    toastRef.value?.addToast('Form Submitted', `Stage ${props.stageId} berhasil disubmit dan data telah disimpan ke database.`, 'success', 5000)
+    toastRef.value?.addToast('Form Submitted', `Stage ${props.stageId} data submitted successfully.`, 'success', 5000)
     
     // Emit submit event to parent
     emit('submit', { stageId: props.stageId, data: formData })
@@ -1344,6 +1348,7 @@ const viewCaseDetail = () => {
 }
 
 const saveDraft = async () => {
+  if (fieldsDisabled.value || submitting.value || props.isLoading) return
   // Validate form before saving draft
   if (!validateForm()) {
     // Validation errors are shown inline under each field, no need for toast
@@ -1359,6 +1364,7 @@ const saveDraft = async () => {
 }
 
 const executeSaveDraft = async () => {
+  if (fieldsDisabled.value || submitting.value || props.isLoading) return
   submitting.value = true
   apiError.value = ''
   successMessage.value = ''
@@ -1399,7 +1405,7 @@ const executeSaveDraft = async () => {
 
     const result = await response.json()
     
-    toastRef.value?.addToast('Draft Saved', 'Form disimpan sebagai draft. Anda dapat melanjutkan pengeditan nanti.', 'success', 4000)
+    toastRef.value?.addToast('Draft Saved', 'Draft saved. You can continue editing later.', 'success', 4000)
     emit('saveDraft', { stageId: props.stageId, data: formData })
   } catch (error) {
     apiError.value = error.message
