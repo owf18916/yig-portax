@@ -51,22 +51,41 @@ class Document extends Model
             && in_array($this->document_type, ['preliminary_submission', 'preliminary_decision'], true);
     }
 
+    public function isKianResponseEvidence(): bool
+    {
+        return $this->documentable_type === KianSubmission::class && $this->document_type === 'kian_final_response';
+    }
+
     public function toArray(): array
     {
         $data = parent::toArray();
-        if ($this->isPreliminaryEvidence()) {
+        if ($this->isPreliminaryEvidence() || $this->isKianResponseEvidence()) {
             unset($data['file_path']);
+        }
+        if ($this->isKianResponseEvidence() && $this->relationLoaded('uploadedBy')) {
+            $data['uploaded_by'] = $this->uploadedBy?->only(['id', 'name']);
         }
 
         return $data;
     }
 
+    public function scopeAccessibleKianEvidence($query)
+    {
+        $user = auth()->user();
+        if (! $user || ! $user->is_active || ! $user->hasPermission('submit_cases')) {
+            $query->where(fn ($q) => $q->where('documentable_type', '<>', KianSubmission::class)->orWhere('document_type', '<>', 'kian_final_response'));
+        }
+        return $query;
+    }
+
     protected static function booted(): void
     {
         static::updating(function (Document $document) {
+            abort_if($document->getRawOriginal('documentable_type') === KianSubmission::class && $document->getRawOriginal('document_type') === 'kian_final_response', 422, 'KIAN final response evidence is immutable.');
             abort_if($document->getRawOriginal('documentable_type') === PreliminaryRefundRequest::class, 422, 'Preliminary evidence is immutable.');
         });
         static::deleting(function (Document $document) {
+            abort_if($document->isKianResponseEvidence(), 422, 'KIAN final response evidence cannot be deleted.');
             abort_if($document->isPreliminaryEvidence(), 422, 'Preliminary evidence cannot be deleted.');
         });
     }

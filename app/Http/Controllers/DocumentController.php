@@ -30,6 +30,8 @@ class DocumentController extends Controller
         $taxCase = TaxCase::findOrFail($request->integer('tax_case_id'));
         Gate::authorize('view', $taxCase);
 
+        abort_if(str_starts_with((string) $request->input('document_type'), 'kian_final_response'), 422, 'Use the KIAN final response command to attach evidence.');
+
         abort_if($request->input('documentable_type') === \App\Models\PreliminaryRefundRequest::class
             || str_starts_with((string) $request->input('document_type'), 'preliminary_'), 422, 'Use the preliminary recording command to attach evidence.');
 
@@ -132,7 +134,7 @@ class DocumentController extends Controller
 
         try {
             // Check if document exists and file is available
-            $disk = $document->isPreliminaryEvidence() ? 'local' : config('filesystems.default');
+            $disk = ($document->isPreliminaryEvidence() || $document->isKianResponseEvidence()) ? 'local' : config('filesystems.default');
             
             if (!Storage::disk($disk)->exists($document->file_path)) {
                 return response()->json([
@@ -153,7 +155,7 @@ class DocumentController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => $document->isPreliminaryEvidence() ? 'Unable to view preliminary evidence.' : 'Failed to view document: ' . $e->getMessage(),
+                'message' => ($document->isPreliminaryEvidence() || $document->isKianResponseEvidence()) ? 'Unable to view private evidence.' : 'Failed to view document: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -169,7 +171,7 @@ class DocumentController extends Controller
 
         try {
             // Check if document exists and file is available
-            $disk = $document->isPreliminaryEvidence() ? 'local' : config('filesystems.default');
+            $disk = ($document->isPreliminaryEvidence() || $document->isKianResponseEvidence()) ? 'local' : config('filesystems.default');
             
             if (!Storage::disk($disk)->exists($document->file_path)) {
                 return response()->json([
@@ -190,7 +192,7 @@ class DocumentController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => $document->isPreliminaryEvidence() ? 'Unable to download preliminary evidence.' : 'Failed to download document: ' . $e->getMessage(),
+                'message' => ($document->isPreliminaryEvidence() || $document->isKianResponseEvidence()) ? 'Unable to download private evidence.' : 'Failed to download document: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -202,7 +204,7 @@ class DocumentController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Document::withoutTrashed(); // Only show active (non-deleted) documents
+        $query = Document::withoutTrashed()->with('uploadedBy:id,name')->accessibleKianEvidence();
 
         // Filter by tax_case_id if provided
         if ($request->has('tax_case_id')) {
@@ -266,6 +268,7 @@ class DocumentController extends Controller
     {
         $this->authorizeDocument($document);
         abort_if($document->isPreliminaryEvidence(), 422, 'Preliminary evidence cannot be deleted.');
+        abort_if($document->isKianResponseEvidence(), 422, 'KIAN final response evidence cannot be deleted.');
 
         try {
             // Soft delete the document
@@ -301,6 +304,13 @@ class DocumentController extends Controller
         $taxCase = $document->taxCase;
         abort_if($taxCase === null, 403, 'Document has no valid tax case ownership.');
         Gate::authorize('view', $taxCase);
+        if ($document->isKianResponseEvidence()) {
+            Gate::authorize('recordKianResponse', $taxCase);
+            $owner = \App\Models\KianSubmission::whereKey($document->documentable_id)->where('tax_case_id', $taxCase->id)->firstOrFail();
+            abort_unless(in_array((int) $owner->stage_id, [4, 7, 10, 12], true)
+                && (string) $document->stage_code === (string) $owner->stage_id
+                && (int) $owner->response_document_id === $document->id, 404);
+        }
         if ($document->isPreliminaryEvidence()) {
             $owner = \App\Models\PreliminaryRefundRequest::withTrashed()->whereKey($document->documentable_id)->where('tax_case_id', $taxCase->id)->firstOrFail();
             $column = $document->document_type === 'preliminary_submission' ? 'submission_document_id' : 'decision_document_id';

@@ -29,6 +29,13 @@ class TaxCasePolicy
             && $this->update($user, $taxCase);
     }
 
+    public function recordKianResponse(User $user, TaxCase $taxCase): bool
+    {
+        return $user->is_active
+            && $user->hasPermission('submit_cases')
+            && $this->view($user, $taxCase);
+    }
+
     public function create(User $user, TaxCase $taxCase): bool
     {
         return $user->is_active

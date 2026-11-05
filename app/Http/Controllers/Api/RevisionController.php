@@ -393,6 +393,7 @@ class RevisionController extends Controller
         }
 
         $ownedCount = Document::query()
+            ->where(fn ($q) => $q->where('documentable_type', '<>', \App\Models\KianSubmission::class)->orWhere('document_type', '<>', 'kian_final_response'))
             ->whereIn('id', $documentIds)
             ->where('tax_case_id', $taxCase->id)
             ->when($stageCode > 0, fn ($query) => $query->where('stage_code', (string) $stageCode))

@@ -434,6 +434,7 @@ class TaxCaseController extends ApiController
     public function documents(TaxCase $taxCase, Request $request): JsonResponse
     {
         $documents = $taxCase->documents()
+            ->accessibleKianEvidence()
             ->with(['uploadedBy'])
             ->orderBy('created_at', 'desc');
 

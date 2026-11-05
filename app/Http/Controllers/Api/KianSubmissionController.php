@@ -159,9 +159,10 @@ class KianSubmissionController extends ApiController
                 return $this->success(null, 'No KIAN submission found for this stage (new submission will be created)', 200);
             }
 
-            return $this->success($kianSubmission, 'KIAN submission retrieved for stage', 200);
+            return $this->success($this->representation($kianSubmission, $taxCase), 'KIAN submission retrieved for stage', 200);
         } catch (\Exception $e) {
-            return $this->error($e->getMessage(), 500);
+            report($e);
+            return $this->error('Unable to retrieve KIAN submission.', 500);
         }
     }
 
@@ -215,37 +216,8 @@ class KianSubmissionController extends ApiController
      */
     public function recordResponse(Request $request, TaxCase $taxCase, KianSubmission $kianSubmission)
     {
-        try {
-            if ($kianSubmission->tax_case_id !== $taxCase->id) {
-                return $this->error('KIAN submission not found for this tax case', 404);
-            }
-
-            $validated = $request->validate([
-                'response_status' => 'required|in:ACCEPTED,REJECTED,PARTIALLY_ACCEPTED',
-                'response_date' => 'required|date',
-                'approved_amount' => 'nullable|numeric|min:0',
-                'response_notes' => 'nullable|string',
-            ]);
-
-            DB::beginTransaction();
-
-            $kianSubmission->update([
-                'status' => 'RESPONDED',
-                'response_status' => $validated['response_status'],
-                'response_date' => $validated['response_date'],
-                'approved_amount' => $validated['approved_amount'] ?? null,
-                'response_notes' => $validated['response_notes'] ?? null,
-                'responded_date' => now(),
-            ]);
-
-            DB::commit();
-
-            return $this->success($kianSubmission, 'KIAN response recorded', 200);
-        } catch (\Exception $e) {
-            DB::rollBack();
-
-            return $this->error($e->getMessage(), 500);
-        }
+        $this->rejectClientProvenance($request);
+        return $this->lifecycleCommand(fn () => app(\App\Services\KianLifecycle::class)->record($taxCase->id, $kianSubmission->id, $request->all(), $request->file('document')), $taxCase);
     }
 
     /**
@@ -253,27 +225,41 @@ class KianSubmissionController extends ApiController
      */
     public function close(Request $request, TaxCase $taxCase, KianSubmission $kianSubmission)
     {
+        $request->validate(array_fill_keys(array_merge(\App\Models\KianSubmission::FINAL_FIELDS, ['document', 'status', 'closed_date', 'closer', 'recorded_by', 'recorded_at']), 'prohibited'));
+        return $this->lifecycleCommand(fn () => app(\App\Services\KianLifecycle::class)->close($taxCase->id, $kianSubmission->id), $taxCase);
+    }
+
+    private function rejectClientProvenance(Request $request): void
+    {
+        $request->validate(array_fill_keys(['responded_by', 'responded_at', 'recorded_by', 'recorded_at', 'closed_by', 'closed_at', 'response_document_id', 'document_id', 'documentable_id', 'documentable_type', 'tax_case_id', 'stage_id', 'stage_source', 'status', 'uploaded_by', 'uploaded_at', 'submitted_by', 'submitted_at', 'approved_by', 'approved_at'], 'prohibited'));
+    }
+
+    private function lifecycleCommand(callable $operation, TaxCase $case)
+    {
         try {
-            if ($kianSubmission->tax_case_id !== $taxCase->id) {
-                return $this->error('KIAN submission not found for this tax case', 404);
-            }
-
-            DB::beginTransaction();
-
-            $kianSubmission->update([
-                'status' => 'CLOSED',
-                'closed_date' => now(),
-                'closed_by' => auth()->id(),
-            ]);
-
-            DB::commit();
-
-            return $this->success($kianSubmission, 'KIAN case closed', 200);
-        } catch (\Exception $e) {
-            DB::rollBack();
-
-            return $this->error($e->getMessage(), 500);
+            return $this->success($this->representation($operation(), $case), 'KIAN lifecycle recorded');
+        } catch (\Illuminate\Validation\ValidationException | \Illuminate\Auth\Access\AuthorizationException | \Illuminate\Database\Eloquent\ModelNotFoundException | \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $exception) {
+            throw $exception;
+        } catch (\Throwable $exception) {
+            report($exception);
+            return $this->error('Unable to complete the KIAN request. Retry the identical command to confirm its recorded state.', 500);
         }
+    }
+
+    private function representation(KianSubmission $kian, TaxCase $case): array
+    {
+        $kian->loadMissing(['respondedBy:id,name', 'closedBy:id,name', 'responseDocument']);
+        $data = $kian->toArray();
+        $data['available_actions'] = app(\App\Services\KianLifecycle::class)->availableActions($kian, $case);
+        $data['final_response'] = $kian->response_status === null ? null : [
+            'outcome' => $kian->response_status, 'reference' => $kian->response_reference,
+            'issued_date' => $kian->response_issued_date?->toDateString(), 'received_date' => $kian->response_received_date?->toDateString(),
+            'approved_amount' => $kian->approved_amount, 'notes' => $kian->response_notes,
+            'recorded_by' => $kian->respondedBy?->only(['id', 'name']), 'recorded_at' => $kian->responded_at?->toIso8601String(),
+            'document' => $kian->responseDocument ? $kian->responseDocument->only(['id', 'original_filename', 'file_size', 'file_mime_type']) + ['download_url' => '/api/documents/'.$kian->response_document_id.'/download'] : null,
+        ];
+        $data['closure'] = $kian->closed_at === null ? null : ['closed_by' => $kian->closedBy?->only(['id', 'name']), 'closed_at' => $kian->closed_at->toIso8601String()];
+        return $data;
     }
 
     /**

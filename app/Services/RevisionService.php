@@ -207,6 +207,10 @@ class RevisionService
     private function applyDocuments(Revision $revision, TaxCase $case, Model $target): void
     {
         $changes = $this->normalizeDocumentChanges($revision->proposed_document_changes ?? []);
+        $ids = array_merge($changes['files_to_delete'], $changes['files_to_add']);
+        if (Document::withTrashed()->whereIn('id', $ids)->where('documentable_type', \App\Models\KianSubmission::class)->where('document_type', 'kian_final_response')->exists()) {
+            throw ValidationException::withMessages(['documents' => 'KIAN final response evidence cannot be revised.']);
+        }
         if ($changes['files_to_delete']) Document::whereIn('id',$changes['files_to_delete'])->where('tax_case_id',$case->id)->where('stage_code',(string)$revision->stage_code)->delete();
         if ($changes['files_to_add']) Document::whereIn('id',$changes['files_to_add'])->where('tax_case_id',$case->id)->where('stage_code',(string)$revision->stage_code)->update(['documentable_type'=>$target::class,'documentable_id'=>$target->getKey()]);
     }
