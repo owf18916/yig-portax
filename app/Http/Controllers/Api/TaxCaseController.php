@@ -312,7 +312,11 @@ class TaxCaseController extends ApiController
                 'label' => 'Pengembalian Pendahuluan (Preliminary Refund)',
                 'description' => 'Recorded approved Tax Office decision followed by one full confirmed receipt',
                 'available_actions' => [
-                    'administrative_request' => $taxCase->is_preliminary_refund && ! $workflowState['terminal'],
+                    'administrative_request' => $taxCase->is_preliminary_refund
+                        && $taxCase->preliminary_can_decide
+                        && in_array(1, $workflowState['completed_stages'], true)
+                        && ! collect($workflowState['completed_stages'])->contains(fn ($stage) => $stage > 1)
+                        && ! $workflowState['terminal'],
                     'continue_sp2' => false,
                 ],
                 'refund_details' => [

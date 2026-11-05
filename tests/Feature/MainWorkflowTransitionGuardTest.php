@@ -203,6 +203,48 @@ class MainWorkflowTransitionGuardTest extends TestCase
             ->where('status', 'submitted')->orderBy('stage_id')->pluck('stage_id')->all());
     }
 
+    public function test_stage_one_persists_preliminary_selection_and_exposes_only_the_administrative_next_action(): void
+    {
+        $this->user->update(['is_active' => true]);
+        $this->user->role->update(['permissions' => ['submit_cases'], 'is_active' => true]);
+        $this->case->update(['case_type' => 'VAT', 'spt_type' => 'Restitusi']);
+        $this->supportingDocument(1);
+        $this->postJson($this->url(1), [
+            'action' => 'submit', 'spt_position_type' => 'LB', 'spt_type' => 'Pengembalian Pendahuluan',
+        ])->assertOk();
+        $this->assertSame('Pengembalian Pendahuluan', $this->case->fresh()->spt_type);
+        $this->getJson("/api/tax-cases/{$this->case->id}")->assertOk()
+            ->assertJsonPath('data.workflow_state.completed_stages', [1])
+            ->assertJsonPath('data.workflow_state.available_stages', [])
+            ->assertJsonPath('data.workflow_state.stages.1.reason', 'preliminary_administrative_route')
+            ->assertJsonPath('data.preliminary_refund_info.available_actions.administrative_request', true);
+        $before = $this->case->fresh()->getAttributes();
+        $this->postJson($this->url(2), ['action' => 'submit'])->assertUnprocessable();
+        $this->assertSame($before, $this->case->fresh()->getAttributes());
+        $this->assertDatabaseCount('workflow_histories', 1);
+        $this->assertDatabaseCount('sp2_records', 0);
+    }
+
+    public static function ordinaryStageTwoRoutes(): array
+    {
+        return [['VAT', 'Restitusi'], ['VAT', 'Kompensasi'], ['CIT', 'Restitusi']];
+    }
+
+    #[DataProvider('ordinaryStageTwoRoutes')]
+    public function test_ordinary_stage_two_access_survives_the_preliminary_correction(string $type, string $method): void
+    {
+        $this->case->update(['case_type' => $type, 'spt_type' => $method]);
+        $this->getJson("/api/tax-cases/{$this->case->id}/sp2-records")->assertConflict();
+        $this->submitHistory(1);
+        $this->getJson("/api/tax-cases/{$this->case->id}")->assertOk()
+            ->assertJsonPath('data.workflow_state.stages.1.submittable', true);
+        $this->postJson($this->url(2), ['action' => 'draft', 'sp2_number' => 'NORMAL'])->assertOk();
+        $this->getJson("/api/tax-cases/{$this->case->id}/sp2-records")->assertOk()->assertJsonPath('data.sp2_number', 'NORMAL');
+        $this->supportingDocument(2);
+        $this->postJson($this->url(2), ['action' => 'submit', 'sp2_number' => 'NORMAL'])->assertOk();
+        $this->getJson("/api/tax-cases/{$this->case->id}/sp2-records")->assertOk();
+    }
+
     private function url(int $stage): string
     {
         return "/api/tax-cases/{$this->case->id}/workflow/{$stage}";

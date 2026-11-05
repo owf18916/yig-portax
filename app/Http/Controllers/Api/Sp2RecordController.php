@@ -46,6 +46,11 @@ class Sp2RecordController extends ApiController
      */
     public function show(TaxCase $taxCase): JsonResponse
     {
+        // Preserve completed-stage reads, but do not expose an ineligible form's data.
+        $result = app(\App\Services\MainWorkflowTransitionGuard::class)->inspect($taxCase, 2, allowCompleted: true);
+        if (! $result['allowed']) {
+            return $this->error($result['message'], $result['status']);
+        }
         $sp2Record = $taxCase->sp2Record;
 
         if (!$sp2Record) {

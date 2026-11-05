@@ -8,7 +8,7 @@
       </div>
     </div>
 
-    <StageForm
+    <StageForm v-if="!isLoading && stageAccessible"
       :stageName="`Stage 2: SP2 Filing (Audit Notification)`"
       :stageDescription="`Enter SP2 notification details received from tax authority`"
       :stageId="2"
@@ -26,8 +26,14 @@
       @saveDraft="refreshTaxCase"
     />
 
+    <div v-if="!isLoading && !stageAccessible" class="p-6 space-y-4" role="status">
+      <p>Stage 2 is unavailable for this case. Return to the case to follow the available workflow.</p>
+      <Button @click="$router.push(`/tax-cases/${caseId}`)" variant="secondary">Back to case</Button>
+      <Button v-if="caseData.preliminary_refund_info?.available_actions?.administrative_request" @click="$router.push(`/tax-cases/${caseId}/refund-preliminary`)">Catat Pengajuan Pengembalian Pendahuluan</Button>
+    </div>
+
     <!-- REVISION HISTORY PANEL - Integrated -->
-    <div class="px-4 py-6">
+    <div v-if="!isLoading && stageAccessible" class="px-4 py-6">
       <RevisionHistoryPanel 
         :case-id="caseId"
         :stage-id="2"
@@ -47,9 +53,10 @@
 <script setup>
 import { apiFetch as fetch } from '../composables/useSessionApi.js'
 
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useRevisionAPI } from '@/composables/useRevisionAPI'
+import Button from '../components/Button.vue'
 import StageForm from '../components/StageForm.vue'
 import RevisionHistoryPanel from '../components/RevisionHistoryPanel.vue'
 
@@ -71,6 +78,7 @@ const preFilledMessage = ref('Loading...')
 const isLoading = ref(true)
 const caseStatus = ref(null)
 const caseData = ref({})
+const stageAccessible = computed(() => caseData.value.workflow_state?.stages?.some(s => s.stage === 2 && ['available', 'completed'].includes(s.status)) === true)
 const revisions = ref([])
 const currentUser = ref(null)
 const currentDocuments = ref([])
@@ -177,6 +185,7 @@ onMounted(async () => {
 
     // Store full case data
     caseData.value = caseFetchedData
+    if (!stageAccessible.value) return
 
     // Pre-fill dengan existing SP2 record jika ada
     const sp2Record = caseFetchedData.sp2_record

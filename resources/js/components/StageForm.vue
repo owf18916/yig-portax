@@ -69,6 +69,11 @@
           </Button>
         </div>
         
+        <div v-if="stageId === 1 && submissionComplete && preliminaryRequestAvailable" class="flex flex-wrap gap-2">
+          <Button @click="router.push(`/tax-cases/${caseId}/refund-preliminary`)">Catat Pengajuan Pengembalian Pendahuluan</Button>
+          <Button @click="viewCaseDetail" variant="secondary">View Case Detail</Button>
+        </div>
+
         <!-- Completion Message (shown when submission complete but NOT continuing - ONLY for Decision Stages: 4, 7, 10) -->
         <div v-if="[4, 7, 10].includes(stageId) && submissionComplete && !formData.continue_to_next_stage" class="bg-amber-50 border-2 border-amber-200 rounded-lg p-4 space-y-2">
           <h3 class="font-semibold text-amber-900">✅ Stage {{ stageId }} Completed</h3>
@@ -477,6 +482,8 @@ const route = useRoute()
 
 // Props - passed from parent form component
 const props = defineProps({
+  workflowState: { type: Object, default: null },
+  preliminaryRequestAvailable: { type: Boolean, default: false },
   exposure: { type: Object, default: null },
   stageName: {
     type: String,
@@ -622,7 +629,10 @@ const pendingAction = ref(null) // 'submit' or 'draft'
 
 // Compute next stage ID if not provided via props
 const computedNextStageId = computed(() => {
-  return props.nextStageId || (props.stageId < 12 ? props.stageId + 1 : null)
+  const next = props.nextStageId || (props.stageId < 12 ? props.stageId + 1 : null)
+  // Stage 1 uses the persisted server capability, including after submit/refresh.
+  if (props.stageId === 1 && !props.workflowState?.stages?.some(s => s.stage === next && s.submittable)) return null
+  return next
 })
 
 // Compute whether fields should be disabled based on case status

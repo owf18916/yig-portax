@@ -13,6 +13,8 @@
       :stageDescription="`Review your initial tax return submission created during case creation`"
       :stageId="1"
       :nextStageId="2"
+      :workflowState="caseData.workflow_state"
+      :preliminaryRequestAvailable="caseData.preliminary_refund_info?.available_actions?.administrative_request === true"
       :caseId="caseId"
       :caseNumber="caseNumber"
       :fields="fields"

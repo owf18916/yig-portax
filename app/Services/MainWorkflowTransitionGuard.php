@@ -8,7 +8,7 @@ class MainWorkflowTransitionGuard
 {
     public function __construct(private MainWorkflowStateResolver $stateResolver) {}
 
-    public function inspect(TaxCase $taxCase, int $stage): array
+    public function inspect(TaxCase $taxCase, int $stage, bool $allowCompleted = false): array
     {
         if ($stage < 1 || $stage > 12) {
             return $this->denied(422, 'Main workflow stages must be between 1 and 12.');
@@ -17,7 +17,7 @@ class MainWorkflowTransitionGuard
         $state = $this->stateResolver->resolve($taxCase);
         $resolved = collect($state['stages'])->firstWhere('stage', $stage);
 
-        if ($resolved['submittable'] ?? false) {
+        if (($resolved['submittable'] ?? false) || ($allowCompleted && ($resolved['status'] ?? null) === 'completed')) {
             return $this->allowed();
         }
 
@@ -34,6 +34,7 @@ class MainWorkflowTransitionGuard
     private function message(int $stage, string $reason): string
     {
         return match ($reason) {
+            'preliminary_administrative_route' => 'Use the administrative Preliminary Refund route; normal Stage 2 progression is unavailable.',
             'already_completed' => "Stage {$stage} has already been submitted and cannot be rewritten through the normal workflow endpoint.",
             'case_terminal' => 'Completed or closed tax cases cannot accept workflow changes.',
             'previous_stage_incomplete' => 'The previous stage must be submitted first.',

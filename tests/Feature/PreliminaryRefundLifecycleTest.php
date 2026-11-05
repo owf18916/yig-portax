@@ -54,6 +54,71 @@ class PreliminaryRefundLifecycleTest extends TestCase
         $this->actingAs($this->staff);
     }
 
+    public static function stageTwoStates(): array
+    {
+        return array_map(fn ($state) => [$state], ['unsubmitted', 'no_request', 'SUBMITTED', 'PENDING', 'POSTPONED', 'APPROVED', 'REJECTED', 'CLOSED']);
+    }
+
+    #[DataProvider('stageTwoStates')]
+    public function test_stage_two_capability_reads_and_every_compatibility_write_are_consistent(string $state): void
+    {
+        if ($state === 'unsubmitted') {
+            WorkflowHistory::where('tax_case_id', $this->case->id)->delete();
+        } elseif (! in_array($state, ['no_request', 'CLOSED'], true)) {
+            // Synthetic status rows test routing only; lifecycle evidence is covered separately.
+            PreliminaryRefundRequest::create([
+                'tax_case_id' => $this->case->id, 'request_number' => 'ROUTE-STATE',
+                'submission_date' => '2026-10-30', 'requested_amount' => '100.00', 'approval_status' => $state,
+            ]);
+        } elseif ($state === 'CLOSED') {
+            $this->case->update(['is_completed' => true, 'case_status_id' => CaseStatus::where('code', 'CLOSED')->value('id')]);
+        }
+        $before = $this->case->fresh()->getAttributes();
+        $history = WorkflowHistory::all()->toArray();
+        $this->getJson($this->base)->assertOk()
+            ->assertJsonPath('data.workflow_state.stages.1.submittable', false)
+            ->assertJsonPath('data.preliminary_refund_info.available_actions.administrative_request', ! in_array($state, ['unsubmitted', 'CLOSED'], true));
+        $this->getJson($this->base.'/sp2-records')->assertConflict();
+        foreach (['draft', 'submit'] as $action) {
+            $this->postJson($this->base.'/workflow/2', ['action' => $action, 'spt_type' => 'Restitusi'])->assertUnprocessable();
+        }
+        $this->postJson($this->base.'/sp2-records', ['sp2_number' => 'BYPASS'])->assertUnprocessable();
+        foreach (['approve', 'reject'] as $action) {
+            $this->postJson($this->base.'/sp2-records/999/'.$action)->assertForbidden();
+        }
+        $this->postJson($this->base.'/workflow-history', [
+            'stage_id' => 1, 'stage_from' => 1, 'stage_to' => 2, 'action' => 'routed', 'status' => 'submitted',
+        ])->assertUnprocessable();
+        $this->assertSame($before, $this->case->fresh()->getAttributes());
+        $this->assertSame($history, WorkflowHistory::all()->toArray());
+        $this->assertDatabaseCount('sp2_records', 0);
+        $this->assertDatabaseCount('refund_processes', 0);
+        $this->assertDatabaseCount('status_histories', 0);
+        $this->assertDatabaseCount('documents', 0);
+    }
+
+    public function test_foreign_entity_and_missing_permission_cannot_gain_preliminary_capabilities(): void
+    {
+        $this->staff->update(['entity_id' => $this->holding->entity_id]);
+        $this->staff->entity()->first()->update(['entity_type' => 'AFFILIATE']);
+        $this->staff->unsetRelation('entity');
+        foreach (['', '/sp2-records', '/preliminary-refund-request'] as $path) {
+            $this->getJson($this->base.$path)->assertForbidden();
+        }
+        foreach (['/workflow/2', '/sp2-records', '/workflow-history'] as $path) {
+            $this->postJson($this->base.$path, ['action' => 'submit'])->assertForbidden();
+        }
+        $this->assertDatabaseCount('sp2_records', 0);
+        $this->assertDatabaseCount('workflow_histories', 1);
+
+        $this->staff->update(['entity_id' => $this->case->entity_id]);
+        $this->staff->unsetRelation('entity');
+        $this->staff->role->update(['permissions' => []]);
+        $this->getJson($this->base)->assertOk()
+            ->assertJsonPath('data.preliminary_can_decide', false)
+            ->assertJsonPath('data.preliminary_refund_info.available_actions.administrative_request', false);
+    }
+
     private function pdf(string $content = 'evidence'): UploadedFile
     {
         return UploadedFile::fake()->createWithContent('evidence.pdf', "%PDF-1.4\n".$content."\n%%EOF");
