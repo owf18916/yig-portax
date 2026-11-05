@@ -294,7 +294,7 @@ class TaxCaseController extends ApiController
         ));
 
         // ⭐ ADD KIAN ELIGIBILITY INFO (LEGACY - kept for backward compatibility)
-        $taxCase->can_create_kian = $taxCase->canCreateKian();
+        $taxCase->can_create_kian = collect($taxCase->getKianStatusByStage())->contains(fn ($state) => $state['draft_actions']['create']);
         $taxCase->kian_eligibility_reason = $taxCase->getKianEligibilityReason();
 
         // ✅ NEW: ADD COMPREHENSIVE KIAN STATUS BY STAGE (Multiple KIAN per case concept)

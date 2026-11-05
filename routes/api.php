@@ -128,6 +128,9 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         }
         
         $modelClass = $modelMap[$modelType];
+        if ($modelClass === \App\Models\KianSubmission::class) {
+            app(\App\Services\KianDraftAccess::class)->authorize($taxCase);
+        }
         
         // For tax-cases model type, verify the record ID matches the taxCaseId
         if ($modelType === 'tax-cases' && (int) $recordId !== (int) $taxCase->id) {
@@ -150,6 +153,10 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
             'next_action_due_date' => 'nullable|date',
             'status_comment' => 'nullable|string|max:1000',
         ]);
+
+        if ($record instanceof \App\Models\KianSubmission) {
+            abort_unless(app(\App\Services\KianDraftAccess::class)->isDraft($record), 422, 'Only stage-scoped KIAN drafts can be edited.');
+        }
         
         $record->update($validated);
         

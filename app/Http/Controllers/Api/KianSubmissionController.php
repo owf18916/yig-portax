@@ -17,6 +17,7 @@ class KianSubmissionController extends ApiController
      */
     public function store(Request $request, TaxCase $taxCase, ?int $stageId = null)
     {
+        app(\App\Services\KianDraftAccess::class)->authorize($taxCase);
         $initialLevel = DB::transactionLevel();
         try {
             // If stageId not in route, try to get from request
@@ -44,7 +45,7 @@ class KianSubmissionController extends ApiController
             $existingKian = $taxCase->kianSubmissions()->where('kian_submissions.stage_id', $stageId)->lockForUpdate()->first();
 
             // If KIAN exists but status is not 'draft', can't edit
-            if ($existingKian && $existingKian->status !== 'draft') {
+            if ($existingKian && ! app(\App\Services\KianDraftAccess::class)->isDraft($existingKian)) {
                 return $this->error("KIAN for Stage {$stageId} already exists with status '{$existingKian->status}'. Only draft submissions can be edited.", 422);
             }
 
@@ -149,17 +150,20 @@ class KianSubmissionController extends ApiController
             }
 
             // Find existing KIAN submission for this stage
-            $kianSubmission = $taxCase->kianSubmissions()
-                ->where('kian_submissions.stage_id', $stageId)
-                ->first();
-
+            $taxCase->loadMissing('kianSubmissions');
+            $kianSubmission = $taxCase->kianSubmissions->firstWhere('stage_id', $stageId);
+            $actions = $kianSubmission && ! app(\App\Services\KianDraftAccess::class)->isDraft($kianSubmission)
+                ? ['create' => false, 'save_draft' => false, 'submit' => false]
+                : $taxCase->getKianStatusByStage()[$stageId]['draft_actions'];
             if (! $kianSubmission) {
                 // No KIAN submission exists yet for this stage
                 // Return null or empty so frontend knows it needs to be created
-                return $this->success(null, 'No KIAN submission found for this stage (new submission will be created)', 200);
+                return response()->json([
+                    'success' => true, 'message' => 'No KIAN submission found for this stage', 'data' => null, 'draft_actions' => $actions,
+                ]);
             }
 
-            return $this->success($this->representation($kianSubmission, $taxCase), 'KIAN submission retrieved for stage', 200);
+            return response()->json(['success' => true, 'message' => 'KIAN submission retrieved for stage', 'data' => $this->representation($kianSubmission, $taxCase), 'draft_actions' => $actions]);
         } catch (\Exception $e) {
             report($e);
             return $this->error('Unable to retrieve KIAN submission.', 500);
@@ -171,6 +175,7 @@ class KianSubmissionController extends ApiController
      */
     public function submit(Request $request, TaxCase $taxCase, KianSubmission $kianSubmission)
     {
+        app(\App\Services\KianDraftAccess::class)->authorize($taxCase);
         $initialLevel = DB::transactionLevel();
         try {
             DB::beginTransaction();
@@ -180,7 +185,7 @@ class KianSubmissionController extends ApiController
                 return $this->error('KIAN submission not found for this tax case', 404);
             }
 
-            if ($kianSubmission->status !== 'draft') {
+            if (! app(\App\Services\KianDraftAccess::class)->isDraft($kianSubmission)) {
                 return $this->error('Only draft KIAN submissions can be submitted', 400);
             }
 
@@ -268,6 +273,7 @@ class KianSubmissionController extends ApiController
      */
     public function updateByStage(Request $request, TaxCase $taxCase, int $stageId)
     {
+        app(\App\Services\KianDraftAccess::class)->authorize($taxCase);
         if (!in_array($stageId, [4, 7, 10, 12], true)) return $this->error('Invalid KIAN stage.', 422);
         if (!$taxCase->kianSubmissions()->where('stage_id', $stageId)->exists()) return $this->error('No KIAN submission found for this stage.', 404);
         $request->merge(['action' => 'save']);

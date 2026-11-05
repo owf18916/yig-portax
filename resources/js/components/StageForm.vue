@@ -106,7 +106,7 @@
           </div>
           <div class="p-3">
             <div v-if="fieldsDisabled" class="mb-3 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
-              This submitted stage is view-only. Request a Revision to propose changes.
+              {{ Object.hasOwn(prefillData || {}, 'kianSubmissionStatus') ? 'KIAN submission details are read-only. Actions depend on the current server state and your permissions.' : 'This submitted stage is view-only. Request a Revision to propose changes.' }}
             </div>
             <form @submit.prevent="submitForm" class="space-y-2">
             
@@ -640,7 +640,9 @@ const computedNextStageId = computed(() => {
 const fieldsDisabled = computed(() => {
   // ✅ NEW: Check KIAN submission status first (for KIAN branch actions)
   if (Object.hasOwn(props.prefillData || {}, 'kianSubmissionStatus')) {
-    return props.prefillData.kianSubmissionStatus !== 'draft'
+    return props.isLoading || props.prefillData.kianSubmissionStatus !== 'draft'
+      || props.prefillData.kianDraftActions?.save_draft !== true
+      || props.prefillData.kianDraftActions?.submit !== true
   }
   
   // ✅ EXISTING: Check workflowHistories (for main workflow stages 1-12)

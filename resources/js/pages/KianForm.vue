@@ -98,6 +98,7 @@ const scopeKey = computed(() => `${caseId.value}:${stageId.value}`)
 const validScope = computed(() => Number.isSafeInteger(caseId.value) && caseId.value > 0 && [4, 7, 10, 12].includes(stageId.value))
 const stageUrl = computed(() => `/api/tax-cases/${caseId.value}/kian-submissions/${stageId.value}`)
 const submission = ref(null)
+const draftActions = ref({})
 const caseData = ref({})
 const loadedScope = ref('')
 const isLoading = ref(true)
@@ -120,7 +121,7 @@ let readGeneration = 0
 const resolved = computed(() => validScope.value && !isLoading.value && loadedScope.value === scopeKey.value)
 const caseNumber = computed(() => safeText(caseData.value.case_number, 'Case details'))
 const caseStatus = computed(() => caseData.value.case_status_id)
-const draftEditable = computed(() => resolved.value && !mutationBusy.value && (!submission.value || submission.value.status === 'draft'))
+const draftEditable = computed(() => resolved.value && !mutationBusy.value && draftActions.value.save_draft === true && draftActions.value.submit === true && (!submission.value ? draftActions.value.create === true : submission.value.status === 'draft'))
 const finalResponse = computed(() => submission.value?.final_response && typeof submission.value.final_response === 'object' ? submission.value.final_response : null)
 const canRecord = computed(() => resolved.value && submission.value?.status === 'submitted' && !finalResponse.value && submission.value?.available_actions?.record_response === true)
 const canClose = computed(() => resolved.value && submission.value?.status === 'responded' && !!finalResponse.value && !submission.value?.closure && submission.value?.available_actions?.close === true)
@@ -128,6 +129,7 @@ const prefillData = computed(() => ({
   kian_number: submission.value?.kian_number || '', submission_date: submission.value?.submission_date?.slice(0, 10) || null,
   loss_amount: submission.value?.loss_amount ?? submission.value?.kian_amount ?? caseData.value.kian_status_by_stage?.[stageId.value]?.lossAmount ?? '0',
   notes: submission.value?.notes || '', kianSubmissionStatus: submission.value?.status ?? 'draft',
+  kianDraftActions: resolved.value ? draftActions.value : {},
 }))
 const fields = [
   { id: 1, key: 'kian_number', label: 'KIAN number', type: 'text', required: true, order: 1 },
@@ -203,7 +205,7 @@ function resetResponse() {
 async function loadPage() {
   const generation = ++readGeneration
   const key = scopeKey.value
-  loadedScope.value = ''; submission.value = null; currentDocuments.value = []; caseData.value = {}
+  loadedScope.value = ''; submission.value = null; draftActions.value = {}; currentDocuments.value = []; caseData.value = {}
   isLoading.value = true; error.value = ''; success.value = ''; resetResponse()
   if (!validScope.value) { error.value = 'Select a valid case and KIAN stage (4, 7, 10 or 12).'; isLoading.value = false; return }
   try {
@@ -211,7 +213,7 @@ async function loadPage() {
     if (generation !== readGeneration || key !== scopeKey.value) return
     const model = caseResult.data ?? caseResult
     if (Number(model?.id) !== caseId.value) throw new Error('Case scope mismatch')
-    submission.value = scopedRecord(result); caseData.value = model; loadedScope.value = key
+    submission.value = scopedRecord(result); draftActions.value = result.draft_actions ?? {}; caseData.value = model; loadedScope.value = key
     // Historical documents use the established bounded stage/type read; no per-document requests.
     documentsError.value = false
     try {
@@ -260,7 +262,7 @@ async function send(command) {
     loadedScope.value = ''
     const result = await api(stageUrl.value)
     if (key !== scopeKey.value || generation !== readGeneration) return
-    submission.value = scopedRecord(result); loadedScope.value = key
+    submission.value = scopedRecord(result); draftActions.value = result.draft_actions ?? {}; loadedScope.value = key
     const confirmed = command === 'close' ? submission.value?.status === 'closed' && submission.value?.closure : ['responded', 'closed'].includes(submission.value?.status) && submission.value?.final_response
     if (!confirmed) throw new Error('Unconfirmed command')
     resetResponse()

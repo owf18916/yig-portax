@@ -173,6 +173,9 @@ class EntityAuthorizationHardeningTest extends TestCase
 
     public function test_nested_resource_ids_cannot_be_substituted_between_accessible_cases(): void
     {
+        // Exercise nested ownership with an entitled writer; no capability is 403.
+        $this->affiliateAUser->role()->update(['is_active' => true, 'permissions' => ['submit_cases']]);
+        $this->affiliateAUser->update(['is_active' => true]);
         $kian = KianSubmission::create([
             'tax_case_id' => $this->caseASecond->id, 'stage_id' => 4, 'kian_number' => 'KIAN-A2',
             'submission_date' => '2026-09-01', 'kian_amount' => 100, 'status' => 'draft',

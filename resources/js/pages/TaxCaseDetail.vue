@@ -81,13 +81,13 @@
               </div>
               <div class="flex gap-2">
                 <button
-                  v-if="!status.submitted"
+                  v-if="status.draft_actions?.submit === true"
                   @click="navigateToKianSubmission(stageId)"
                   class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded font-semibold whitespace-nowrap"
                 >
                   ➜ Submit KIAN
                 </button>
-                <span v-else class="px-4 py-2 bg-green-600 text-white rounded font-semibold inline-block">
+                <span v-else-if="status.submitted" class="px-4 py-2 bg-green-600 text-white rounded font-semibold inline-block">
                   ✅ Submitted
                 </span>
               </div>
@@ -379,7 +379,7 @@
 
     <!-- KIAN Modal -->
     <KianModal
-      :is-open="showKianModal"
+      :is-open="showKianModal && caseData.can_create_kian === true"
       :tax-case="caseData"
       :loss-amount="caseData.disputed_amount - (caseData.total_refunded_amount || 0)"
       :reason="caseData.kian_eligibility_reason || ''"

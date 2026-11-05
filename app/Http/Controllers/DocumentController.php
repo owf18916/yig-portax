@@ -30,6 +30,10 @@ class DocumentController extends Controller
         $taxCase = TaxCase::findOrFail($request->integer('tax_case_id'));
         Gate::authorize('view', $taxCase);
 
+        if ($request->input('documentable_type') === \App\Models\KianSubmission::class) {
+            $this->authorizeKianDraftDocument($taxCase, $request->integer('stage_code'), $request->integer('documentable_id'));
+        }
+
         abort_if(str_starts_with((string) $request->input('document_type'), 'kian_final_response'), 422, 'Use the KIAN final response command to attach evidence.');
 
         abort_if($request->input('documentable_type') === \App\Models\PreliminaryRefundRequest::class
@@ -269,6 +273,9 @@ class DocumentController extends Controller
         $this->authorizeDocument($document);
         abort_if($document->isPreliminaryEvidence(), 422, 'Preliminary evidence cannot be deleted.');
         abort_if($document->isKianResponseEvidence(), 422, 'KIAN final response evidence cannot be deleted.');
+        if ($document->documentable_type === \App\Models\KianSubmission::class) {
+            $this->authorizeKianDraftDocument($document->taxCase, (int) $document->stage_code, (int) $document->documentable_id);
+        }
 
         try {
             // Soft delete the document
@@ -297,6 +304,16 @@ class DocumentController extends Controller
         $random = Str::random(8);
         
         return "{$timestamp}_{$random}.{$extension}";
+    }
+
+    private function authorizeKianDraftDocument(TaxCase $case, int $stage, int $id): void
+    {
+        app(\App\Services\KianDraftAccess::class)->authorize($case);
+        if ($id !== 0) {
+            $owner = $case->kianSubmissions()->whereKey($id)->firstOrFail();
+            abort_unless($owner->stage_id === $stage, 404);
+        }
+        abort_unless(($case->getKianStatusByStage()[$stage]['draft_actions']['save_draft'] ?? false) === true, 422, 'KIAN submission documents are read-only.');
     }
 
     private function authorizeDocument(Document $document): void

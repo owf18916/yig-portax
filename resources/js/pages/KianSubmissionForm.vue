@@ -22,12 +22,12 @@
                   <p class="text-xs font-semibold text-blue-900">Stage 4 - SKP Decision</p>
                   <p class="text-xs text-blue-700 mt-1">Remaining exposure: {{ kianStatusByStage['4']?.remainingExposure ?? 'Unresolved or pending' }}</p>
                 </div>
-                <button v-if="!kianStatusByStage['4']?.submitted"
+                <button v-if="kianStatusByStage['4']?.draft_actions?.submit === true"
                   @click="selectStageForKian(4)"
                   class="px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600">
                   Submit KIAN
                 </button>
-                <span v-else class="px-3 py-1 bg-green-500 text-white text-xs rounded">✓ Submitted</span>
+                <span v-else-if="kianStatusByStage['4']?.submitted" class="px-3 py-1 bg-green-500 text-white text-xs rounded">✓ Submitted</span>
               </div>
             </div>
 
@@ -39,12 +39,12 @@
                   <p class="text-xs font-semibold text-blue-900">Stage 7 - Objection Decision</p>
                   <p class="text-xs text-blue-700 mt-1">Remaining exposure: {{ kianStatusByStage['7']?.remainingExposure ?? 'Unresolved or pending' }}</p>
                 </div>
-                <button v-if="!kianStatusByStage['7']?.submitted"
+                <button v-if="kianStatusByStage['7']?.draft_actions?.submit === true"
                   @click="selectStageForKian(7)"
                   class="px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600">
                   Submit KIAN
                 </button>
-                <span v-else class="px-3 py-1 bg-green-500 text-white text-xs rounded">✓ Submitted</span>
+                <span v-else-if="kianStatusByStage['7']?.submitted" class="px-3 py-1 bg-green-500 text-white text-xs rounded">✓ Submitted</span>
               </div>
             </div>
 
@@ -56,12 +56,12 @@
                   <p class="text-xs font-semibold text-blue-900">Stage 10 - Appeal Decision</p>
                   <p class="text-xs text-blue-700 mt-1">Remaining exposure: {{ kianStatusByStage['10']?.remainingExposure ?? 'Unresolved or pending' }}</p>
                 </div>
-                <button v-if="!kianStatusByStage['10']?.submitted"
+                <button v-if="kianStatusByStage['10']?.draft_actions?.submit === true"
                   @click="selectStageForKian(10)"
                   class="px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600">
                   Submit KIAN
                 </button>
-                <span v-else class="px-3 py-1 bg-green-500 text-white text-xs rounded">✓ Submitted</span>
+                <span v-else-if="kianStatusByStage['10']?.submitted" class="px-3 py-1 bg-green-500 text-white text-xs rounded">✓ Submitted</span>
               </div>
             </div>
 
@@ -73,12 +73,12 @@
                   <p class="text-xs font-semibold text-blue-900">Stage 12 - Supreme Court Decision</p>
                   <p class="text-xs text-blue-700 mt-1">Remaining exposure: {{ kianStatusByStage['12']?.remainingExposure ?? 'Unresolved or pending' }}</p>
                 </div>
-                <button v-if="!kianStatusByStage['12']?.submitted"
+                <button v-if="kianStatusByStage['12']?.draft_actions?.submit === true"
                   @click="selectStageForKian(12)"
                   class="px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600">
                   Submit KIAN
                 </button>
-                <span v-else class="px-3 py-1 bg-green-500 text-white text-xs rounded">✓ Submitted</span>
+                <span v-else-if="kianStatusByStage['12']?.submitted" class="px-3 py-1 bg-green-500 text-white text-xs rounded">✓ Submitted</span>
               </div>
             </div>
           </div>
@@ -95,7 +95,8 @@
         </p>
       </div>
       
-      <form @submit.prevent="isKianSubmitted ? null : submitKianForStage" class="space-y-4">
+      <p v-if="!selectedDraftAllowed && !isKianSubmitted" class="text-sm text-gray-600">KIAN submission details are read-only. Reload the case to confirm your current permissions.</p>
+      <form v-if="selectedDraftAllowed || isKianSubmitted" @submit.prevent="isKianSubmitted ? null : submitKianForStage" class="space-y-4">
         <!-- KIAN Number -->
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Nomor KIAN</label>
@@ -189,7 +190,7 @@
       :isLoading="isLoading"
       :caseStatus="caseStatus"
       :preFilledMessage="preFilledMessage"
-      :prefillData="prefillData"
+      :prefillData="{ ...prefillData, kianSubmissionStatus: 'legacy' }"
       :isTerminalStage="true"
       @submit="refreshTaxCase"
       @saveDraft="refreshTaxCase"
@@ -269,6 +270,9 @@ const selectedStageForKian = ref(null)
 const preFilledLossAmount = ref(0)
 const isSubmittingKian = ref(false)
 const isKianSubmitted = ref(false)
+const selectedDraftActions = ref({})
+const selectedDraftAllowed = computed(() => Number(route.params.id) === caseId && !isLoading.value && selectedDraftActions.value.save_draft === true && selectedDraftActions.value.submit === true)
+let selectionGeneration = 0
 
 // ✅ NEW: KIAN form data
 const kianFormData = ref({
@@ -418,6 +422,9 @@ onMounted(async () => {
 
 // ✅ NEW: Select stage and prepare form (fetch existing KIAN if any)
 const selectStageForKian = async (stageId) => {
+  const generation = ++selectionGeneration
+  selectedDraftActions.value = {}
+  isKianSubmitted.value = false
   selectedStageForKian.value = stageId
   preFilledLossAmount.value = kianStatusByStage.value[stageId]?.lossAmount || 0
   
@@ -433,6 +440,9 @@ const selectStageForKian = async (stageId) => {
     const response = await fetch(`/api/tax-cases/${caseId}/kian-submissions/${stageId}`)
     if (response.ok) {
       const result = await response.json()
+      if (generation !== selectionGeneration || Number(route.params.id) !== caseId) return
+      if (result.data && (Number(result.data.tax_case_id) !== caseId || Number(result.data.stage_id) !== stageId)) return
+      selectedDraftActions.value = result.data === null && result.draft_actions?.create !== true ? {} : result.draft_actions ?? {}
       
       // If existing KIAN found, pre-fill the form
       if (result.data && result.data.id) {
@@ -470,6 +480,7 @@ const selectStageForKian = async (stageId) => {
 
 // ✅ NEW: Submit KIAN for selected stage
 const submitKianForStage = async () => {
+  if (!selectedDraftAllowed.value || isKianSubmitted.value || isSubmittingKian.value) return
   try {
     isSubmittingKian.value = true
     

@@ -17,7 +17,7 @@ function textContent(node) {
   const children = node?.children
   return typeof children === 'string' ? children : (Array.isArray(children) ? children : typeof children?.default === 'function' ? children.default() : []).map(textContent).join('')
 }
-async function fixture({ stage = 4, record = model(stage), fetcher, download } = {}) {
+async function fixture({ stage = 4, record = model(stage), fetcher, download, draftActions } = {}) {
   const route = vue.reactive({ params: { id: '9', stageId: String(stage) } })
   const calls = []
   let current = record
@@ -34,7 +34,7 @@ async function fixture({ stage = 4, record = model(stage), fetcher, download } =
         current = model(Number(route.params.stageId), url.endsWith('/close') ? 'closed' : 'responded')
         return { ok: true, json: async () => ({ data: current }) }
       }
-      return { ok: true, json: async () => ({ data: url.includes('/documents?') ? [] : url.includes('/kian-submissions/') ? current : { id: 9, case_number: 'CASE-9' } }) }
+      return { ok: true, json: async () => ({ draft_actions: draftActions ?? { create: current === null, save_draft: !current || current.status === 'draft', submit: !current || current.status === 'draft' }, data: url.includes('/documents?') ? [] : url.includes('/kian-submissions/') ? current : { id: 9, case_number: 'CASE-9' } }) }
     },
   })
   return { ...page, calls, route, setRecord(value) { current = value }, async load() { await page.state.loadPage() } }
@@ -48,6 +48,90 @@ function fill(page, amount = '') {
   page.state.documentFile.value = pdf()
 }
 const writes = page => page.calls.filter(call => call.method === 'POST')
+
+test('legacy KIAN selection requires a current scoped capability and direct save fails closed', async () => {
+  const route = vue.reactive({ params: { id: '9' } })
+  let grant = false
+  const calls = []
+  const page = await component('pages/KianSubmissionForm.vue', { useRoute: () => route, fetch: async (url, options = {}) => {
+    calls.push({ url, ...options })
+    return { ok: true, json: async () => ({ data: model(4, 'draft'), ...(grant ? { draft_actions: { save_draft: true, submit: true } } : {}) }) }
+  } })
+  page.state.isLoading.value = false
+  await page.state.selectStageForKian(4)
+  assert.equal(page.state.selectedDraftAllowed.value, false)
+  assert.doesNotMatch(await page.render(), /<form/)
+  await page.state.submitKianForStage()
+  assert.equal(calls.some(c => c.method === 'POST'), false)
+  grant = true
+  await page.state.selectStageForKian(4)
+  assert.equal(page.state.selectedDraftAllowed.value, true)
+  route.params.id = '10'
+  assert.equal(page.state.selectedDraftAllowed.value, false)
+  await page.state.submitKianForStage()
+  assert.equal(calls.some(c => c.method === 'POST'), false)
+})
+
+test('delayed granted draft read cannot enable a different KIAN stage', async () => {
+  let release
+  const page = await fixture({ fetcher: async url => {
+    if (url.endsWith('/kian-submissions/4')) return new Promise(resolve => { release = resolve })
+    if (url.endsWith('/kian-submissions/7')) return { ok: true, json: async () => ({ data: model(7, 'draft') }) }
+  } })
+  const pending = page.load()
+  page.route.params.stageId = '7'
+  await page.load()
+  release({ ok: true, json: async () => ({ data: model(4, 'draft'), draft_actions: { create: true, save_draft: true, submit: true } }) })
+  await pending
+  assert.equal(page.state.submission.value.stage_id, 7)
+  assert.equal(page.state.draftEditable.value, false)
+  assert.equal(nodes(page.client(), n => n.type === 'StageForm').length, 0)
+})
+
+for (const stage of [4, 7, 10, 12]) {
+  test(`Stage ${stage}: draft and absent capability fail closed, including refresh and route change`, async () => {
+    for (const record of [null, model(stage, 'draft')]) {
+      for (const cap of [false, undefined, null, 1, 'true', true]) {
+        const page = await fixture({ stage, record, draftActions: { create: cap, save_draft: cap, submit: cap } })
+        assert.equal(page.state.draftEditable.value, false)
+        await page.load()
+        assert.equal(page.state.draftEditable.value, cap === true)
+        assert.equal(nodes(page.client(), n => n.type === 'StageForm').length, cap === true ? 1 : 0)
+        if (cap !== true) assert.match(await page.render(), /Submission details are read-only/)
+        page.route.params.stageId = String(stage === 12 ? 4 : 12)
+        assert.equal(page.state.draftEditable.value, false)
+      }
+    }
+    let grant = true
+    const page = await fixture({ stage, record: model(stage, 'draft'), fetcher: async url => {
+      if (url.includes('/kian-submissions/')) return { ok: true, json: async () => ({ data: model(stage, 'draft'), ...(grant ? { draft_actions: { save_draft: true, submit: true } } : {}) }) }
+    } })
+    await page.load(); assert.equal(page.state.draftEditable.value, true)
+    grant = false
+    await page.load(); assert.equal(page.state.draftEditable.value, false)
+    for (const status of ['submitted', 'responded', 'closed', 'approved', 'rejected', 'unknown']) {
+      const final = await fixture({ stage, record: model(stage, status), draftActions: { create: true, save_draft: true, submit: true } })
+      await final.load(); assert.equal(final.state.draftEditable.value, false)
+    }
+  })
+
+  test(`Stage ${stage}: shared form denies missing draft capability and direct handlers`, async () => {
+    const props = vue.reactive({ stageName: 'KIAN', stageDescription: 'KIAN', exposure: null, caseNumber: 'CASE-9', stageId: stage, caseId: 9, fields: [], prefillData: { kianSubmissionStatus: 'draft' }, isLoading: false })
+    const calls = []
+    const page = await component('components/StageForm.vue', { defineProps: () => props, fetch: async (...args) => { calls.push(args) } })
+    for (const cap of [undefined, false, null, 1, 'true']) {
+      props.prefillData.kianDraftActions = { save_draft: cap, submit: cap }
+      assert.equal(page.state.fieldsDisabled.value, true)
+      assert.doesNotMatch(await page.render(), /Save as Draft|Submit &amp; Continue/)
+      await page.state.executeSubmitForm(); await page.state.executeSaveDraft()
+    }
+    assert.equal(calls.length, 0)
+    props.prefillData.kianDraftActions = { save_draft: true, submit: true }
+    assert.equal(page.state.fieldsDisabled.value, false)
+    props.isLoading = true
+    assert.equal(page.state.fieldsDisabled.value, true)
+  })
+}
 
 for (const stage of [4, 7, 10, 12]) {
   test(`Stage ${stage}: compiled form and confirmation target exact submission; multipart and empty close`, async () => {
@@ -243,7 +327,7 @@ test('generic StageForm protects modern/legacy/unknown KIAN lifecycle while pres
     await page.state.executeSubmitForm(); await page.state.executeSaveDraft()
   }
   assert.equal(calls.length, 0)
-  props.prefillData = { kianSubmissionStatus: 'draft' }
+  props.prefillData = { kianSubmissionStatus: 'draft', kianDraftActions: { save_draft: true, submit: true } }
   assert.equal(page.state.fieldsDisabled.value, false)
   props.prefillData = { workflowHistories: [{ stage_id: 7, status: 'submitted' }] }
   assert.equal(page.state.fieldsDisabled.value, true)
@@ -296,7 +380,7 @@ test('route change during PDF preparation cancels before POST; delayed sibling r
 })
 
 test('draft save and submit retain stage-scoped store payload, English confirmation and no workflow continuation', async () => {
-  const props = vue.reactive({ stageName: 'KIAN', stageDescription: 'KIAN', exposure: null, caseNumber: 'CASE-9', stageId: 4, caseId: 9, fields: [], apiEndpoint: '/api/tax-cases/9/kian-submissions/4', prefillData: { kianSubmissionStatus: 'draft' }, isLoading: false })
+  const props = vue.reactive({ stageName: 'KIAN', stageDescription: 'KIAN', exposure: null, caseNumber: 'CASE-9', stageId: 4, caseId: 9, fields: [], apiEndpoint: '/api/tax-cases/9/kian-submissions/4', prefillData: { kianSubmissionStatus: 'draft', kianDraftActions: { save_draft: true, submit: true } }, isLoading: false })
   const calls = []
   const page = await component('components/StageForm.vue', { defineProps: () => props, fetch: async (url, options = {}) => { calls.push({ url, ...options }); return { ok: true, json: async () => ({ data: {} }) } } })
   page.state.formData.kian_number = 'DRAFT-4'

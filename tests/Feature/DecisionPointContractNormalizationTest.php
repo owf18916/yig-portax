@@ -34,8 +34,8 @@ class DecisionPointContractNormalizationTest extends TestCase
         Queue::fake();
 
         $entity = Entity::create(['code' => 'P1C', 'name' => 'Phase 1C', 'entity_type' => 'AFFILIATE', 'tax_id' => 'P1C-TAX']);
-        $role = Role::create(['code' => 'STAFF', 'name' => 'Staff']);
-        $this->user = User::factory()->create(['entity_id' => $entity->id, 'role_id' => $role->id]);
+        $role = Role::create(['code' => 'STAFF', 'name' => 'Staff', 'is_active' => true, 'permissions' => ['submit_cases']]);
+        $this->user = User::factory()->create(['entity_id' => $entity->id, 'role_id' => $role->id, 'is_active' => true]);
         $year = FiscalYear::create(['year' => 2026, 'start_date' => '2026-01-01', 'end_date' => '2026-12-31']);
         $currency = Currency::create(['code' => 'IDR', 'name' => 'Rupiah', 'symbol' => 'Rp']);
         // The workflow's existing seeded contract is SUBMITTED = 2. PostgreSQL
@@ -393,7 +393,8 @@ class DecisionPointContractNormalizationTest extends TestCase
         $first = count(\Illuminate\Support\Facades\DB::getQueryLog());
         $case->getKianStatusByStage();
         $this->assertSame($first, count(\Illuminate\Support\Facades\DB::getQueryLog()));
-        $this->assertLessThanOrEqual(5, $first);
+        // Five fixed case relations plus the actor's role/entity, loaded once.
+        $this->assertLessThanOrEqual(7, $first);
         \Illuminate\Support\Facades\DB::disableQueryLog();
     }
 

@@ -433,7 +433,7 @@ class TaxCase extends Model
             ];
         }
         unset($result);
-        return $status;
+        return app(\App\Services\KianDraftAccess::class)->project($this, $status);
     }
 
     // Audit relationships
