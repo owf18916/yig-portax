@@ -137,6 +137,97 @@ class KianNotificationSafetyTest extends TestCase
         $this->assertDatabaseCount('kian_submissions', 0);
     }
 
+    public function test_new_message_is_complete_immutable_and_mail_rendering_has_no_queries(): void
+    {
+        $this->case->update(['case_number' => 'SA20MarC <script>alert(1)</script>']);
+        $log = $this->queued();
+        $snapshot = $log->latestAttempt->message_snapshot;
+        $this->assertSame('CIT', $snapshot['values']['caseType']);
+        $this->assertSame(2026, $snapshot['values']['taxYear']);
+        $this->assertSame('SKP Assessment', $snapshot['values']['stageName']);
+        $this->assertStringContainsString('SA20MarC &lt;script&gt;', $snapshot['html']);
+        $this->assertStringNotContainsString('<script>', $snapshot['html']);
+        $this->assertStringContainsString('IDR 1000.01', $snapshot['text']);
+        $this->assertSame(url('/tax-cases/'.$this->case->id), $snapshot['values']['caseUrl']);
+        $this->case->update(['case_number' => 'Later case', 'case_type' => 'VAT']);
+        $this->case->entity->update(['name' => 'Later taxpayer']);
+        $this->case->fiscalYear->update(['year' => 2027]);
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        $mail = new KianReminderMail($snapshot);
+        $html = $mail->render();
+        $mime = $mail->withSymfonyMessage(function ($message) use ($snapshot) {
+            $this->assertSame($snapshot['text']."\n", $message->getTextBody());
+            $this->assertSame($snapshot['subject'], $message->getSubject());
+        });
+        // Array transport builds real multipart MIME without a network connection.
+        app('mail.manager')->mailer('array')->send($mime->to('synthetic@example.test'));
+        $this->assertSame([], DB::getQueryLog());
+        DB::disableQueryLog();
+        $this->assertSame($snapshot['html'], $html);
+        $this->assertStringNotContainsString('Later taxpayer', $html);
+        $this->assertSame($snapshot, $log->latestAttempt->fresh()->message_snapshot);
+        $this->assertSame($snapshot['html'], (new KianReminderMail(['subject' => $snapshot['subject'], 'html' => $snapshot['html']]))->render());
+    }
+
+    public static function emailStages(): array
+    {
+        return [[4, 'SKP Assessment'], [7, 'Objection Decision'], [10, 'Appeal Decision'], [12, 'Supreme Court Decision'], [null, null]];
+    }
+
+    #[DataProvider('emailStages')]
+    public function test_english_sections_exact_amount_structure_and_fallbacks(?int $stage, ?string $name): void
+    {
+        $values = $stage ? ['stage' => $stage, 'stageName' => $name, 'caseNumber' => 'Synthetic & case',
+            'currency' => 'USD', 'amount' => '999999999999999999.01', 'caseUrl' => 'https://portax.example.test/tax-cases/4'] : [];
+        foreach (['emails.kian-reminder-snapshot', 'emails.kian-reminder-snapshot-text'] as $view) {
+            $rendered = view($view, $values)->render();
+            foreach (['KIAN submission required', 'Action Required', 'Case Information', 'Case Number', 'Case Type', 'Tax Year', 'Taxpayer',
+                'Current Stage', 'Remaining Company Tax Exposure', 'Next Steps', 'automated notification', 'All rights reserved.'] as $copy) {
+                $this->assertStringContainsString($copy, $rendered);
+            }
+            $this->assertDoesNotMatchRegularExpression('/Informasi Kasus|Tahun Pajak|Wajib Pajak|Tahap Saat Ini|Kerugian|Langkah Selanjutnya|Lihat Kasus|Catatan|silakan|Anda|dikirimkan|mengajukan/i', $rendered);
+            if ($stage) {
+                $this->assertStringContainsString($name, $rendered);
+                $this->assertStringContainsString('USD 999999999999999999.01', $rendered);
+                $this->assertStringContainsString('View Tax Case', $rendered);
+            } else {
+                $this->assertStringContainsString('Not available', $rendered);
+                $this->assertStringContainsString('case link is not available', $rendered);
+            }
+        }
+        $html = view('emails.kian-reminder-snapshot', $values)->render();
+        $this->assertStringContainsString('<!--[if mso]>', $html);
+        $this->assertStringContainsString('max-width:600px', $html);
+        $this->assertStringContainsString('scope="row"', $html);
+        $this->assertSame(substr_count($html, '<table'), substr_count($html, '</table>'));
+        $this->assertDoesNotMatchRegularExpression('/<script|<img|<link|xmlns:|number_format/', $html);
+    }
+
+    public function test_seed_shaped_holding_manager_has_no_pic_rule_but_approved_cc_is_grouped(): void
+    {
+        $this->case->update(['case_number' => 'SA20MarC']);
+        $holding = $this->entity('PASI-SYNTHETIC', 'HOLDING');
+        $this->case->entity->update(['parent_entity_id' => $holding->id]);
+        $pic = $this->user($holding, Role::where('code', 'MANAGER')->firstOrFail(), 'novia.hardianti@example.test');
+        $this->assertSame([], app(KianReminderRecipients::class)->resolve($this->case->fresh())['cc']);
+        // A test-only approved category proves the delivery plumbing; it does not assign the real user a role.
+        $pic->update(['role_id' => $this->role('Coordinator')->id]);
+        $log = $this->queued();
+        $attempt = $this->runAttempt($log);
+        $this->assertSame(['novia.hardianti@example.test'], $attempt->cc_recipients);
+        $this->assertSame($attempt->cc_recipients, $attempt->recipient_snapshot['cc']);
+        Mail::assertSent(KianReminderMail::class, fn ($mail) => $mail->hasCc('novia.hardianti@example.test') && count($mail->cc) === 1);
+        Mail::assertSentCount(1);
+        $pic->update(['email' => 'later@example.test']);
+        $this->assertSame($attempt->recipient_snapshot, $attempt->fresh()->recipient_snapshot);
+        $holding->update(['is_active' => false]);
+        $this->assertSame([], app(KianReminderRecipients::class)->resolve($this->case->fresh())['cc']);
+        $holding->update(['is_active' => true]);
+        $this->case->entity->update(['entity_type' => 'HOLDING']);
+        $this->assertSame([], app(KianReminderRecipients::class)->resolve($this->case->fresh())['cc']);
+    }
+
     public function test_recipient_matrix_and_query_growth(): void
     {
         $holding = $this->entity('H', 'HOLDING');
@@ -151,6 +242,8 @@ class KianNotificationSafetyTest extends TestCase
         $this->user($holding, $coordinator, 'inactive@example.test', false);
         $this->user($holding, $gm, 'inactive-role@example.test');
         $this->user($foreign, $manager, 'foreign@example.test');
+        $this->user($foreign, $coordinator, 'foreign-coordinator@example.test');
+        $this->user($this->entity('OTHER-H', 'HOLDING'), $coordinator, 'other-holding@example.test');
         $this->user($this->case->entity, $manager, 'invalid');
         $resolver = app(KianReminderRecipients::class);
         DB::enableQueryLog();
@@ -461,6 +554,7 @@ class KianNotificationSafetyTest extends TestCase
         $log = $this->noTo();
         $old = $log->latestAttempt;
         $new = $this->service->retry($log, $this->actor);
+        $this->assertSame($old->message_snapshot, $new->message_snapshot);
         $job = new SendKianReminderJob($old->id);
         (new \ReflectionMethod($job, 'finish'))->invoke($job, $old, $old->claim_token, NotificationLog::SENT, 'late completion');
         $this->assertSame(NotificationLog::QUEUED, $log->fresh()->current_status);

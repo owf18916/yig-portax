@@ -114,11 +114,14 @@ class KianNotificationService
     private function message(TaxCase $case, array $event): array
     {
         $values = ['caseNumber' => $case->case_number, 'entityName' => $case->entity?->name,
+            'caseType' => $case->case_type, 'taxYear' => $case->fiscalYear?->year,
+            'stageName' => \App\Services\TaxWorkflowMatrix\StageDefinitions::STAGES[$event['stage_id']]['label'] ?? 'Decision stage',
             'stage' => $event['stage_id'], 'amount' => $event['exposure_amount'], 'currency' => $case->currency?->code ?? 'IDR',
             'caseUrl' => url('/tax-cases/'.$case->id), 'reason' => $event['reason']];
 
         return ['event' => $event, 'values' => $values, 'subject' => "KIAN Required: Tax Case {$case->case_number} - Stage {$event['stage_id']}",
-            'html' => view('emails.kian-reminder-snapshot', $values)->render()];
+            'html' => view('emails.kian-reminder-snapshot', $values)->render(),
+            'text' => html_entity_decode(view('emails.kian-reminder-snapshot-text', $values)->render(), ENT_QUOTES, 'UTF-8')];
     }
 
     public function activeActor(?User $user): bool

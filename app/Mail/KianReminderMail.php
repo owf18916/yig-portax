@@ -21,7 +21,9 @@ class KianReminderMail extends Mailable
 
     public function content(): Content
     {
-        return new Content(htmlString: $this->snapshot['html']);
+        return new Content(htmlString: $this->snapshot['html'],
+            text: isset($this->snapshot['text']) ? 'emails.kian-reminder-stored-text' : null,
+            with: ['snapshotText' => $this->snapshot['text'] ?? null]);
     }
 
     public function attachments(): array
