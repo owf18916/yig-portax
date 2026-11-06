@@ -6,6 +6,7 @@ use App\Models\Entity;
 use App\Models\Period;
 use App\Models\TaxCase;
 use App\Services\MainWorkflowStateResolver;
+use App\Services\TaxCaseListFilters;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -20,65 +21,29 @@ class TaxCaseController extends ApiController
      */
     public function index(Request $request): JsonResponse
     {
-        $user = auth()->user();
+        $filters = app(TaxCaseListFilters::class);
+        $validated = $filters->validate($request);
+        $authorized = $filters->authorized(auth()->user());
+        $query = $filters->apply(clone $authorized, $validated)
+            ->select('tax_cases.*')
+            ->selectRaw(TaxCaseListFilters::DISPLAY_STAGE.' AS display_stage')
+            ->selectRaw(TaxCaseListFilters::STAGE_STATUS.' AS list_stage_status')
+            ->with(['entity', 'fiscalYear', 'period', 'status', 'currency', 'user',
+                'workflowHistories' => fn ($q) => $q->orderByDesc('created_at')->orderByDesc('id')]);
 
-        $query = TaxCase::with([
-            'entity',
-            'fiscalYear',
-            'period',
-            'status',
-            'currency',
-            'user',
-            'workflowHistories' => function ($query) {
-                $query->latest('created_at');
-            },
-        ]);
+        $taxCases = $query->orderByDesc('created_at')->orderByDesc('id')->paginate(15);
+        $data = $taxCases->toArray();
+        // Scoped option values cover every authorized case, independent of the page/filters.
+        $data['filter_options'] = [
+            'stages' => (clone $authorized)->selectRaw(TaxCaseListFilters::DISPLAY_STAGE.' AS stage')
+                ->distinct()->pluck('stage')->filter()->sort()->values(),
+            'periods' => \App\Models\Period::whereIn('id', (clone $authorized)->select('period_id'))
+                ->orderBy('period_code')->distinct()->pluck('period_code'),
+            'fiscal_years' => \App\Models\FiscalYear::whereIn('id', (clone $authorized)->select('fiscal_year_id'))
+                ->orderByDesc('year')->distinct()->pluck('year'),
+        ];
 
-        // Filter by entity_type and user permissions
-        // HOLDING users can see all tax cases
-        // AFFILIATE users can only see tax cases from their own entity
-        if ($user && $user->entity) {
-            if ($user->entity->entity_type !== 'HOLDING') {
-                // AFFILIATE users: only see their own entity's cases
-                $query->where('entity_id', $user->entity_id);
-            }
-            // HOLDING users: see all entities (no filter needed)
-        } else {
-            $query->whereRaw('1 = 0');
-        }
-
-        // Filter by entity (multi-company support)
-        if ($request->has('entity_id')) {
-            $query->where('entity_id', $request->entity_id);
-        }
-
-        // Filter by status
-        if ($request->has('status_id')) {
-            $query->where('case_status_id', $request->status_id);
-        }
-
-        // Filter by case type
-        if ($request->has('case_type')) {
-            $query->where('case_type', $request->case_type);
-        }
-
-        // Filter by current stage
-        if ($request->has('current_stage')) {
-            $query->where('current_stage', $request->current_stage);
-        }
-
-        // Search by case number or SPT number
-        if ($request->has('search')) {
-            $search = $request->search;
-            $query->where(function ($q) use ($search) {
-                $q->where('case_number', 'like', "%{$search}%")
-                    ->orWhere('spt_number', 'like', "%{$search}%");
-            });
-        }
-
-        $taxCases = $query->orderBy('created_at', 'desc')->paginate(15);
-
-        return $this->success($taxCases);
+        return $this->success($data);
     }
 
     /**

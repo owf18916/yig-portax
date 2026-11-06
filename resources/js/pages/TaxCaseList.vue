@@ -18,7 +18,7 @@
     <Card title="Tax SPT" subtitle="View and manage your Tax SPTs">
       <!-- Action Buttons -->
       <div class="mb-6 flex justify-end space-x-2">
-        <Button @click="exportToExcel" :disabled="isExporting" variant="secondary">
+        <Button @click="exportToExcel" :disabled="isExporting || loading || loadError" variant="secondary">
           <span v-if="!isExporting">📥 Export to Excel</span>
           <span v-else>Exporting...</span>
         </Button>
@@ -30,7 +30,8 @@
         </Button>
       </div>
 
-      <LoadingSpinner v-if="loading" message="Loading Tax SPTs..." />
+      <p v-if="loadError" role="alert">Failed to load Tax SPTs. Please refresh and try again.</p>
+      <LoadingSpinner v-if="loading && !hasLoaded" message="Loading Tax SPTs..." />
 
       <div v-else class="overflow-x-auto">
         <table class="w-full text-sm">
@@ -235,6 +236,12 @@
           </tbody>
         </table>
 
+        <div class="flex items-center justify-end gap-3 mt-4">
+          <span>{{ totalCases }} matching cases. Export includes all matching pages.</span>
+          <Button variant="secondary" :disabled="loading || currentPage <= 1" @click="fetchTaxCases(currentPage - 1)">Previous</Button>
+          <span>Page {{ currentPage }} of {{ lastPage }}</span>
+          <Button variant="secondary" :disabled="loading || currentPage >= lastPage" @click="fetchTaxCases(currentPage + 1)">Next</Button>
+        </div>
         <div v-if="filteredCases.length === 0" class="text-center py-8 text-gray-500">
           <p>No Tax SPTs found</p>
         </div>
@@ -246,13 +253,14 @@
 <script setup>
 import { apiFetch as fetch } from '../composables/useSessionApi.js'
 
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import Card from '../components/Card.vue'
 import Button from '../components/Button.vue'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
 import ConfirmationDialog from '../components/ConfirmationDialog.vue'
 import Toast from '../components/Toast.vue'
+import { taxCaseListParams } from '../composables/taxCaseListFilters.js'
 import { workflowStageLabels } from '../constants/workflowStages'
 
 const router = useRouter()
@@ -289,87 +297,48 @@ const isClosing = ref(false)
 const loading = ref(true)
 const taxCases = ref([])
 const availableEntities = ref([])
-const availableStages = computed(() => {
-  // Only include main workflow stages 1-12, exclude branch actions (KIAN=16, Refund=13-15)
-  const stages = new Set()
-  taxCases.value.forEach(tc => {
-    const displayStage = getDisplayStage(tc)
-    if (displayStage && displayStage >= 1 && displayStage <= 12) {
-      stages.add(displayStage)
-    }
-  })
-  return Array.from(stages).sort((a, b) => a - b)
-})
+const filterOptions = ref({ stages: [], periods: [], fiscal_years: [] })
+const availableStages = computed(() => filterOptions.value.stages)
+const availablePeriods = computed(() => filterOptions.value.periods)
+const availableFiscalYears = computed(() => filterOptions.value.fiscal_years)
+const filteredCases = computed(() => taxCases.value)
+const currentPage = ref(1)
+const lastPage = ref(1)
+const totalCases = ref(0)
+const hasLoaded = ref(false)
+const loadError = ref(false)
+let requestSequence = 0
+const activeFilters = computed(() => ({
+  search: searchQuery.value,
+  case_number: filterCaseNumber.value,
+  case_type: filterType.value,
+  entity_id: filterEntity.value,
+  case_status: filterStatus.value,
+  current_stage: filterCurrentStage.value,
+  stage_status: filterStageStatus.value,
+  period_code: filterPeriod.value,
+  fiscal_year: filterFiscalYear.value,
+}))
 
-const availablePeriods = computed(() => {
-  const periods = new Set()
-  taxCases.value.forEach(tc => {
-    if (tc.period?.period_code) periods.add(tc.period.period_code)
-  })
-  return Array.from(periods).sort()
-})
-
-const availableFiscalYears = computed(() => {
-  const years = new Set()
-  taxCases.value.forEach(tc => {
-    if (tc.fiscal_year?.year) years.add(tc.fiscal_year.year)
-  })
-  return Array.from(years).sort((a, b) => b - a)
-})
-
-const filteredCases = computed(() => {
-  return taxCases.value.filter(tc => {
-    // Search filter
-    const matchesSearch = 
-      tc.case_number.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-      tc.entity_name.toLowerCase().includes(searchQuery.value.toLowerCase())
-    
-    // Case number filter
-    const matchesCaseNumber = !filterCaseNumber.value || 
-      tc.case_number.toLowerCase().includes(filterCaseNumber.value.toLowerCase())
-    
-    // Type filter
-    const matchesType = !filterType.value || tc.case_type === filterType.value
-    
-    // Entity filter
-    const matchesEntity = !filterEntity.value || tc.entity_id == filterEntity.value
-    
-    // Status filter (based on is_completed field: 0=open, 1=closed)
-    const matchesStatus = !filterStatus.value || (
-      (filterStatus.value === 'open' && !tc.is_completed) ||
-      (filterStatus.value === 'closed' && tc.is_completed)
-    )
-    
-    // Current stage filter - use display stage (shows latest main workflow stage 1-12)
-    const matchesCurrentStage = !filterCurrentStage.value || 
-      getDisplayStage(tc) == filterCurrentStage.value
-    
-    // Stage status filter
-    const matchesStageStatus = !filterStageStatus.value || 
-      (tc.stage_status || 'draft') === filterStageStatus.value
-    
-    // Period filter
-    const matchesPeriod = !filterPeriod.value || 
-      tc.period?.period_code === filterPeriod.value
-    
-    // Fiscal year filter
-    const matchesFiscalYear = !filterFiscalYear.value || 
-      tc.fiscal_year?.year == filterFiscalYear.value
-    
-    return matchesSearch && matchesCaseNumber && matchesType && matchesEntity && 
-           matchesStatus && matchesCurrentStage && matchesStageStatus && matchesPeriod && matchesFiscalYear
-  })
-})
-
-const fetchTaxCases = async () => {
+const fetchTaxCases = async (page = 1) => {
+  const sequence = ++requestSequence
   try {
     loading.value = true
-    const response = await fetch('/api/tax-cases', {
+    const params = taxCaseListParams(activeFilters.value)
+    params.set('page', page)
+    const response = await fetch(`/api/tax-cases?${params}`, {
       credentials: 'include',
       headers: { 'Accept': 'application/json' }
     })
+    if (!response.ok) throw new Error('Failed to load Tax SPTs')
     const responseData = await response.json()
-    
+    if (sequence !== requestSequence) return
+    loadError.value = false
+    currentPage.value = responseData.data.current_page
+    lastPage.value = responseData.data.last_page
+    totalCases.value = responseData.data.total
+    filterOptions.value = responseData.data.filter_options
+
     // Handle Laravel pagination response: { success, message, data: { data: [...], ... } }
     if (responseData.data) {
       const apiData = responseData.data
@@ -387,10 +356,15 @@ const fetchTaxCases = async () => {
       taxCases.value = []
     }
   } catch (error) {
+    if (sequence !== requestSequence) return
     console.error('Failed to load tax cases:', error)
+    loadError.value = true
     taxCases.value = []
   } finally {
-    loading.value = false
+    if (sequence === requestSequence) {
+      loading.value = false
+      hasLoaded.value = true
+    }
   }
 }
 
@@ -475,47 +449,11 @@ const getStageName = (stageId) => {
   return stageNames[stageId] || `Stage ${stageId}`
 }
 
-// Helper: Get display stage - only show main workflow stages (1-12)
-// If current_stage is a branch action (13+), find the latest main workflow stage that was completed
-const getDisplayStage = (taxCase) => {
-  // If current_stage is within main workflow (1-12), show it
-  if (taxCase.current_stage >= 1 && taxCase.current_stage <= 12) {
-    return taxCase.current_stage
-  }
-  
-  // If current_stage is branch action (13+), find latest completed main workflow stage
-  if (taxCase.workflow_histories && taxCase.workflow_histories.length > 0) {
-    const mainWorkflowStages = taxCase.workflow_histories
-      .filter(wh => wh.stage_id >= 1 && wh.stage_id <= 12)
-      .sort((a, b) => b.stage_id - a.stage_id) // Descending by stage_id
-    
-    if (mainWorkflowStages.length > 0) {
-      return mainWorkflowStages[0].stage_id
-    }
-  }
-  
-  return undefined
-}
+// SQL projections use the same rules as the eligibility filters.
+const getDisplayStage = (taxCase) => taxCase.display_stage
+const getStageStatus = (taxCase) => taxCase.list_stage_status || 'draft'
 
-const getStageStatus = (taxCase) => {
-  // If workflow histories exist, get the latest status for current stage
-  if (taxCase.workflow_histories && taxCase.workflow_histories.length > 0) {
-    const currentStageHistories = taxCase.workflow_histories.filter(
-      wh => wh.stage_id === taxCase.current_stage
-    )
-    if (currentStageHistories.length > 0) {
-      // Get the most recent one (they should be sorted by created_at desc from API)
-      return currentStageHistories[0].status || 'draft'
-    }
-  }
-  
-  // Default for Stage 1 when just created
-  if (taxCase.current_stage === 1 && (!taxCase.workflow_histories || taxCase.workflow_histories.length === 0)) {
-    return 'submitted'
-  }
-  
-  return taxCase.stage_status || 'draft'
-}
+watch(activeFilters, () => fetchTaxCases(1), { flush: 'sync' })
 
 // ============= EXPORT LOGIC =============
 const isExporting = ref(false)
@@ -523,7 +461,7 @@ const isExporting = ref(false)
 // ============= EXPORT TO EXCEL =============
 const exportToExcel = async () => {
   // Guard: prevent multiple exports
-  if (isExporting.value) {
+  if (isExporting.value || loading.value || loadError.value) {
     console.warn('Export already in progress, ignoring duplicate request')
     return
   }
@@ -531,34 +469,8 @@ const exportToExcel = async () => {
   try {
     isExporting.value = true
     
-    // Build query parameters from active filters
-    const params = new URLSearchParams()
-    
-    if (searchQuery.value) {
-      params.append('search', searchQuery.value)
-    }
-    if (filterCaseNumber.value) {
-      params.append('case_number', filterCaseNumber.value)
-    }
-    if (filterType.value) {
-      params.append('case_type', filterType.value)
-    }
-    if (filterEntity.value) {
-      params.append('entity_id', filterEntity.value)
-    }
-    if (filterStatus.value) {
-      params.append('case_status', filterStatus.value)
-    }
-    if (filterCurrentStage.value) {
-      params.append('current_stage', filterCurrentStage.value)
-    }
-    if (filterPeriod.value) {
-      params.append('period_id', filterPeriod.value)
-    }
-    if (filterStageStatus.value) {
-      params.append('stage_status', filterStageStatus.value)
-    }
-    
+    const params = taxCaseListParams(activeFilters.value)
+
     const url = `/api/tax-cases/export?${params.toString()}`
     
     const response = await fetch(url, {
