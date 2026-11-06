@@ -3,23 +3,28 @@
     <p v-if="pageError" role="alert" class="text-red-700">{{ pageError }}</p>
     <div><h1 class="text-3xl font-bold text-gray-900">Notification Logs</h1><p class="text-gray-600">KIAN delivery history and recipient snapshots.</p></div>
     <div class="bg-white border rounded-lg p-4 flex flex-wrap gap-3">
-      <input v-model="filters.tax_case" placeholder="Search tax case" class="border rounded px-3 py-2" @keyup.enter="load" />
-      <select v-model="filters.current_status" class="border rounded px-3 py-2"><option value="">All statuses</option><option v-for="s in statuses" :key="s" :value="s">{{ label(s) }}</option></select>
-      <select v-model="filters.stage_id" class="border rounded px-3 py-2"><option value="">All stages</option><option v-for="s in [4,7,10,12]" :key="s" :value="s">Stage {{ s }}</option></select>
+      <input aria-label="Search tax case" v-model="filters.tax_case" placeholder="Search tax case" class="border rounded px-3 py-2" @keyup.enter="load" />
+      <select aria-label="Notification status" v-model="filters.current_status" class="border rounded px-3 py-2"><option value="">All statuses</option><option v-for="s in statuses" :key="s" :value="s">{{ label(s) }}</option></select>
+      <select aria-label="Stage" v-model="filters.stage_id" class="border rounded px-3 py-2"><option value="">All stages</option><option v-for="s in [4,7,10,12]" :key="s" :value="s">Stage {{ s }}</option></select>
       <button @click="load" class="bg-blue-600 text-white rounded px-4 py-2">Filter</button>
     </div>
     <div class="bg-white border rounded-lg overflow-x-auto"><table class="min-w-full text-sm"><thead class="bg-gray-50 text-left"><tr><th class="p-3">Date / Time</th><th class="p-3">Entity</th><th class="p-3">Tax Case</th><th class="p-3">Stage</th><th class="p-3">Status</th><th class="p-3">Attempts</th><th class="p-3"></th></tr></thead><tbody><tr v-for="log in logs" :key="log.id" class="border-t"><td class="p-3">{{ date(log.created_at) }}</td><td class="p-3">{{ log.entity?.name }}</td><td class="p-3">{{ log.tax_case?.case_number }}</td><td class="p-3">{{ log.stage_id }}</td><td class="p-3"><span class="px-2 py-1 rounded bg-gray-100">{{ label(log.current_status) }}</span></td><td class="p-3">{{ log.attempts_count }}</td><td class="p-3"><button @click="open(log.id)" class="text-blue-700 hover:underline">View detail</button></td></tr><tr v-if="!logs.length"><td colspan="7" class="p-6 text-center text-gray-500">No notification logs found.</td></tr></tbody></table></div>
-    <div v-if="detail" class="fixed inset-0 bg-black/30 flex justify-end"><aside class="bg-white h-full w-full max-w-2xl overflow-y-auto p-6"><div class="flex justify-between"><h2 class="text-xl font-bold">Notification Detail</h2><button @click="detail=null">Close</button></div><dl class="grid grid-cols-2 gap-3 mt-5 text-sm"><div><dt class="text-gray-500">Tax Case</dt><dd>{{ detail.tax_case?.case_number }}</dd></div><div><dt class="text-gray-500">Status</dt><dd>{{ label(detail.current_status) }}</dd></div><div><dt class="text-gray-500">Stage</dt><dd>{{ detail.stage_id }}</dd></div><div><dt class="text-gray-500">Total attempts</dt><dd>{{ detail.total_attempts }}</dd></div></dl><button v-if="isAdmin && ['FAILED','SKIPPED_NO_RECIPIENT'].includes(detail.current_status)" :disabled="retrying" @click="retry" class="mt-5 bg-amber-600 text-white rounded px-4 py-2">{{ retrying ? 'Queuing…' : 'Retry' }}</button><div class="mt-6 space-y-4"><article v-for="attempt in detail.attempts" :key="attempt.id" class="border rounded p-4"><div class="font-semibold">Attempt {{ attempt.attempt_number }} — {{ label(attempt.status) }}</div><p class="text-sm text-gray-600">{{ attempt.initiated_type === 'ADMIN_RETRY' ? `Retried by ${attempt.initiated_by?.name || 'Admin'}` : 'Automatic Workflow' }}</p><p v-if="attempt.reason" class="mt-2 text-sm">{{ attempt.reason }}</p><p v-if="attempt.error_message" class="mt-2 text-sm text-red-700">{{ attempt.error_message }}</p><div class="mt-3 text-sm"><strong>TO</strong><div v-for="email in attempt.to_recipients || []" :key="email">{{ email }}</div><div v-if="!(attempt.to_recipients || []).length">None</div><strong class="block mt-2">CC</strong><div v-for="email in attempt.cc_recipients || []" :key="email">{{ email }}</div></div></article></div></aside></div>
+    <div v-if="detail" class="fixed inset-0 bg-black/30 flex justify-end"><aside role="dialog" aria-modal="true" aria-label="Notification detail" @keydown.esc="detail=null" class="bg-white h-full w-full max-w-2xl overflow-y-auto p-6"><div class="flex justify-between"><h2 class="text-xl font-bold">Notification Detail</h2><button @click="detail=null">Close</button></div><dl class="grid grid-cols-2 gap-3 mt-5 text-sm"><div><dt class="text-gray-500">Tax Case</dt><dd>{{ detail.tax_case?.case_number }}</dd></div><div><dt class="text-gray-500">Status</dt><dd>{{ label(detail.current_status) }}</dd></div><div><dt class="text-gray-500">Stage</dt><dd>{{ detail.stage_id }}</dd></div><div><dt class="text-gray-500">Total attempts</dt><dd>{{ detail.total_attempts }}</dd></div></dl><button v-if="detail.can_retry === true && ['PRE_SEND_FAILED','NO_VALID_TO'].includes(detail.current_status)" :disabled="retrying" @click="retry" class="mt-5 bg-amber-600 text-white rounded px-4 py-2">{{ retrying ? 'Queuing…' : 'Retry' }}</button><p v-if="detail.total_attempts > detail.attempts_limit" class="mt-4 text-sm text-gray-600">Showing the latest {{ detail.attempts_limit }} attempts.</p><div class="mt-6 space-y-4"><article v-for="attempt in detail.attempts" :key="attempt.id" class="border rounded p-4"><div class="font-semibold">Attempt {{ attempt.attempt_number }} — {{ label(attempt.status) }}</div><p class="text-sm text-gray-600">{{ attempt.initiated_type === 'ADMIN_RETRY' ? `Retried by ${attempt.initiated_by?.name || 'Admin'}` : 'Automatic Workflow' }}</p><p v-if="attempt.reason" class="mt-2 text-sm">{{ attempt.reason }}</p><p v-if="attempt.status === 'DELIVERY_UNCERTAIN'" class="mt-2 text-sm text-amber-800">Transport outcome uncertain. Investigation is required; retry is unavailable.</p><div class="mt-3 text-sm"><strong>TO</strong><div v-for="email in attempt.to_recipients || []" :key="email">{{ email }}</div><div v-if="!(attempt.to_recipients || []).length">None</div><strong class="block mt-2">CC</strong><div v-for="email in attempt.cc_recipients || []" :key="email">{{ email }}</div></div></article></div></aside></div>
   </div>
 </template>
 <script setup>
-import { useCurrentUser } from '../composables/useCurrentUser.js'
 import { apiFetch as fetch } from '../composables/useSessionApi.js'
 
-import { onMounted, ref } from 'vue'; import { useRoute } from 'vue-router';
-const route=useRoute(), logs=ref([]), detail=ref(null), retrying=ref(false), filters=ref({tax_case:'',current_status:'',stage_id:''}), statuses=['SENT','QUEUED','NOT_ELIGIBLE','SKIPPED_NO_RECIPIENT','FAILED'];
-const user=(useCurrentUser().currentUser.value || {}), isAdmin=user.role?.name==='Admin';
-const label=s=>({SENT:'Sent',QUEUED:'Queued',PROCESSING:'Queued',NOT_ELIGIBLE:'Not Eligible',SKIPPED_NO_RECIPIENT:'No Recipient',FAILED:'Failed'}[s]||s), date=d=>d?new Date(d).toLocaleString():'—';
+import { onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
+const route = useRoute()
+const logs = ref([])
+const detail = ref(null)
+const retrying = ref(false)
+const filters = ref({ tax_case: '', current_status: '', stage_id: '' })
+const statuses = ['SENT','QUEUED','PROCESSING','NOT_ELIGIBLE','SKIPPED_NO_RECIPIENT','FAILED','PRE_SEND_FAILED','NO_VALID_TO','DELIVERY_UNCERTAIN','SUPPRESSED']
+const label = s => ({ SENT: 'Transport call completed', QUEUED: 'Queued', PROCESSING: 'Processing', NOT_ELIGIBLE: 'Not eligible', SKIPPED_NO_RECIPIENT: 'No recipient (historical)', FAILED: 'Failure (historical; investigate)', PRE_SEND_FAILED: 'Pre-send failure', NO_VALID_TO: 'No valid TO recipient', DELIVERY_UNCERTAIN: 'Uncertain - investigation required', SUPPRESSED: 'Suppressed' }[s] || s)
+const date = d => d ? new Date(d).toLocaleString() : 'Date unavailable'
 const pageError = ref('')
 async function request(url, options = {}) {
   const response = await fetch(url, options)
@@ -40,11 +45,14 @@ async function open(id) {
   catch (e) { pageError.value = e.message }
 }
 async function retry() {
+  if (detail.value?.can_retry !== true || !['PRE_SEND_FAILED', 'NO_VALID_TO'].includes(detail.value.current_status) || retrying.value) return
   if (!confirm('Retry this notification? Recipients will be resolved again using the current configuration.')) return
   retrying.value = true
   try {
     await request(`/api/notification-logs/${detail.value.id}/retry`, {
-      method: 'POST'
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tax_case_id: detail.value.tax_case_id })
     })
     await open(detail.value.id)
     await load()

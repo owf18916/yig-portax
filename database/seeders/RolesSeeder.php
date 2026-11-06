@@ -12,7 +12,7 @@ class RolesSeeder extends Seeder
      */
     public function run(): void
     {
-        DB::table('roles')->insert([
+        DB::table('roles')->insertOrIgnore([
             [
                 'code' => 'ADMIN',
                 'name' => 'Administrator',
@@ -23,7 +23,8 @@ class RolesSeeder extends Seeder
                     'manage_entities',
                     'view_reports',
                     'manage_cases',
-                    'approve_decisions'
+                    'approve_decisions',
+                    'retry_notifications'
                 ]),
                 'is_active' => true,
                 'created_at' => now(),
@@ -57,5 +58,12 @@ class RolesSeeder extends Seeder
                 'updated_at' => now(),
             ],
         ]);
+        DB::transaction(function () {
+            $role = \App\Models\Role::where('code', 'ADMIN')->where('is_active', true)->lockForUpdate()->first();
+            if (!$role || !is_array($role->permissions)) return;
+            if (!in_array('retry_notifications', $role->permissions, true)) {
+                $role->update(['permissions'=>array_merge($role->permissions, ['retry_notifications'])]);
+            }
+        });
     }
 }

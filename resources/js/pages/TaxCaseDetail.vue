@@ -1035,7 +1035,7 @@ const navigateToKianSubmission = (stageId) => {
   })
 }
 
-const notificationLabel = (status) => ({ SENT: 'Sent', QUEUED: 'Queued', PROCESSING: 'Queued', NOT_ELIGIBLE: 'Not Eligible', SKIPPED_NO_RECIPIENT: 'No Recipient', FAILED: 'Failed' }[status] || status)
+const notificationLabel = (status) => ({ SENT: 'Transport call completed', QUEUED: 'Queued', PROCESSING: 'Processing', PRE_SEND_FAILED: 'Pre-send failure', NO_VALID_TO: 'No valid TO recipient', DELIVERY_UNCERTAIN: 'Uncertain - investigation required', SUPPRESSED: 'Suppressed', NOT_ELIGIBLE: 'Not Eligible', SKIPPED_NO_RECIPIENT: 'No Recipient', FAILED: 'Failed' }[status] || status)
 const notificationBadgeClass = (status) => ({ SENT: 'bg-green-100 text-green-800', FAILED: 'bg-red-100 text-red-800', SKIPPED_NO_RECIPIENT: 'bg-amber-100 text-amber-800', NOT_ELIGIBLE: 'bg-gray-100 text-gray-700', QUEUED: 'bg-blue-100 text-blue-800', PROCESSING: 'bg-blue-100 text-blue-800' }[status] || 'bg-gray-100')
 const recipientSummary = (attempt) => `${(attempt.to_recipients || []).length} TO / ${(attempt.cc_recipients || []).length} CC`
 const viewNotification = (id) => router.push({ name: 'NotificationLogs', query: { selected: id } })

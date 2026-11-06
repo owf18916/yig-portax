@@ -1,43 +1,156 @@
 <?php
+
 namespace App\Jobs;
 
 use App\Mail\KianReminderMail;
 use App\Models\NotificationAttempt;
 use App\Models\NotificationLog;
 use App\Models\TaxCase;
-use App\Models\User;
+use App\Services\KianNotificationService;
+use App\Services\KianReminderRecipients;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 
 class SendKianReminderJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    public int $tries = 1;
+
     public function __construct(public int $notificationAttemptId) {}
+
     public function handle(): void
     {
-        $attempt=NotificationAttempt::with('notificationLog')->findOrFail($this->notificationAttemptId); $log=$attempt->notificationLog;
-        if ($attempt->status !== NotificationLog::QUEUED) return;
-        $attempt->update(['status'=>NotificationLog::PROCESSING,'started_at'=>now()]); $log->update(['current_status'=>NotificationLog::PROCESSING]);
+        $token = (string) Str::uuid();
+        $attempt = $this->claim($token);
+        if (! $attempt) {
+            return;
+        }
+        $boundary = false;
         try {
-            $case=TaxCase::with(['entity.parentEntity','user'])->findOrFail($log->tax_case_id); [$to,$cc]=$this->recipients($case);
-            $attempt->update(['to_recipients'=>$to,'cc_recipients'=>$cc,'bcc_recipients'=>[]]);
-            if (!$to) { $this->finish($attempt,$log,NotificationLog::SKIPPED_NO_RECIPIENT,'No valid TO recipient is currently configured.'); return; }
-            Mail::to($to)->cc($cc)->send(new KianReminderMail($case->id,$this->stageName($log->stage_id),$log->reason ?? '',$log->stage_id));
-            $this->finish($attempt,$log,NotificationLog::SENT);
-            try { \App\Models\AuditLog::create(['auditable_type'=>TaxCase::class,'auditable_id'=>$case->id,'user_id'=>$case->user_id,'action'=>'submitted','model_name'=>'TaxCase','new_values'=>json_encode(['notification_log_id'=>$log->id,'attempt'=>$attempt->attempt_number,'stage_id'=>$log->stage_id]),'performed_at'=>now()]); } catch (\Throwable) { /* delivery state remains authoritative */ }
-        } catch (\Throwable $e) { $this->finish($attempt,$log,NotificationLog::FAILED,null,mb_substr($e->getMessage(),0,1000)); throw $e; }
+            $log = $attempt->notificationLog;
+            $case = TaxCase::findOrFail($log->tax_case_id);
+            $service = app(KianNotificationService::class);
+            if ($reason = $service->suppression($case, $log->stage_id, $log->event_snapshot)) {
+                $this->finish($attempt, $token, NotificationLog::SUPPRESSED, $reason);
+
+                return;
+            }
+            if (! $attempt->message_snapshot || empty($attempt->message_snapshot['html'])) {
+                $this->finish($attempt, $token, NotificationLog::SUPPRESSED, 'LEGACY_SNAPSHOT_UNAVAILABLE');
+
+                return;
+            }
+            $recipients = app(KianReminderRecipients::class)->resolve($case);
+            // Snapshot once, while this claim owns PROCESSING and before any mail call.
+            if (! $this->transition($attempt, $token, NotificationLog::PROCESSING, [
+                'recipient_snapshot' => $recipients, 'to_recipients' => $recipients['to'], 'cc_recipients' => $recipients['cc'], 'bcc_recipients' => [],
+            ])) {
+                return;
+            }
+            if (! $recipients['to']) {
+                $this->finish($attempt, $token, NotificationLog::NO_VALID_TO, 'NO_VALID_TO');
+
+                return;
+            }
+            $mail = new KianReminderMail($attempt->message_snapshot);
+            if (! is_string($attempt->message_snapshot['subject'] ?? null) || ! is_string($attempt->message_snapshot['html'])) {
+                throw new \LogicException('Invalid immutable message envelope.');
+            }
+            // A crash from here onward must never be interpreted as safely resendable.
+            if (! $this->enterBoundary($attempt, $token)) {
+                return;
+            }
+            $boundary = true;
+            Mail::to($recipients['to'])->cc($recipients['cc'])->send($mail);
+            $this->finish($attempt, $token, NotificationLog::SENT, 'TRANSPORT_CALL_COMPLETED');
+            try {
+                \App\Models\AuditLog::create(['auditable_type' => TaxCase::class, 'auditable_id' => $case->id,
+                    'user_id' => $attempt->initiated_by ?? $case->user_id, 'action' => 'submitted', 'model_name' => 'TaxCase',
+                    'new_values' => json_encode(['notification_log_id' => $log->id, 'attempt' => $attempt->attempt_number,
+                        'stage_id' => $log->stage_id, 'transport_call_completed' => true]), 'performed_at' => now()]);
+            } catch (\Throwable) { /* Notification evidence remains authoritative. */
+            }
+        } catch (\Throwable) {
+            // No raw provider exception is persisted, returned, or rethrown to failed-job storage.
+            // If persistence itself is unavailable the prior durable state remains non-retryable.
+            try {
+                $this->finish($attempt, $token, $boundary ? NotificationLog::UNCERTAIN : NotificationLog::PRE_SEND_FAILED,
+                    $boundary ? 'TRANSPORT_OUTCOME_UNCERTAIN' : 'PRE_SEND_PREPARATION_FAILED');
+            } catch (\Throwable) { /* PROCESSING/UNCERTAIN remains fail-closed; investigate operationally. */
+            }
+        }
     }
-    private function recipients(TaxCase $case): array {
-        $to=[]; if(filter_var($case->user?->email,FILTER_VALIDATE_EMAIL))$to[]=$case->user->email;
-        if($case->user?->entity_id)$to=array_merge($to,User::where('entity_id',$case->user->entity_id)->whereHas('role',fn($q)=>$q->where('name','Manager'))->pluck('email')->all());
-        $holding=$case->entity?->entity_type==='AFFILIATE'?$case->entity?->parentEntity:$case->entity;
-        $cc=$holding?User::where('entity_id',$holding->id)->whereHas('role',fn($q)=>$q->whereIn('name',['Coordinator','General Manager','Vice President']))->pluck('email')->all():[];
-        $valid=fn($emails)=>array_values(array_unique(array_filter($emails,fn($email)=>filter_var($email,FILTER_VALIDATE_EMAIL)))); $to=$valid($to); return [$to,array_values(array_diff($valid($cc),$to))];
+
+    private function enterBoundary(NotificationAttempt $attempt, string $token): bool
+    {
+        return DB::transaction(function () use ($attempt, $token) {
+            $log = $attempt->notificationLog;
+            // Match lifecycle/Revision writer ordering: case, log, attempt. Release
+            // every lock before mail I/O; this is the final local eligibility check.
+            $case = TaxCase::whereKey($log->tax_case_id)->lockForUpdate()->firstOrFail();
+            if ($reason = app(KianNotificationService::class)->suppression($case, $log->stage_id, $log->event_snapshot)) {
+                $this->finish($attempt, $token, NotificationLog::SUPPRESSED, $reason);
+
+                return false;
+            }
+
+            return $this->transition($attempt, $token, NotificationLog::UNCERTAIN,
+                ['send_boundary_at' => now(), 'reason' => 'TRANSPORT_OUTCOME_UNCERTAIN']);
+        });
     }
-    private function finish(NotificationAttempt $attempt, NotificationLog $log, string $status, ?string $reason=null, ?string $error=null): void { $now=now();$attempt->update(['status'=>$status,'reason'=>$reason??$attempt->reason,'error_message'=>$error,'finished_at'=>$now]);$data=['current_status'=>$status,'last_attempt_at'=>$now];if($status===NotificationLog::SENT)$data['sent_at']=$now;$log->update($data); }
-    private function stageName(int $stage): string { return [4=>'Stage 4 - SKP (Surat Ketetapan Pajak)',7=>'Stage 7 - Objection Decision (Keputusan Keberatan)',10=>'Stage 10 - Appeal Decision (Keputusan Banding)',12=>'Stage 12 - Supreme Court Decision (Keputusan Peninjauan Kembali)'][$stage]??"Stage $stage"; }
+
+    public function claim(string $token): ?NotificationAttempt
+    {
+        $candidate = NotificationAttempt::find($this->notificationAttemptId);
+        if (! $candidate) {
+            return null;
+        }
+
+        return DB::transaction(function () use ($candidate, $token) {
+            $log = NotificationLog::whereKey($candidate->notification_log_id)->lockForUpdate()->first();
+            if (! $log || $log->current_status !== NotificationLog::QUEUED || (int) $log->total_attempts !== (int) $candidate->attempt_number) {
+                return null;
+            }
+            $changed = NotificationAttempt::whereKey($candidate->id)->where('status', NotificationLog::QUEUED)->whereNull('claim_token')
+                ->update(['status' => NotificationLog::PROCESSING, 'claim_token' => $token, 'started_at' => now()]);
+            if ($changed !== 1) {
+                return null;
+            }
+            $log->update(['current_status' => NotificationLog::PROCESSING]);
+
+            return $candidate->fresh('notificationLog');
+        });
+    }
+
+    private function finish(NotificationAttempt $attempt, string $token, string $status, string $reason): void
+    {
+        $this->transition($attempt, $token, $status, ['reason' => $reason, 'finished_at' => now()]);
+    }
+
+    private function transition(NotificationAttempt $attempt, string $token, string $status, array $data): bool
+    {
+        return DB::transaction(function () use ($attempt, $token, $status, $data) {
+            $log = NotificationLog::whereKey($attempt->notification_log_id)->lockForUpdate()->firstOrFail();
+            $current = NotificationAttempt::whereKey($attempt->id)->lockForUpdate()->firstOrFail();
+            if ($current->claim_token !== $token || (int) $log->total_attempts !== (int) $current->attempt_number
+                || ! in_array($current->status, [NotificationLog::PROCESSING, NotificationLog::UNCERTAIN], true)) {
+                return false;
+            }
+            // Once entered, no path can ever downgrade uncertainty into a pre-send failure.
+            if ($current->send_boundary_at && ! in_array($status, [NotificationLog::SENT, NotificationLog::UNCERTAIN], true)) {
+                return false;
+            }
+            $current->update($data + ['status' => $status]);
+            $log->update(['current_status' => $status, 'last_attempt_at' => now()] + ($status === NotificationLog::SENT ? ['sent_at' => now()] : []));
+
+            return true;
+        });
+    }
 }

@@ -105,7 +105,7 @@ class RevisionService
             $kianResult = 'not_applicable';
             if (in_array($stage, self::DECISION_STAGES, true)) {
                 $case->setRelation([4 => 'skpRecord', 7 => 'objectionDecision', 10 => 'appealDecision', 12 => 'supremeCourtDecision'][$stage], $target);
-                $this->kianService->evaluateFinalSubmit($case, $stage);
+                $this->kianService->evaluateFinalSubmit($case, $stage, $locked);
                 $kianResult = 'eligibility_re_evaluated; historical evidence preserved';
             }
 
