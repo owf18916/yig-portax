@@ -40,7 +40,7 @@ class UsersSeeder extends Seeder
             'email_verified_at' => now(),
             'password' => Hash::make('PASI@p0rt4x'),
             'entity_id' => 1,
-            'role_id' => 2, // manager
+            'role_id' => 5, // coordinator
             'phone' => '',
             'position' => 'Supervisor',
             'department' => 'Tax',
@@ -75,9 +75,9 @@ class UsersSeeder extends Seeder
             'email_verified_at' => now(),
             'password' => Hash::make('JAI@p0rt4x'),
             'entity_id' => 6,
-            'role_id' => 2, // staff
+            'role_id' => 2, // Manager
             'phone' => '',
-            'position' => 'Manager',
+            'position' => 'Jr Manager',
             'department' => 'Tax',
             'last_login_at' => now(),
             'is_active' => true,

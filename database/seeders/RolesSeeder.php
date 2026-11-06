@@ -21,9 +21,6 @@ class RolesSeeder extends Seeder
                     'manage_users',
                     'manage_roles',
                     'manage_entities',
-                    'view_reports',
-                    'manage_cases',
-                    'approve_decisions',
                     'retry_notifications'
                 ]),
                 'is_active' => true,
@@ -31,14 +28,12 @@ class RolesSeeder extends Seeder
                 'updated_at' => now(),
             ],
             [
-                'code' => 'MANAGER',
+                'code' => 'MGR',
                 'name' => 'Manager',
                 'description' => 'Manager with supervision access',
                 'permissions' => json_encode([
                     'view_cases',
-                    'submit_cases',
                     'view_reports',
-                    'approve_submissions'
                 ]),
                 'is_active' => true,
                 'created_at' => now(),
@@ -52,6 +47,31 @@ class RolesSeeder extends Seeder
                     'view_cases',
                     'submit_cases',
                     'upload_documents'
+                ]),
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'code' => 'VP',
+                'name' => 'Vice President',
+                'description' => 'VP with supervision access',
+                'permissions' => json_encode([
+                    'view_cases',
+                    'view_reports',
+                ]),
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'code' => 'CO',
+                'name' => 'Coordinator',
+                'description' => 'Coordinator with full access',
+                'permissions' => json_encode([
+                    'view_reports',
+                    'manage_cases',
+                    'approve_decisions'
                 ]),
                 'is_active' => true,
                 'created_at' => now(),

@@ -4,7 +4,6 @@ namespace App\Exports;
 
 use App\Models\TaxCase;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
@@ -27,29 +26,13 @@ class TaxCasesExport implements WithMultipleSheets
         // Group by entity
         $groupedByEntity = $this->taxCases->groupBy('entity_id');
 
-        Log::info('Export grouping:', [
-            'total_cases' => $this->taxCases->count(),
-            'entities_count' => $groupedByEntity->count(),
-            'entities' => $groupedByEntity->map(function($cases, $entityId) {
-                return [
-                    'entity_id' => $entityId,
-                    'entity_code' => $cases->first()->entity?->code ?? "Unknown",
-                    'entity_name' => $cases->first()->entity?->name ?? "Unknown",
-                    'cases_count' => $cases->count()
-                ];
-            })->values()
-        ]);
-
         $sheetIndex = 0;
         foreach ($groupedByEntity as $entityId => $cases) {
             // Get entity code from first case (use code instead of name for sheet name)
             $entityCode = $cases->first()->entity?->code ?? "Entity_{$entityId}";
-            $entityName = $cases->first()->entity?->name ?? "Unknown";
             
             // Sanitize sheet name (Excel max 31 chars, no special chars)
             $sheetName = substr(preg_replace('/[^a-zA-Z0-9\s_-]/', '', $entityCode), 0, 31);
-            
-            Log::info("Creating sheet [{$sheetIndex}]: {$sheetName} (Entity: {$entityName}) for entity_id: {$entityId} with {$cases->count()} cases");
             
             // Use numeric index for sheets, not string key
             $sheets[$sheetIndex] = (new TaxCaseSheet($cases))->setTitle($sheetName);
@@ -143,17 +126,6 @@ class TaxCaseSheet implements FromCollection, WithHeadings, ShouldAutoSize, With
                 $amountOriginal = $this->getAmountOriginal($taxCase, $currentStage);
                 $amountUsd = $this->convertToUsd($taxCase, $amountOriginal);
 
-                // Debug logging
-                Log::info("Exporting tax case (no histories): {$refNumber}", [
-                    'current_stage' => $currentStage,
-                    'amount_original' => $amountOriginal,
-                    'amount_usd' => $amountUsd,
-                    'currency_code' => $taxCase->currency?->code,
-                    'currency_exchange_rate' => $taxCase->currency?->exchange_rate,
-                    'next_action' => $nextAction,
-                    'status_comment' => $statusComments,
-                ]);
-
                 $rows[] = [
                     'FY' => $fy,
                     'Ref #' => $refNumber,
@@ -193,17 +165,6 @@ class TaxCaseSheet implements FromCollection, WithHeadings, ShouldAutoSize, With
                     $stageNextAction = $stageData['next_action'];
                     $stageNextActionDueDate = $stageData['next_action_due_date'];
                     $stageStatusComments = $stageData['status_comment'];
-
-                    // Debug logging
-                    Log::info("Exporting tax case stage: {$refNumber} - Stage {$stageId}", [
-                        'stage_id' => $stageId,
-                        'amount_original' => $amountOriginal,
-                        'amount_usd' => $amountUsd,
-                        'currency_code' => $taxCase->currency?->code,
-                        'currency_exchange_rate' => $taxCase->currency?->exchange_rate,
-                        'next_action' => $stageNextAction,
-                        'status_comment' => $stageStatusComments,
-                    ]);
 
                     // Determine if this is Audit Status (stage 1-7) or Tax Appeal (stage 8-10)
                     $auditStatus = '';
