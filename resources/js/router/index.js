@@ -8,6 +8,7 @@ const Login = defineAsyncComponent(() => import('../pages/Login.vue'))
 const Dashboard = defineAsyncComponent(() => import('../pages/Dashboard.vue'))
 const TaxCaseList = defineAsyncComponent(() => import('../pages/TaxCaseList.vue'))
 const TaxCaseDetail = defineAsyncComponent(() => import('../pages/TaxCaseDetail.vue'))
+const LegacyRefundUnsupported = defineAsyncComponent(() => import('../pages/LegacyRefundUnsupported.vue'))
 const WorkflowForm = defineAsyncComponent(() => import('../pages/WorkflowForm.vue'))
 const CreateCITCase = defineAsyncComponent(() => import('../pages/CreateCITCase.vue'))
 const CreateVATCase = defineAsyncComponent(() => import('../pages/CreateVATCase.vue'))
@@ -23,9 +24,6 @@ const AppealExplanationRequestForm = defineAsyncComponent(() => import('../pages
 const AppealDecisionForm = defineAsyncComponent(() => import('../pages/AppealDecisionForm.vue'))
 const SupremeCourtSubmissionForm = defineAsyncComponent(() => import('../pages/SupremeCourtSubmissionForm.vue'))
 const SupremeCourtDecisionForm = defineAsyncComponent(() => import('../pages/SupremeCourtDecisionForm.vue'))
-const BankTransferRequestForm = defineAsyncComponent(() => import('../pages/BankTransferRequestForm.vue'))
-const SuratInstruksiTransferForm = defineAsyncComponent(() => import('../pages/SuratInstruksiTransferForm.vue'))
-const RefundReceivedForm = defineAsyncComponent(() => import('../pages/RefundReceivedForm.vue'))
 const KianSubmissionForm = defineAsyncComponent(() => import('../pages/KianSubmissionForm.vue'))
 const KianForm = () => import('../pages/KianForm.vue')
 const PreliminaryRefundForm = defineAsyncComponent(() => import('../pages/PreliminaryRefundForm.vue'))
@@ -154,19 +152,19 @@ const routes = [
   {
     path: '/tax-cases/:id/workflow/13',
     name: 'BankTransferRequestForm',
-    component: BankTransferRequestForm,
+    component: LegacyRefundUnsupported,
     meta: { requiresAuth: true }
   },
   {
     path: '/tax-cases/:id/workflow/14',
     name: 'SuratInstruksiTransferForm',
-    component: SuratInstruksiTransferForm,
+    component: LegacyRefundUnsupported,
     meta: { requiresAuth: true }
   },
   {
     path: '/tax-cases/:id/workflow/15',
     name: 'RefundReceivedForm',
-    component: RefundReceivedForm,
+    component: LegacyRefundUnsupported,
     meta: { requiresAuth: true }
   },
   {

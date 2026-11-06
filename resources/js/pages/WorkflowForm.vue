@@ -76,6 +76,7 @@ const route = useRoute()
 const router = useRouter()
 
 // ⭐ Import all specific form components
+const LegacyRefundUnsupported = defineAsyncComponent(() => import('./LegacyRefundUnsupported.vue'))
 const SptFilingForm = defineAsyncComponent(() => import('./SptFilingForm.vue'))
 const Sp2FilingForm = defineAsyncComponent(() => import('./Sp2FilingForm.vue'))
 const SphpFilingForm = defineAsyncComponent(() => import('./SphpFilingForm.vue'))
@@ -88,9 +89,6 @@ const AppealExplanationRequestForm = defineAsyncComponent(() => import('./Appeal
 const AppealDecisionForm = defineAsyncComponent(() => import('./AppealDecisionForm.vue'))
 const SupremeCourtSubmissionForm = defineAsyncComponent(() => import('./SupremeCourtSubmissionForm.vue'))
 const SupremeCourtDecisionForm = defineAsyncComponent(() => import('./SupremeCourtDecisionForm.vue'))
-const BankTransferRequestForm = defineAsyncComponent(() => import('./BankTransferRequestForm.vue'))
-const SuratInstruksiTransferForm = defineAsyncComponent(() => import('./SuratInstruksiTransferForm.vue'))
-const RefundReceivedForm = defineAsyncComponent(() => import('./RefundReceivedForm.vue'))
 const KianSubmissionForm = defineAsyncComponent(() => import('./KianSubmissionForm.vue'))
 
 // ⭐ Map stage IDs to their specific form components
@@ -107,9 +105,9 @@ const stageFormMap = {
   10: AppealDecisionForm,
   11: SupremeCourtSubmissionForm,
   12: SupremeCourtDecisionForm,
-  13: BankTransferRequestForm,
-  14: SuratInstruksiTransferForm,
-  15: RefundReceivedForm,
+  13: LegacyRefundUnsupported,
+  14: LegacyRefundUnsupported,
+  15: LegacyRefundUnsupported,
   16: KianSubmissionForm
 }
 
@@ -233,6 +231,9 @@ const workflowStages = {
 const currentStage = ref(workflowStages[route.params.stageId] || workflowStages[1])
 
 onMounted(() => {
+  // Retired payment entries must not load case or payment evidence.
+  if ([13, 14, 15].includes(stageId.value)) return
+
   // Initialize form data with empty values
   if (currentStage.value.fields) {
     currentStage.value.fields.forEach(field => {

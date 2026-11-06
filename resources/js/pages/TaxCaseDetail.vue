@@ -332,32 +332,6 @@
                       </p>
                     </div>
                     
-                    <!-- Legacy Stages 13-15 (Optional - kept for backward compatibility) -->
-                    <div class="border-t pt-3 mt-3">
-                      <p class="text-xs font-semibold text-gray-700 uppercase mb-2">Legacy Stages (13-15)</p>
-                      <div class="space-y-1">
-                        <div
-                          v-for="stage in getStagesByBranch('refund')"
-                          :key="`refund-${refund.id}-stage-${stage.id}`"
-                          class="flex items-center space-x-2 p-2 bg-white rounded border border-gray-200 text-xs"
-                        >
-                          <div class="w-5 h-5 rounded-full flex items-center justify-center text-white font-bold shrink-0 text-xs bg-gray-400">
-                            {{ stage.id }}
-                          </div>
-                          <div class="flex-1">
-                            <p class="font-medium text-gray-900">{{ stage.name }}</p>
-                          </div>
-                          <Button
-                            @click="$router.push(`/tax-cases/${$route.params.id}/refunds/${refund.id}/workflow/${stage.id}`)"
-                            variant="primary"
-                            size="sm"
-                            class="text-xs"
-                          >
-                            Access
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
                   </div>
                 </div>
               </div>
@@ -438,11 +412,6 @@ const workflowStages = ref([
   { id: 10, name: 'Appeal Decision', description: 'Keputusan Banding - Tax court decision (Decision Point)', branch: 'main', completed: false, accessible: false },
   { id: 11, name: 'Supreme Court Submission', description: 'Surat Peninjauan Kembali - Supreme court review submission', branch: 'main', completed: false, accessible: false },
   { id: 12, name: 'Supreme Court Decision', description: 'Keputusan Peninjauan Kembali - Final decision from Supreme Court (Decision Point)', branch: 'main', completed: false, accessible: false },
-  
-  // Refund Branch - Sequential Stages (13-15)
-  { id: 13, name: 'Bank Transfer Request', description: 'Surat Permintaan Transfer - Requesting refund transfer', branch: 'refund', completed: false, accessible: false },
-  { id: 14, name: 'Transfer Instruction', description: 'Surat Instruksi Transfer - Bank transfer instruction from tax authority', branch: 'refund', completed: false, accessible: false },
-  { id: 15, name: 'Refund Received', description: 'Actual receipt of refund funds', branch: 'refund', completed: false, accessible: false },
   
   // KIAN Branch - Final Stage (16)
   { id: 16, name: 'KIAN Submission', description: 'Laporan KIAN - Internal loss recognition document', branch: 'kian', completed: false, accessible: false }
@@ -817,20 +786,6 @@ const updateStageAccessibility = () => {
         // Stages 2-4: sequential
         const previousStage = stage.id - 1
         stage.accessible = isStageCompleted(previousStage)
-      }
-    } else if (stage.branch === 'refund') {
-      // REFUND BRANCH: Accessible if any decision point has create_refund = true
-      // ⭐ NEW LOGIC: Check create_refund flag from decision_value in workflow history
-      if (hasRefundTriggered()) {
-        if (stage.id === 13) {
-          stage.accessible = true
-        } else {
-          // Stage 14, 15 accessible jika prev stage completed
-          const previousStage = stage.id - 1
-          stage.accessible = isStageCompleted(previousStage)
-        }
-      } else {
-        stage.accessible = false
       }
     } else if (stage.branch === 'kian') {
       // KIAN BRANCH: Accessible if can_create_kian flag is true

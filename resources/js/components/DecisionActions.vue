@@ -3,7 +3,7 @@
     <h3 class="text-lg font-semibold text-gray-900 mb-4">📊 Decision Actions</h3>
     <p class="text-sm text-gray-600 mb-4">
       Choose the independent process actions that apply to this decision.
-      <strong>Note:</strong> Refund amounts are set in the dedicated Refund Filling stages (13-15).
+      <strong>Note:</strong> Refund amounts are set in the dedicated Refund stages (1-4).
     </p>
 
     <!-- Actions Container -->
