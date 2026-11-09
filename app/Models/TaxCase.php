@@ -76,6 +76,7 @@ class TaxCase extends Model
         'refund_amount' => 'decimal:2',
         'current_stage' => 'integer',
         'is_completed' => 'boolean',
+        'explicitly_closed' => 'boolean',
         'filing_date' => 'date',
         'received_date' => 'date',
         'completed_date' => 'date',

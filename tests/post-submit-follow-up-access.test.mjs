@@ -75,3 +75,38 @@ test('NA1-05/09: modal can clear all fields; pending blocks emit; Escape closes 
   state.onDialogKeydown({ key: 'Escape', preventDefault() {} })
   assert.equal(events[1][0], 'close')
 })
+
+test('S12: canonical identity, explicit permission and operational key preserve legacy routing on save/reopen', async () => {
+  let sent
+  const { state } = await detail(async (url, options) => {
+    sent = { url, payload: JSON.parse(options.body) }
+    return { ok: true, json: async () => ({ data: { id: 12, next_action: 'kian', ...sent.payload } }) }
+  })
+  state.caseData.value.can_update_follow_up = false
+  state.caseData.value.can_update_stage12_follow_up = true
+  state.caseData.value.workflow_state = { closure_state: 'open' }
+  state.caseData.value.supreme_court_decision = { id: 12, next_action: 'kian', follow_up_next_action: 'Call court',
+    next_action_due_date: '2026-12-01', status_comment: 'Waiting' }
+  const stage = { id: 12, name: 'Supreme Court Decision', viewable: true, accessible: false }
+  assert.equal(state.canEditFollowUp(stage), true)
+  state.openNextActionModal(stage)
+  assert.equal(state.nextActionInitialData.value.next_action, 'Call court')
+  await state.saveNextAction({ next_action: 'Operational text', next_action_due_date: '', status_comment: '' })
+  assert.match(sent.url, /supreme-court-decisions\/12$/)
+  assert.deepEqual(sent.payload, { follow_up_next_action: 'Operational text', next_action_due_date: '', status_comment: '' })
+  assert.equal(state.caseData.value.supreme_court_decision.next_action, 'kian')
+  state.openNextActionModal(stage)
+  assert.equal(state.nextActionInitialData.value.next_action, 'Operational text')
+  state.caseData.value.can_update_stage12_follow_up = false
+  assert.equal(state.canEditFollowUp(stage), false)
+})
+
+test('S12: an unset operational action stays empty instead of displaying the enum; locked business stage stays unavailable', async () => {
+  const { state } = await detail()
+  state.caseData.value.can_update_stage12_follow_up = true
+  state.caseData.value.workflow_state = { closure_state: 'open' }
+  state.caseData.value.supreme_court_decision = { id: 12, next_action: 'refund' }
+  state.openNextActionModal({ id: 12, viewable: true, accessible: false })
+  assert.equal(state.nextActionInitialData.value.next_action, '')
+  assert.equal(state.canEditFollowUp({ id: 12, viewable: false }), false)
+})

@@ -254,7 +254,9 @@ class TaxCaseController extends ApiController
         $taxCase->workflow_state = $workflowState;
         $taxCase->can_update_follow_up = Gate::allows('update', $taxCase)
             && ! $taxCase->is_completed
-            && strtoupper((string) $taxCase->status?->code) !== 'CLOSED';
+            && app(\App\Services\TaxCaseClosure::class)->classification($taxCase) === 'open';
+        $taxCase->can_update_stage12_follow_up = Gate::allows('update', $taxCase)
+            && app(\App\Services\TaxCaseClosure::class)->canUpdateStageTwelve($taxCase, $workflowState);
         // Temporary compatibility shim for older clients. New clients consume workflow_state.
         $taxCase->accessible_stages = array_values(array_merge(
             $workflowState['completed_stages'],
@@ -417,20 +419,20 @@ class TaxCaseController extends ApiController
      */
     public function complete(Request $request, TaxCase $taxCase): JsonResponse
     {
-        $workflowState = app(MainWorkflowStateResolver::class)->resolve($taxCase);
-        if (! in_array(12, $workflowState['completed_stages'], true)) {
-            return $this->error('Tax case can only be completed after Stage 12 is submitted', 422);
-        }
+        return DB::transaction(function () use ($taxCase) {
+            $taxCase = TaxCase::query()->lockForUpdate()->findOrFail($taxCase->id);
+            Gate::authorize('update', $taxCase);
+            $workflowState = app(MainWorkflowStateResolver::class)->resolve($taxCase);
+            if (! in_array(12, $workflowState['completed_stages'], true)) {
+                return $this->error('Tax case can only be completed after Stage 12 is submitted', 422);
+            }
 
-        $taxCase->update([
-            'is_completed' => true,
-            'completed_date' => now(),
-        ]);
+            $taxCase->forceFill(['is_completed' => true, 'explicitly_closed' => true]);
+            if ($taxCase->completed_date === null) $taxCase->completed_date = now();
+            if ($taxCase->isDirty()) $taxCase->save();
 
-        return $this->success(
-            $taxCase->fresh(),
-            'Tax case completed successfully'
-        );
+            return $this->success($taxCase->fresh(), 'Tax case completed successfully');
+        });
     }
 
     /**
@@ -512,18 +514,17 @@ class TaxCaseController extends ApiController
             return $this->error('Only administrators can close tax cases', 403);
         }
 
-        // Check if case is already completed
-        if ($taxCase->is_completed) {
-            return $this->error('Tax case is already closed', 422);
-        }
-
         try {
             DB::beginTransaction();
+            $taxCase = TaxCase::query()->lockForUpdate()->findOrFail($taxCase->id);
+            Gate::authorize('update', $taxCase);
 
             // Update tax case to completed
-            $taxCase->update([
+            $taxCase->forceFill([
                 'is_completed' => true,
+                'explicitly_closed' => true,
             ]);
+            if ($taxCase->isDirty()) $taxCase->save();
 
             DB::commit();
 

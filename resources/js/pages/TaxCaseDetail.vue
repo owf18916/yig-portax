@@ -163,6 +163,16 @@
                       </span>
                     </div>
                     <p class="text-sm text-gray-600">{{ stage.description }}</p>
+                    <dl v-if="stage.id === 12 && caseData.supreme_court_decision" class="mt-2 text-sm text-gray-700 break-words">
+                      <dt class="font-medium">Tax Case</dt>
+                      <dd>{{ caseData.workflow_state?.closure_state === 'open' ? 'Open' : caseData.workflow_state?.closure_state === 'closed' ? 'Closed' : 'Legacy closure unresolved — read-only' }}</dd>
+                      <dt class="font-medium">Next Action</dt>
+                      <dd class="whitespace-pre-wrap">{{ caseData.supreme_court_decision.follow_up_next_action || '—' }}</dd>
+                      <dt class="font-medium">Next Due Date</dt>
+                      <dd>{{ caseData.supreme_court_decision.next_action_due_date?.slice(0, 10) || '—' }}</dd>
+                      <dt class="font-medium">Status Comment</dt>
+                      <dd class="whitespace-pre-wrap">{{ caseData.supreme_court_decision.status_comment || '—' }}</dd>
+                    </dl>
                     <div v-if="[4, 7, 10, 12].includes(stage.id) && caseData.notification_summary?.[stage.id]" class="mt-2 text-xs text-gray-700">
                       <span class="font-semibold">KIAN Notification:</span>
                       <span :class="notificationBadgeClass(caseData.notification_summary[stage.id].current_status)" class="ml-1 px-2 py-0.5 rounded">{{ notificationLabel(caseData.notification_summary[stage.id].current_status) }}</span>
@@ -447,7 +457,7 @@ const getStage7Decision = () => {
 // Helper function: Get Stage 12 decision type (Final decision point)
 const getStage12Decision = () => {
   // Try both camelCase and snake_case for compatibility
-  const pkDecision = caseData.value.supremeCourtDecisionRecord || caseData.value.supreme_court_decision_record
+  const pkDecision = caseData.value.supremeCourtDecision || caseData.value.supreme_court_decision
   if (pkDecision && pkDecision.next_action) {
     return pkDecision.next_action
   }
@@ -1084,8 +1094,10 @@ const isSavingNextAction = ref(false)
 const nextActionError = ref('')
 const followUpProperties = { 1: null, 2: 'sp2_record', 3: 'sphp_record', 4: 'skp_record',
   5: 'objection_submission', 6: 'spuh_record', 7: 'objection_decision', 8: 'appeal_submission',
-  9: 'appeal_explanation_request', 10: 'appeal_decision', 11: 'supreme_court_submission' }
-const canEditFollowUp = (stage) => caseData.value.can_update_follow_up === true
+  9: 'appeal_explanation_request', 10: 'appeal_decision', 11: 'supreme_court_submission', 12: 'supreme_court_decision' }
+const canEditFollowUp = (stage) => (stage.id === 12
+  ? caseData.value.can_update_stage12_follow_up === true && caseData.value.workflow_state?.closure_state === 'open'
+  : caseData.value.can_update_follow_up === true)
   && Object.hasOwn(followUpProperties, stage.id)
   && stage.viewable
   && (stage.id === 1 || !!caseData.value[followUpProperties[stage.id]]?.id)
@@ -1115,7 +1127,7 @@ const openNextActionModal = (stage) => {
       9: 'appeal_explanation_request',
       10: 'appeal_decision',
       11: 'supreme_court_submission',
-      12: 'supreme_court_decision_record',
+      12: 'supreme_court_decision',
       13: 'refund_process',
       16: 'kian_submission'
     }
@@ -1128,7 +1140,7 @@ const openNextActionModal = (stage) => {
   
   // Pass the record data for pre-filling
   nextActionInitialData.value = stageRecord ? {
-    next_action: stageRecord.next_action || '',
+    next_action: (stage.id === 12 ? stageRecord.follow_up_next_action : stageRecord.next_action) || '',
     next_action_due_date: stageRecord.next_action_due_date?.slice(0, 10) || '',
     status_comment: stageRecord.status_comment || ''
   } : null
@@ -1160,7 +1172,7 @@ const saveNextAction = async (formData) => {
       9: { modelType: 'appeal-explanation-requests', property: 'appeal_explanation_request' },
       10: { modelType: 'appeal-decisions', property: 'appeal_decision' },
       11: { modelType: 'supreme-court-submissions', property: 'supreme_court_submission' },
-      12: { modelType: 'supreme-court-decisions', property: 'supreme_court_decision_record' },
+      12: { modelType: 'supreme-court-decisions', property: 'supreme_court_decision' },
       13: { modelType: 'refund-processes', property: 'refund_process' },
       16: { modelType: 'kian-submissions', property: 'kian_submission' }
     }
@@ -1197,7 +1209,11 @@ const saveNextAction = async (formData) => {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
-      body: JSON.stringify(formData)
+      body: JSON.stringify(selectedStage.value.id === 12 ? {
+        follow_up_next_action: formData.next_action,
+        next_action_due_date: formData.next_action_due_date,
+        status_comment: formData.status_comment
+      } : formData)
     })
     
     if (!response.ok) {

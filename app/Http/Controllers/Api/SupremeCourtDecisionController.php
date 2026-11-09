@@ -18,6 +18,10 @@ class SupremeCourtDecisionController extends ApiController
      */
     public function store(Request $request, TaxCase $taxCase)
     {
+        // Route middleware owns the transaction and parent row lock.
+        \Illuminate\Support\Facades\Gate::authorize('update', $taxCase);
+        $access = app(\App\Services\MainWorkflowTransitionGuard::class)->inspect($taxCase, 12);
+        abort_unless($access['allowed'], $access['status'], $access['message']);
         try {
             if ($taxCase->current_stage !== 12) {
                 return $this->error('Tax case is not at Supreme Court Decision stage', 422);
@@ -39,6 +43,8 @@ class SupremeCourtDecisionController extends ApiController
             $validated['refund_amount'] = $validated['refund_amount'] ?? null;
 
             DB::beginTransaction();
+
+            app(\App\Services\TaxCaseClosure::class)->confirmStageTwelveSubmission($taxCase);
 
             $scDecision = SupremeCourtDecision::create([
                 'tax_case_id' => $taxCase->id,
@@ -122,6 +128,15 @@ class SupremeCourtDecisionController extends ApiController
             }
 
             DB::beginTransaction();
+
+            $taxCase = TaxCase::query()->lockForUpdate()->findOrFail($taxCase->id);
+            \Illuminate\Support\Facades\Gate::authorize('update', $taxCase);
+            $access = app(\App\Services\MainWorkflowTransitionGuard::class)->inspect($taxCase, 12);
+            if (! $access['allowed']) {
+                DB::rollBack();
+                return $this->error($access['message'], $access['status']);
+            }
+            app(\App\Services\TaxCaseClosure::class)->confirmStageTwelveSubmission($taxCase);
 
             $supremeCourtDecision->update([
                 'status' => 'approved',

@@ -323,7 +323,7 @@ class TaxCaseSheet implements FromCollection, WithHeadings, ShouldAutoSize, With
             case 12:
                 // From supreme_court_decisions
                 if ($taxCase->supremeCourtDecision) {
-                    $nextAction = $taxCase->supremeCourtDecision->next_action ?? '';
+                    $nextAction = $taxCase->supremeCourtDecision->follow_up_next_action ?? '';
                     $nextActionDueDate = $taxCase->supremeCourtDecision->next_action_due_date?->format('d-M-y') ?? '';
                     $statusComment = $taxCase->supremeCourtDecision->status_comment ?? '';
                 }

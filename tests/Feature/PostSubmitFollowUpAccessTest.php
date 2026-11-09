@@ -175,14 +175,14 @@ class PostSubmitFollowUpAccessTest extends TestCase
         Queue::assertNothingPushed();
     }
 
-    public function test_stage_twelve_schema_gap_is_explicit_and_terminal_is_not_case_closure(): void
+    public function test_legacy_stage_twelve_remains_read_only_and_earlier_stage_access_is_preserved(): void
     {
         $decision = \App\Models\SupremeCourtDecision::create(['tax_case_id' => $this->case->id, 'status' => 'submitted']);
         $this->history(12);
         $this->putJson("/api/tax-cases/{$this->case->id}/next-action/supreme-court-decisions/{$decision->id}",
-            ['next_action_due_date' => '2026-12-01', 'status_comment' => 'Waiting'])->assertUnprocessable();
-        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('supreme_court_decisions', 'status_comment'));
-        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('supreme_court_decisions', 'next_action_due_date'));
+            ['next_action_due_date' => '2026-12-01', 'status_comment' => 'Waiting'])->assertConflict();
+        $this->assertTrue(\Illuminate\Support\Facades\Schema::hasColumn('supreme_court_decisions', 'status_comment'));
+        $this->assertTrue(\Illuminate\Support\Facades\Schema::hasColumn('supreme_court_decisions', 'next_action_due_date'));
         // Earlier completed stages remain operable even when Stage 12 makes the workflow terminal.
         $this->history(1);
         $this->putJson("/api/tax-cases/{$this->case->id}/next-action/tax-cases/{$this->case->id}", ['next_action' => 'Follow up'])->assertOk();

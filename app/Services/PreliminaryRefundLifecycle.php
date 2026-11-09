@@ -236,7 +236,7 @@ class PreliminaryRefundLifecycle
             $refund->update(['refund_status' => 'completed']);
             StatusHistory::create(['tax_case_id' => $case->id, 'old_status_id' => $case->case_status_id, 'new_status_id' => $closed->id,
                 'changed_by' => auth()->id(), 'reason' => 'Preliminary full receipt: '.$refund->id, 'created_at' => now()]);
-            $case->update(['case_status_id' => $closed->id, 'is_completed' => true, 'completed_date' => now()]);
+            $case->forceFill(['case_status_id' => $closed->id, 'is_completed' => true, 'completed_date' => now(), 'explicitly_closed' => true])->save();
 
             return $transfer;
         });

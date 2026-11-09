@@ -134,7 +134,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
         
         // For tax-cases model type, verify the record ID matches the taxCaseId
         if ($modelType === 'tax-cases' && (int) $recordId !== (int) $taxCase->id) {
-            return response()->json(['error' => 'Record ID does not match tax case ID'], 400);
+            return response()->json(['error' => 'Record ID does not match tax case ID'], 404);
         }
         
         $record = $modelClass::find($recordId);
@@ -154,22 +154,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
             'appeal-explanation-requests', 'appeal-decisions', 'supreme-court-submissions', 'supreme-court-decisions'];
         $stageIndex = array_search($modelType, $mainStageTypes, true);
         if ($stageIndex !== false) {
-            abort_if($taxCase->is_completed || strtoupper((string) $taxCase->status?->code) === 'CLOSED',
-                409, 'Follow-up updates are unavailable for completed or closed tax cases.');
-            $access = app(MainWorkflowTransitionGuard::class)->inspect($taxCase, $stageIndex + 1, true);
-            abort_unless($access['allowed'], $access['status'], $access['message']);
-            $extra = array_diff(array_keys($request->all()), ['next_action', 'next_action_due_date', 'status_comment']);
-            if ($extra) {
-                throw \Illuminate\Validation\ValidationException::withMessages([
-                    'follow_up' => 'Only Next Action, Next Action Due Date and Status Comment may be updated.',
-                ]);
-            }
-            // The canonical Stage 12 schema only has next_action; never silently discard fields.
-            if ($stageIndex === 11 && ($request->exists('next_action_due_date') || $request->exists('status_comment'))) {
-                throw \Illuminate\Validation\ValidationException::withMessages([
-                    'follow_up' => 'Stage 12 due date and status comment require a separately approved schema correction.',
-                ]);
-            }
+            return app(\App\Services\MainStageFollowUp::class)->update($request, $taxCase, $modelClass, (int) $recordId, $stageIndex + 1);
         }
 
         $validated = $request->validate([
@@ -729,6 +714,7 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                 $updateData['case_status_id'] = 2; // SUBMITTED status
                 $updateData['current_stage'] = $stage;
                 if ($stage === 12) {
+                    app(\App\Services\TaxCaseClosure::class)->confirmStageTwelveSubmission($taxCase);
                     $updateData['is_completed'] = true;
                 }
                 

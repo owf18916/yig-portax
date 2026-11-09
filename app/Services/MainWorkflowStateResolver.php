@@ -45,8 +45,8 @@ class MainWorkflowStateResolver
             ];
         }
 
-        $closed = (bool) $taxCase->is_completed
-            || strtoupper((string) $taxCase->status?->code) === 'CLOSED';
+        $closureState = app(TaxCaseClosure::class)->classification($taxCase, $completed[12]);
+        $closed = $closureState !== 'open';
         $terminal = $closed || $completed[12];
         $stages = [];
 
@@ -96,6 +96,7 @@ class MainWorkflowStateResolver
         return [
             'current_stage' => max(1, min(12, $currentStage)),
             'terminal' => $terminal,
+            'closure_state' => $closureState,
             'completed_stages' => $completedStages,
             'available_stages' => $availableStages,
             'stages' => $stages,
