@@ -2,6 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { component } from './support/vue-presentation-fixture.mjs'
+import { nextActionPolicy, initializeNextAction } from '../resources/js/utils/nextActionCatalog.mjs'
 
 async function detail(fetch = async () => ({ ok: true, json: async () => ({ data: {} }) })) {
   const toasts = []
@@ -63,6 +64,7 @@ for (const status of [403, 409, 422]) test(`NA1-09: HTTP ${status} retains edito
 test('NA1-05/09: modal can clear all fields; pending blocks emit; Escape closes when idle', async () => {
   const props = { isSaving: false }, events = []
   const { state } = await component('components/NextActionModal.vue', {
+    nextActionPolicy, initializeNextAction,
     defineProps: () => props, defineEmits: () => (...args) => events.push(args)
   })
   state.save()

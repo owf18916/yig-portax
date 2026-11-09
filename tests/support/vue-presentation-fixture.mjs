@@ -26,7 +26,7 @@ export async function component(path, globals = {}) {
   vm.runInContext(`${script}\nglobalThis.state = { ${names.join(',')} };\n${code}\nglobalThis.render = ssrRender`, context)
   vm.runInContext(`{ ${clientCode}\nglobalThis.clientRender = clientRenderFn }`, context)
   const shell = { props: ['title', 'subtitle', 'message'], setup: (p, { slots }) => () => vue.h('div', [p.title, p.subtitle, p.message, slots.default?.()]) }
-  return { state: context.state, client: () => context.clientRender(vue.proxyRefs(context.state), []), render: async (bindings = {}) => serverRenderer.renderToString(vue.createSSRApp({
+  return { state: context.state, client: () => context.clientRender(vue.proxyRefs({ ...context.state.props, ...context.state }), []), render: async (bindings = {}) => serverRenderer.renderToString(vue.createSSRApp({
     setup: () => ({ ...context.state.props, ...context.state, ...bindings }), ssrRender: context.render,
     components: Object.fromEntries(['Button', 'Card', 'Alert', 'Toast', 'ConfirmationDialog', 'LoadingSpinner', 'FormField', 'StageForm', 'RevisionHistoryPanel', 'SptFilingMethod', 'DecisionActions'].map(n => [n, shell])),
   })) }

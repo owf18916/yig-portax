@@ -356,6 +356,8 @@
     <NextActionModal
       :isOpen="isNextActionModalOpen"
       :stage="selectedStage"
+      :decision="caseData.appeal_decision"
+      :workflowState="caseData.workflow_state"
       :initialData="nextActionInitialData"
       :isSaving="isSavingNextAction"
       :errorMessage="nextActionError"
