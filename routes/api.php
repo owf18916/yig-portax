@@ -148,6 +148,30 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
             return response()->json(['error' => 'Record not found for this tax case'], 404);
         }
         
+        \Illuminate\Support\Facades\Gate::authorize('update', $taxCase);
+        $mainStageTypes = ['tax-cases', 'sp2-records', 'sphp-records', 'skp-records',
+            'objection-submissions', 'spuh-records', 'objection-decisions', 'appeal-submissions',
+            'appeal-explanation-requests', 'appeal-decisions', 'supreme-court-submissions', 'supreme-court-decisions'];
+        $stageIndex = array_search($modelType, $mainStageTypes, true);
+        if ($stageIndex !== false) {
+            abort_if($taxCase->is_completed || strtoupper((string) $taxCase->status?->code) === 'CLOSED',
+                409, 'Follow-up updates are unavailable for completed or closed tax cases.');
+            $access = app(MainWorkflowTransitionGuard::class)->inspect($taxCase, $stageIndex + 1, true);
+            abort_unless($access['allowed'], $access['status'], $access['message']);
+            $extra = array_diff(array_keys($request->all()), ['next_action', 'next_action_due_date', 'status_comment']);
+            if ($extra) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'follow_up' => 'Only Next Action, Next Action Due Date and Status Comment may be updated.',
+                ]);
+            }
+            // The canonical Stage 12 schema only has next_action; never silently discard fields.
+            if ($stageIndex === 11 && ($request->exists('next_action_due_date') || $request->exists('status_comment'))) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'follow_up' => 'Stage 12 due date and status comment require a separately approved schema correction.',
+                ]);
+            }
+        }
+
         $validated = $request->validate([
             'next_action' => 'nullable|string|max:1000',
             'next_action_due_date' => 'nullable|date',

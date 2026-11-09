@@ -190,17 +190,17 @@
                       {{ caseData.kian_status_by_stage[stage.id]?.submitted ? '👁️ View KIAN' : '📄 KIAN' }}
                     </Button>
                     <button
-                      v-if="stage.accessible"
+                      v-if="canEditFollowUp(stage)"
                       @click="openNextActionModal(stage)"
-                      title="Edit next action for this stage"
-                      class="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-150 group relative"
+                      title="Edit follow-up"
+                      aria-label="Edit follow-up: Next Action, Next Action Due Date and Status Comment"
+                      type="button"
+                      class="inline-flex items-center gap-2 p-2 text-sm text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
                     >
                       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                       </svg>
-                      <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-900 text-white text-xs py-1 px-2 rounded whitespace-nowrap z-10">
-                        Edit Next Action
-                      </div>
+                      <span>Edit follow-up</span>
                     </button>
                   </div>
                 </div>
@@ -347,6 +347,8 @@
       :isOpen="isNextActionModalOpen"
       :stage="selectedStage"
       :initialData="nextActionInitialData"
+      :isSaving="isSavingNextAction"
+      :errorMessage="nextActionError"
       @save="saveNextAction"
       @close="closeNextActionModal"
     />
@@ -1078,8 +1080,20 @@ const getStageNameForKian = (stageId) => {
 const isNextActionModalOpen = ref(false)
 const selectedStage = ref(null)
 const nextActionInitialData = ref(null)
+const isSavingNextAction = ref(false)
+const nextActionError = ref('')
+const followUpProperties = { 1: null, 2: 'sp2_record', 3: 'sphp_record', 4: 'skp_record',
+  5: 'objection_submission', 6: 'spuh_record', 7: 'objection_decision', 8: 'appeal_submission',
+  9: 'appeal_explanation_request', 10: 'appeal_decision', 11: 'supreme_court_submission' }
+const canEditFollowUp = (stage) => caseData.value.can_update_follow_up === true
+  && Object.hasOwn(followUpProperties, stage.id)
+  && stage.viewable
+  && (stage.id === 1 || !!caseData.value[followUpProperties[stage.id]]?.id)
+
 
 const openNextActionModal = (stage) => {
+  if (!canEditFollowUp(stage) || isSavingNextAction.value) return
+  nextActionError.value = ''
   selectedStage.value = stage
   
   // Get the current data from the record to pre-fill the modal
@@ -1115,7 +1129,7 @@ const openNextActionModal = (stage) => {
   // Pass the record data for pre-filling
   nextActionInitialData.value = stageRecord ? {
     next_action: stageRecord.next_action || '',
-    next_action_due_date: stageRecord.next_action_due_date || '',
+    next_action_due_date: stageRecord.next_action_due_date?.slice(0, 10) || '',
     status_comment: stageRecord.status_comment || ''
   } : null
   
@@ -1123,13 +1137,15 @@ const openNextActionModal = (stage) => {
 }
 
 const closeNextActionModal = () => {
+  if (isSavingNextAction.value) return
   isNextActionModalOpen.value = false
   selectedStage.value = null
 }
 
 const saveNextAction = async (formData) => {
-  if (!selectedStage.value || !caseData.value) return
-  
+  if (!selectedStage.value || !canEditFollowUp(selectedStage.value) || isSavingNextAction.value) return
+  isSavingNextAction.value = true
+  nextActionError.value = ''
   try {
     // Map stage ID to model type AND the property name in caseData (using snake_case as returned by API)
     const stageMapping = {
@@ -1186,7 +1202,10 @@ const saveNextAction = async (formData) => {
     
     if (!response.ok) {
       const error = await response.json()
-      throw new Error(error.message || error.error || `API Error: ${response.status}`)
+      const guidance = { 401: 'Sign in again before saving.', 403: 'You no longer have permission to edit this follow-up.',
+        419: 'Reload or sign in again. This save was not retried.', 422: 'Check the follow-up values and try again.' }
+      throw new Error([guidance[response.status], error.message || error.error || `API Error: ${response.status}`,
+        ...Object.values(error.errors || {}).flat()].filter(Boolean).join(' '))
     }
     
     const result = await response.json()
@@ -1196,10 +1215,14 @@ const saveNextAction = async (formData) => {
       Object.assign(record, result.data)
     }
     
+    isSavingNextAction.value = false
     closeNextActionModal()
-    showSuccess('Success', 'Next action saved successfully!')
+    showSuccess('Success', 'Follow-up saved successfully!')
   } catch (error) {
-    showError('Error', error.message)
+    nextActionError.value = error.message || 'Save could not be confirmed. Reload to check saved values before trying again.'
+    showError('Error', nextActionError.value)
+  } finally {
+    isSavingNextAction.value = false
   }
 }
 

@@ -3,10 +3,10 @@
   <Teleport to="body">
     <transition name="modal">
       <div v-if="isOpen" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-        <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 transform transition-all">
+        <div ref="dialog" role="dialog" aria-modal="true" aria-labelledby="follow-up-title" tabindex="-1" @keydown="onDialogKeydown" class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto transform transition-all">
           <!-- Header -->
           <div class="px-6 py-4 border-b border-gray-200">
-            <h3 class="text-lg font-semibold text-gray-900">Edit Next Action</h3>
+            <h3 id="follow-up-title" class="text-lg font-semibold text-gray-900">Edit follow-up</h3>
             <p class="text-sm text-gray-600 mt-1">Update follow-up actions for this case</p>
           </div>
 
@@ -14,10 +14,13 @@
           <div class="px-6 py-4 space-y-4">
             <!-- Next Action Field -->
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">
+              <label for="follow-up-next_action" class="block text-sm font-medium text-gray-700 mb-1">
                 Next Action
               </label>
               <textarea
+                id="follow-up-next_action"
+                :disabled="isSaving"
+                maxlength="1000"
                 v-model="formData.next_action"
                 placeholder="Enter the next action to take on this case"
                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
@@ -28,10 +31,12 @@
 
             <!-- Next Action Due Date Field -->
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">
+              <label for="follow-up-next_action_due_date" class="block text-sm font-medium text-gray-700 mb-1">
                 Next Action Due Date
               </label>
               <input
+                id="follow-up-next_action_due_date"
+                :disabled="isSaving"
                 v-model="formData.next_action_due_date"
                 type="date"
                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -40,10 +45,13 @@
 
             <!-- Status Comment Field -->
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">
+              <label for="follow-up-status_comment" class="block text-sm font-medium text-gray-700 mb-1">
                 Status Comment
               </label>
               <textarea
+                id="follow-up-status_comment"
+                :disabled="isSaving"
+                maxlength="1000"
                 v-model="formData.status_comment"
                 placeholder="Additional status comment or notes"
                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
@@ -56,12 +64,15 @@
           <!-- Actions -->
           <div class="px-6 py-4 border-t border-gray-200 flex gap-3 justify-end">
             <button
+              type="button"
+              :disabled="isSaving"
               @click="cancel"
               class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded hover:bg-gray-200 transition"
             >
               Cancel
             </button>
             <button
+              type="button"
               @click="save"
               :disabled="isSaving"
               :class="[
@@ -76,7 +87,7 @@
           </div>
 
           <!-- Error Message -->
-          <div v-if="errorMessage" class="px-6 pb-4">
+          <div role="alert" v-if="errorMessage" class="px-6 pb-4">
             <div class="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">
               {{ errorMessage }}
             </div>
@@ -88,13 +99,15 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 
 const props = defineProps({
   isOpen: {
     type: Boolean,
     default: false
   },
+  isSaving: { type: Boolean, default: false },
+  errorMessage: { type: String, default: '' },
   stage: {
     type: Object,
     default: () => ({})
@@ -113,15 +126,27 @@ const formData = ref({
   status_comment: ''
 })
 
-const isSaving = ref(false)
-const errorMessage = ref('')
+const dialog = ref(null)
+let previousFocus = null
+const onDialogKeydown = (event) => {
+  if (event.key === 'Escape') { event.preventDefault(); cancel(); return }
+  if (event.key !== 'Tab') return
+  const controls = [...dialog.value.querySelectorAll('button:not(:disabled), input:not(:disabled), textarea:not(:disabled)')]
+  if (!controls.length) { event.preventDefault(); return }
+  const first = controls[0], last = controls[controls.length - 1]
+  if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.value)) {
+    event.preventDefault(); last.focus()
+  } else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialog.value)) {
+    event.preventDefault(); first.focus()
+  }
+}
 
 // Watch for when modal opens to populate form data from initialData
 watch(() => props.isOpen, (newVal) => {
   if (newVal && props.initialData) {
     formData.value = {
       next_action: props.initialData.next_action || '',
-      next_action_due_date: props.initialData.next_action_due_date || '',
+      next_action_due_date: props.initialData.next_action_due_date?.slice(0, 10) || '',
       status_comment: props.initialData.status_comment || ''
     }
   } else if (newVal) {
@@ -132,36 +157,20 @@ watch(() => props.isOpen, (newVal) => {
       status_comment: ''
     }
   }
-  errorMessage.value = ''
+  if (newVal) {
+    previousFocus = document.activeElement
+    nextTick(() => dialog.value?.querySelector('textarea')?.focus())
+  } else {
+    previousFocus?.focus()
+  }
 })
 
-const save = async () => {
-  try {
-    isSaving.value = true
-    errorMessage.value = ''
-    
-    // Validate that at least one field is filled
-    if (!formData.value.next_action && !formData.value.next_action_due_date && !formData.value.status_comment) {
-      errorMessage.value = 'Please fill in at least one field'
-      isSaving.value = false
-      return
-    }
-
-    emit('save', formData.value)
-  } catch (error) {
-    errorMessage.value = error.message || 'An error occurred while saving'
-    isSaving.value = false
-  }
+const save = () => {
+  if (!props.isSaving) emit('save', { ...formData.value })
 }
 
 const cancel = () => {
-  formData.value = {
-    next_action: '',
-    next_action_due_date: '',
-    status_comment: ''
-  }
-  errorMessage.value = ''
-  emit('close')
+  if (!props.isSaving) emit('close')
 }
 </script>
 

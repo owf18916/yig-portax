@@ -252,6 +252,9 @@ class TaxCaseController extends ApiController
         // Determine which stages are accessible based on user's routing choice at Stage 4
         $workflowState = app(MainWorkflowStateResolver::class)->resolve($taxCase);
         $taxCase->workflow_state = $workflowState;
+        $taxCase->can_update_follow_up = Gate::allows('update', $taxCase)
+            && ! $taxCase->is_completed
+            && strtoupper((string) $taxCase->status?->code) !== 'CLOSED';
         // Temporary compatibility shim for older clients. New clients consume workflow_state.
         $taxCase->accessible_stages = array_values(array_merge(
             $workflowState['completed_stages'],
