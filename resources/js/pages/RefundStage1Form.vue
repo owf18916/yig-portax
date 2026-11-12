@@ -142,7 +142,7 @@
               v-if="!isEditingExisting && !isReadOnly"
               type="submit"
               class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50"
-              :disabled="isSubmitting || isLoading || stageId === null"
+              :disabled="isSubmitting || isLoading || stageId === null || newRefundBlocked"
             >
               {{ isSubmitting ? 'Creating...' : 'Create Refund (Stage 1)' }}
             </button>
@@ -196,6 +196,8 @@ const refundNumber = ref('')
 const originLabel = ref('')
 const existingLoaded = ref(false)
 const canContinue = ref(false)
+const stageFourKianBlocked = ref(false)
+const newRefundBlocked = computed(() => stageId.value === 4 && stageFourKianBlocked.value)
 const availabilityMessage = ref('')
 const currentRefundStage = ref(1)  // Track current stage
 
@@ -319,6 +321,7 @@ const loadCaseData = async () => {
 
     if (!isSelected()) return false
     caseNumber.value = data.case_number || `Case #${caseId.value}`
+    stageFourKianBlocked.value = data.stage4_kian_access_blocked === true
     maxRefundAmount.value = data.disputed_amount || 0
     return true
   } catch (error) {
@@ -341,6 +344,7 @@ const submitForm = async () => {
   if (refundId.value) return
   try {
     if (stageId.value === null) throw new Error('Select a valid refund origin before creating a refund.')
+    if (newRefundBlocked.value) throw new Error('Submit the required Stage 4 KIAN before continuing this Refund.')
     isSubmitting.value = true
     apiError.value = ''
 

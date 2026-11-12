@@ -217,26 +217,19 @@ class KianSubmissionController extends ApiController
     }
 
     /**
-     * Record KIAN response from tax authority
+     * Retired KIAN response command (authorized historical reads remain available)
      */
     public function recordResponse(Request $request, TaxCase $taxCase, KianSubmission $kianSubmission)
     {
-        $this->rejectClientProvenance($request);
         return $this->lifecycleCommand(fn () => app(\App\Services\KianLifecycle::class)->record($taxCase->id, $kianSubmission->id, $request->all(), $request->file('document')), $taxCase);
     }
 
     /**
-     * Close KIAN case
+     * Retired KIAN closure command
      */
     public function close(Request $request, TaxCase $taxCase, KianSubmission $kianSubmission)
     {
-        $request->validate(array_fill_keys(array_merge(\App\Models\KianSubmission::FINAL_FIELDS, ['document', 'status', 'closed_date', 'closer', 'recorded_by', 'recorded_at']), 'prohibited'));
         return $this->lifecycleCommand(fn () => app(\App\Services\KianLifecycle::class)->close($taxCase->id, $kianSubmission->id), $taxCase);
-    }
-
-    private function rejectClientProvenance(Request $request): void
-    {
-        $request->validate(array_fill_keys(['responded_by', 'responded_at', 'recorded_by', 'recorded_at', 'closed_by', 'closed_at', 'response_document_id', 'document_id', 'documentable_id', 'documentable_type', 'tax_case_id', 'stage_id', 'stage_source', 'status', 'uploaded_by', 'uploaded_at', 'submitted_by', 'submitted_at', 'approved_by', 'approved_at'], 'prohibited'));
     }
 
     private function lifecycleCommand(callable $operation, TaxCase $case)

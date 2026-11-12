@@ -369,6 +369,24 @@ class TaxCase extends Model
         return $this->exposureByStage()[$stageId]['needsKian'] ?? null;
     }
 
+    /** Access only: never a prerequisite for submitting the SKP itself. */
+    public function stageFourKianAccessBlocked(): bool
+    {
+        $this->loadMissing(['workflowHistories', 'skpRecord']);
+        $final = ['submitted', 'approved', 'completed'];
+        $submitted = $this->workflowHistories->contains(fn ($history) =>
+            (int) $history->stage_id === 4 && in_array(strtolower((string) $history->status), $final, true));
+        $submitted = $submitted || in_array(strtolower((string) $this->skpRecord?->status), $final, true);
+        if (! $submitted || $this->needsKianAtStage(4) !== true) return false;
+
+        $this->loadMissing('kianSubmissions');
+        return ! $this->kianSubmissions->contains(fn ($kian) =>
+            (int) $kian->tax_case_id === (int) $this->id
+            && (int) $kian->stage_id === 4
+            && ! $kian->trashed()
+            && in_array($kian->status, ['submitted', 'approved', 'rejected', 'responded', 'closed'], true));
+    }
+
     /**
      * ✅ NEW METHOD 2: Calculate loss amount at a specific stage
      * Returns null if no loss at that stage

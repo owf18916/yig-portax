@@ -631,6 +631,7 @@ const pendingAction = ref(null) // 'submit' or 'draft'
 const computedNextStageId = computed(() => {
   if (Object.hasOwn(props.prefillData || {}, 'kianSubmissionStatus')) return null
   const next = props.nextStageId || (props.stageId < 12 ? props.stageId + 1 : null)
+  if (props.stageId === 4 && props.workflowState?.stages?.some(s => s.stage === 5 && s.reason === 'stage4_kian_not_submitted')) return null
   // Stage 1 uses the persisted server capability, including after submit/refresh.
   if (props.stageId === 1 && !props.workflowState?.stages?.some(s => s.stage === next && s.submittable)) return null
   return next

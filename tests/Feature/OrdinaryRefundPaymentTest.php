@@ -54,7 +54,7 @@ class OrdinaryRefundPaymentTest extends TestCase
         $this->actingAs($this->staff);
     }
 
-    private function refund(int $stage = 4): RefundProcess
+    private function refund(int $stage = 4, bool $submittedKian = true): RefundProcess
     {
         $type = [4 => \App\Models\SkpRecord::class, 7 => \App\Models\ObjectionDecision::class, 10 => \App\Models\AppealDecision::class, 12 => \App\Models\SupremeCourtDecision::class][$stage];
         $fields = $stage === 4
@@ -62,6 +62,9 @@ class OrdinaryRefundPaymentTest extends TestCase
             : ['decision_number' => 'DEC-'.$stage, 'decision_date' => '2026-11-01', 'decision_type' => 'partially_granted', 'decision_amount' => '800.12'];
         $decision = $type::create($fields + ['tax_case_id' => $this->case->id, 'create_refund' => true, 'refund_amount' => '800.12']);
         WorkflowHistory::create(['tax_case_id' => $this->case->id, 'stage_id' => $stage, 'action' => 'submitted', 'status' => 'submitted', 'user_id' => $this->staff->id]);
+        if ($stage === 4 && $submittedKian) {
+            \App\Models\KianSubmission::create(['tax_case_id' => $this->case->id, 'stage_id' => 4, 'status' => 'submitted', 'kian_number' => 'ORD-KIAN', 'submission_date' => '2026-11-01', 'kian_amount' => '199.88']);
+        }
 
         return app(\App\Services\DecisionPointRefundService::class)->createIfRequested($decision, $stage, $this->staff->id);
     }
@@ -88,6 +91,44 @@ class OrdinaryRefundPaymentTest extends TestCase
         }
 
         return $refund;
+    }
+
+    public function test_stage_four_kian_gate_blocks_payment_and_creation_but_preserves_selected_reads(): void
+    {
+        $refund = $this->refund(4, false);
+        $before = $refund->fresh()->getAttributes();
+        $this->getJson($this->url($refund, 1))->assertOk()->assertJsonPath('data.id', $refund->id);
+        $this->getJson($this->url($refund, 2))->assertOk()->assertJsonPath('data.can_submit', false);
+        $this->postJson($this->url($refund, 2), $this->payload(2))->assertUnprocessable()->assertJsonValidationErrors('ordinary_refund');
+        foreach (['refund-stages/1', 'refund-processes'] as $path) {
+            $this->postJson($this->base.'/'.$path, ['stage_id' => 4])->assertConflict();
+        }
+        $this->postJson($this->base.'/refund-processes/'.$refund->id.'/approve')->assertConflict();
+        $this->assertSame($before, $refund->fresh()->getAttributes());
+        $this->assertDatabaseCount('bank_transfer_requests', 0);
+
+        $kian = \App\Models\KianSubmission::create(['tax_case_id' => $this->case->id, 'stage_id' => 4, 'status' => 'draft', 'kian_number' => 'GATE-K', 'submission_date' => '2026-11-01', 'kian_amount' => '199.88']);
+        $this->getJson($this->url($refund, 2))->assertOk()->assertJsonPath('data.can_submit', false);
+        $kian->update(['status' => 'submitted']);
+        $this->getJson($this->url($refund, 2))->assertOk()->assertJsonPath('data.can_submit', true);
+        $this->actingAs($this->holding); // Existing HOLDING entitlement still applies.
+        $this->getJson($this->url($refund, 2))->assertOk()->assertJsonPath('data.can_submit', true);
+        $this->staff->role->update(['permissions' => []]);
+        $this->actingAs($this->staff->fresh());
+        $this->getJson($this->url($refund, 2))->assertOk()->assertJsonPath('data.can_submit', false);
+        $this->postJson($this->url($refund, 2), $this->payload(2))->assertForbidden();
+        $this->staff->role->update(['permissions' => ['submit_cases']]);
+        $this->actingAs($this->staff->fresh());
+        $this->postJson($this->url($refund, 2), $this->payload(2))->assertOk();
+    }
+
+    public function test_stage_four_without_kian_requirement_keeps_payment_eligibility(): void
+    {
+        $refund = $this->refund(4, false);
+        $this->case->skpRecord->update(['skp_amount' => '1000.00']);
+        $this->assertFalse($this->case->fresh()->needsKianAtStage(4));
+        $this->getJson($this->url($refund, 2))->assertOk()->assertJsonPath('data.can_submit', true);
+        $this->postJson($this->url($refund, 2), $this->payload(2))->assertOk();
     }
 
     public static function stageReadHistories(): array

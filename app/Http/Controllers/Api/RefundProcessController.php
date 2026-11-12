@@ -58,6 +58,7 @@ class RefundProcessController extends ApiController
      */
     public function store(Request $request, TaxCase $taxCase): JsonResponse
     {
+        abort_if($request->integer('stage_id') === 4 && $taxCase->stageFourKianAccessBlocked(), 409, 'Submit the required Stage 4 KIAN before continuing this Refund.');
         // Check if case has available refund amount
         if (!$taxCase->canCreateRefund()) {
             return $this->error('No additional refund amount available for this tax case', 422);
@@ -154,6 +155,8 @@ class RefundProcessController extends ApiController
         if ($refundProcess->tax_case_id !== $taxCase->id) {
             return $this->error('Refund not found for this tax case', 404);
         }
+
+        abort_if((int) $refundProcess->stage_id === 4 && $taxCase->stageFourKianAccessBlocked(), 409, 'Submit the required Stage 4 KIAN before continuing this Refund.');
 
         if ($refundProcess->status === 'approved') {
             return $this->error('Refund already approved', 422);

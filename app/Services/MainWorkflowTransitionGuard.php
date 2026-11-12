@@ -34,6 +34,7 @@ class MainWorkflowTransitionGuard
     private function message(int $stage, string $reason): string
     {
         return match ($reason) {
+            'stage4_kian_not_submitted' => 'Submit the required Stage 4 KIAN before continuing to Objection.',
             'preliminary_administrative_route' => 'Use the administrative Preliminary Refund route; normal Stage 2 progression is unavailable.',
             'already_completed' => "Stage {$stage} has already been submitted and cannot be rewritten through the normal workflow endpoint.",
             'case_terminal' => 'Completed or closed tax cases cannot accept workflow changes.',

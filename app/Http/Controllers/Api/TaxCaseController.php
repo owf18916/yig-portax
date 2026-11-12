@@ -269,6 +269,7 @@ class TaxCaseController extends ApiController
 
         // ✅ NEW: ADD COMPREHENSIVE KIAN STATUS BY STAGE (Multiple KIAN per case concept)
         $taxCase->kian_status_by_stage = $taxCase->getKianStatusByStage();
+        $taxCase->stage4_kian_access_blocked = $taxCase->stageFourKianAccessBlocked();
         $taxCase->notification_summary = app(\App\Services\KianNotificationService::class)->summary($taxCase, auth()->user());
 
         // ✅ NEW: ADD PRELIMINARY REFUND INFO FOR STAGE 1

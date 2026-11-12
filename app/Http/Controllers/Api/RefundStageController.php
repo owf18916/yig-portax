@@ -86,6 +86,7 @@ class RefundStageController extends ApiController
      */
     public function createRefundStage1(Request $request, TaxCase $taxCase): JsonResponse
     {
+        abort_if($request->integer('stage_id') === 4 && $taxCase->stageFourKianAccessBlocked(), 409, 'Submit the required Stage 4 KIAN before continuing this Refund.');
         try {
             $validated = $request->validate([
                 'stage_id' => 'required|integer|in:' . implode(',', RefundProcess::VALID_STAGE_IDS),

@@ -230,6 +230,22 @@ test('new creation preserves explicitly supported preliminary and decision origi
   }
 })
 
+test('new Stage 4 Refund deep link uses refreshed KIAN gate without affecting other origins', async () => {
+  const data = { stage4_kian_access_blocked: true }
+  const page = fixture(1, data, null, { stageId: '4' })
+  await page.state.loadCaseData()
+  assert.equal(page.state.newRefundBlocked.value, true)
+  await page.state.submitForm()
+  assert.match(page.state.apiError.value, /required Stage 4 KIAN/)
+  assert.ok(page.calls.every(call => call.method === 'GET'))
+  data.stage4_kian_access_blocked = false
+  await page.state.loadCaseData()
+  assert.equal(page.state.newRefundBlocked.value, false)
+  page.state.stageFourKianBlocked.value = true
+  page.route.query.stageId = '7'
+  assert.equal(page.state.newRefundBlocked.value, false)
+})
+
 test('same-component identity change immediately blocks old continuation and loads the new scoped ID', async () => {
   const page = fixture(1, { ...evidence, current_stage: 1, can_submit: true })
   await page.load()

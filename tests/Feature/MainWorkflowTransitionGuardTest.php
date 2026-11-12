@@ -182,6 +182,18 @@ class MainWorkflowTransitionGuardTest extends TestCase
         ])->assertOk();
 
         $this->getJson("/api/tax-cases/{$this->case->id}")
+            ->assertOk()->assertJsonPath('data.stage4_kian_access_blocked', true)
+            ->assertJsonPath('data.workflow_state.stages.4.reason', 'stage4_kian_not_submitted');
+        $this->assertDatabaseCount('refund_processes', 1);
+        $this->postJson($this->url(5), ['action' => 'draft'])->assertConflict();
+        $this->postJson($this->url(5), ['action' => 'submit'])->assertConflict();
+        $this->postJson("/api/tax-cases/{$this->case->id}/objection-submissions", [])->assertConflict();
+        $kian = \App\Models\KianSubmission::create(['tax_case_id' => $this->case->id, 'stage_id' => 4,
+            'status' => 'draft', 'kian_number' => 'GUARD-K', 'submission_date' => '2026-11-01', 'kian_amount' => '50.00']);
+        $this->postJson($this->url(5), ['action' => 'draft'])->assertConflict();
+        $kian->update(['status' => 'submitted']);
+
+        $this->getJson("/api/tax-cases/{$this->case->id}")
             ->assertOk()
             ->assertJsonPath('data.accessible_stages.4', 5)
             ->assertJsonPath('data.workflow_state.current_stage', 5)

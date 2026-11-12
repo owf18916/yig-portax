@@ -15,6 +15,7 @@ class RefundAggregateResolverTest extends TestCase
     {
         $case = new TaxCase();
         $case->id = 50;
+        $case->setRelation('workflowHistories', new Collection);
         foreach (['skpRecord', 'objectionDecision', 'appealDecision', 'supremeCourtDecision'] as $relation) {
             $case->setRelation($relation, null);
         }

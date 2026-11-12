@@ -516,6 +516,7 @@ const hasRefundTriggered = () => {
 
 // Helper function: Check if refund button should show for a stage
 const shouldShowRefundButton = (stageId) => {
+  if (Number(stageId) === 4 && caseData.value.stage4_kian_access_blocked) return false
   // ✅ NEW: Hide refund button for Stage 1 if Preliminary Refund (handled in dedicated section)
   if (stageId === 1 && caseData.value.is_preliminary_refund) {
     return false
@@ -1356,6 +1357,7 @@ const getCurrentRefundStage = (refund) => {
 // ✅ NEW: Check if refund stage is accessible (can click to navigate)
 const isRefundStageAccessible = (refund, stageNum) => {
   const currentStage = getCurrentRefundStage(refund)
+  if (Number(refund.stage_id) === 4 && caseData.value.stage4_kian_access_blocked && stageNum > currentStage) return false
   
   // Can click on: currently active stage OR next stage after current
   // stageNum = 1 (can click if currentStage == 0 or == 1)

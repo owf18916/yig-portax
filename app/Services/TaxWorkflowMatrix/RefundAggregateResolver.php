@@ -19,6 +19,9 @@ class RefundAggregateResolver
 
         if ($count === 0) {
             $intent = $this->routingResolver->hasRefundIntent($taxCase);
+            if ($taxCase->stageFourKianAccessBlocked()) {
+                $intent = array_values(array_filter($intent, fn ($item) => (int) $item['stage_id'] !== 4));
+            }
             if (!empty($intent)) {
                 return [
                     'status' => 'eligible',

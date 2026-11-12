@@ -141,6 +141,68 @@ class MainWorkflowStateResolverTest extends TestCase
         ));
     }
 
+    public static function stageFourKianCases(): array
+    {
+        return [
+            'not submitted' => [false, 'LB', '40.00', null, 99, 4, false],
+            'no exposure LB' => [true, 'LB', '100.00', null, 99, 4, false],
+            'no exposure KB SPT' => [true, 'KB', '100.00', null, 99, 4, false, 'KB'],
+            'missing' => [true, 'LB', '40.00', null, 99, 4, true],
+            'NIHIL requires' => [true, 'NIHIL', '0.00', null, 99, 4, true],
+            'KB requires' => [true, 'KB', '40.00', null, 99, 4, true],
+            'draft' => [true, 'LB', '40.00', 'draft', 99, 4, true],
+            'submitted pending approval' => [true, 'LB', '40.00', 'submitted', 99, 4, false],
+            'approved' => [true, 'LB', '40.00', 'approved', 99, 4, false],
+            'legacy rejected after submission' => [true, 'LB', '40.00', 'rejected', 99, 4, false],
+            'responded' => [true, 'LB', '40.00', 'responded', 99, 4, false],
+            'closed' => [true, 'LB', '40.00', 'closed', 99, 4, false],
+            'unknown status' => [true, 'LB', '40.00', 'unknown', 99, 4, true],
+            'wrong case or entity' => [true, 'LB', '40.00', 'submitted', 100, 4, true],
+            'wrong origin 7' => [true, 'LB', '40.00', 'submitted', 99, 7, true],
+            'wrong origin 10' => [true, 'LB', '40.00', 'submitted', 99, 10, true],
+            'wrong origin 12' => [true, 'LB', '40.00', 'submitted', 99, 12, true],
+        ];
+    }
+
+    #[DataProvider('stageFourKianCases')]
+    public function test_stage_four_gate_uses_exact_origin_and_existing_exposure_inputs(bool $submitted, string $skpType, string $amount, ?string $status, int $caseId, int $origin, bool $blocked, string $spt = 'LB'): void
+    {
+        $case = $this->taxCase($submitted ? [1, 2, 3, 4] : [1, 2, 3]);
+        $case->spt_position_type = $spt;
+        $case->disputed_amount = '100.00';
+        $case->setRelation('skpRecord', new SkpRecord(['tax_case_id' => 99, 'skp_type' => $skpType, 'skp_amount' => $amount, 'continue_to_next_stage' => true]));
+        if ($status !== null) {
+            $case->setRelation('kianSubmissions', collect([new \App\Models\KianSubmission(['tax_case_id' => $caseId, 'stage_id' => $origin, 'status' => $status])]));
+        }
+        $this->assertSame($blocked, $case->stageFourKianAccessBlocked());
+        $state = $this->resolver->resolve($case);
+        $this->assertSame($submitted && ! $blocked, $state['stages'][4]['submittable']);
+        $this->assertSame(! $submitted, $state['stages'][3]['submittable']);
+    }
+
+    public function test_optional_later_kian_does_not_gate_appeal_or_supreme_court(): void
+    {
+        foreach ([7 => 8, 10 => 11] as $origin => $next) {
+            $case = $this->taxCase(range(1, $origin), decisionFlags: [4 => true, 7 => true, 10 => true]);
+            $case->spt_position_type = 'LB';
+            $case->disputed_amount = '100.00';
+            $case->skpRecord->fill(['skp_type' => 'LB', 'skp_amount' => '40.00']);
+            $this->assertTrue($case->stageFourKianAccessBlocked());
+            $this->assertTrue($this->resolver->resolve($case)['stages'][$next - 1]['submittable']);
+        }
+    }
+
+    public function test_deleted_submitted_kian_does_not_satisfy_gate(): void
+    {
+        $case = $this->taxCase([1, 2, 3, 4]);
+        $case->fill(['spt_position_type' => 'LB', 'disputed_amount' => '100.00']);
+        $case->setRelation('skpRecord', new SkpRecord(['skp_type' => 'LB', 'skp_amount' => '40.00']));
+        $kian = new \App\Models\KianSubmission(['tax_case_id' => 99, 'stage_id' => 4, 'status' => 'submitted']);
+        $kian->deleted_at = now();
+        $case->setRelation('kianSubmissions', collect([$kian]));
+        $this->assertTrue($case->stageFourKianAccessBlocked());
+    }
+
     private function taxCase(
         array $completed,
         int $currentStage = 1,
@@ -149,6 +211,7 @@ class MainWorkflowStateResolverTest extends TestCase
     ): TaxCase {
         $case = new TaxCase(['current_stage' => $currentStage, 'is_completed' => $isCompleted]);
         $case->id = 99;
+        $case->setRelation('kianSubmissions', new Collection);
         $case->setRelation('status', new CaseStatus(['code' => 'OPEN']));
         $case->setRelation('workflowHistories', new Collection(array_map(
             function (int $stage) use ($decisionFlags) {

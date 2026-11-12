@@ -40,6 +40,7 @@ class TaxWorkflowMatrixService
                 'entity',
                 'period.fiscalYear',
                 'workflowHistories',
+                'kianSubmissions',
                 'status',
                 'sp2Record',
                 'sphpRecord',

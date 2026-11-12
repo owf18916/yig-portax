@@ -17,6 +17,7 @@ class StageStatusResolverTest extends TestCase
         $resolver = new StageStatusResolver(new StageRoutingResolver());
         $case = new TaxCase(['current_stage' => 1]);
         $case->id = 10;
+        $case->setRelation('kianSubmissions', new Collection);
         $case->setRelation('workflowHistories', new Collection([
             new WorkflowHistory(['stage_id' => 1, 'status' => 'draft']),
             tap(new WorkflowHistory(['stage_id' => 1, 'status' => 'submitted']), fn ($h) => $h->id = 2),

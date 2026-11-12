@@ -107,7 +107,7 @@ class MainWorkflowStateResolver
     public static function evidenceRelations(): array
     {
         return array_values(array_unique(array_merge(
-            ['workflowHistories', 'status'],
+            ['workflowHistories', 'status', 'kianSubmissions'],
             array_filter(array_column(StageDefinitions::STAGES, 'relation'))
         )));
     }
@@ -187,6 +187,10 @@ class MainWorkflowStateResolver
         }
         if (! $completed[$stage - 1]) {
             return ['available' => false, 'reason' => 'previous_stage_incomplete'];
+        }
+
+        if ($stage === 5 && $taxCase->stageFourKianAccessBlocked()) {
+            return ['available' => false, 'reason' => 'stage4_kian_not_submitted'];
         }
 
         $route = match ($stage) {

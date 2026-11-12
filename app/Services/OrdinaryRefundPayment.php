@@ -55,6 +55,7 @@ class OrdinaryRefundPayment
 
     private function approvedAmount(TaxCase $case, RefundProcess $refund): BigDecimal
     {
+        $this->check((int) $refund->stage_id !== 4 || ! $case->stageFourKianAccessBlocked(), 'Submit the required Stage 4 KIAN before continuing this Refund.');
         $origins = [4 => SkpRecord::class, 7 => ObjectionDecision::class, 10 => AppealDecision::class, 12 => SupremeCourtDecision::class];
         $sources = [4 => 'SKP', 7 => 'OBJECTION', 10 => 'APPEAL', 12 => 'SUPREME_COURT'];
         $type = $origins[$refund->stage_id] ?? null;

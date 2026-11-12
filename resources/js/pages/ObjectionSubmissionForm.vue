@@ -8,7 +8,11 @@
       </div>
     </div>
 
+    <div v-if="caseData.stage4_kian_access_blocked && !caseData.workflow_state?.completed_stages?.includes(5)" class="m-6 rounded-lg border border-amber-300 bg-amber-50 p-4">
+      Submit the required Stage 4 KIAN before continuing to Objection.
+    </div>
     <StageForm
+      v-else
       :stageName="`Stage 5: Objection Submission (Surat Keberatan)`"
       :stageDescription="`Enter objection details and amount for formal objection to SKP decision`"
       :stageId="5"

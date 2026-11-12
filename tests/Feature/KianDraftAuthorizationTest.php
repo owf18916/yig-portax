@@ -127,12 +127,26 @@ class KianDraftAuthorizationTest extends TestCase
         $draft = KianSubmission::sole();
         $this->getJson($url)->assertOk()->assertJsonPath('draft_actions.create', false)->assertJsonPath('draft_actions.save_draft', true);
         $this->postJson($this->url.'/kian-submissions', $this->payload() + ['stage_id' => $stage])->assertOk()->assertJsonPath('data.status', 'draft');
+        $this->postJson('/api/documents', [
+            'tax_case_id' => $this->case->id, 'stage_code' => (string) $stage,
+            'documentable_type' => KianSubmission::class, 'documentable_id' => $draft->id,
+            'document_type' => 'supporting_document',
+            'file' => UploadedFile::fake()->createWithContent('signed-internal.pdf', "%PDF-1.4\nsigned internal KIAN\n%%EOF"),
+        ])->assertCreated();
+        $signed = Document::sole();
+        $signedBefore = $signed->getAttributes();
+        $signedBytes = Storage::disk('local')->get($signed->file_path);
         if ($storeSubmit) $this->postJson($url, $this->payload() + ['action' => 'submit'])->assertOk()->assertJsonPath('data.status', 'submitted');
         else $this->postJson($this->url.'/kian-submissions/'.$draft->id.'/submit')->assertOk()->assertJsonPath('data.status', 'submitted');
         $this->getJson($url)->assertOk()->assertJsonPath('draft_actions.submit', false);
         $before = $this->snapshot();
         $this->postJson($url, $this->payload())->assertUnprocessable();
         $this->assertSame($before, $this->snapshot());
+        $this->getJson('/api/documents/'.$signed->id.'/download')->assertOk();
+        $this->assertSame($signedBefore, $signed->fresh()->getAttributes());
+        $this->assertSame($signedBytes, Storage::disk('local')->get($signed->file_path));
+        $this->assertDatabaseCount('documents', 1);
+        $this->assertDatabaseCount('kian_submissions', 1);
     }
 
     public function test_nested_identity_legacy_and_exposure_guards(): void

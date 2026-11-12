@@ -19,6 +19,7 @@ class ObjectionSubmissionController extends ApiController
      */
     public function store(Request $request, TaxCase $taxCase)
     {
+        abort_if($taxCase->stageFourKianAccessBlocked(), 409, 'Submit the required Stage 4 KIAN before continuing to Objection.');
         try {
             $validated = $request->validate([
                 'submission_date' => 'required|date',
@@ -108,6 +109,7 @@ class ObjectionSubmissionController extends ApiController
      */
     public function submit(Request $request, TaxCase $taxCase, ObjectionSubmission $objectionSubmission)
     {
+        abort_if($taxCase->stageFourKianAccessBlocked(), 409, 'Submit the required Stage 4 KIAN before continuing to Objection.');
         try {
             if ($objectionSubmission->tax_case_id !== $taxCase->id) {
                 return $this->error('Objection submission not found for this tax case', 404);
