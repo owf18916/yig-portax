@@ -284,32 +284,33 @@ class DecisionPointContractNormalizationTest extends TestCase
             ->assertJsonPath('data.kian_status_by_stage.4.needsKian', $expected !== '0.00');
     }
 
-    public function test_chained_persisted_lb_and_kb_exposure_reaches_zero_at_terminal_decision(): void
+    public function test_partial_stage_seven_document_value_leaves_downstream_exposure_unresolved(): void
     {
         $this->prepareStage(12);
         foreach ([['LB', 1000, 'LB', 750, 100], ['KB', 800, 'KB', 1000, 50]] as [$spt, $amount, $skp, $assessment, $partial]) {
             $this->case->update(['spt_position_type' => $spt, 'disputed_amount' => $amount]);
             $this->case->skpRecord()->update(['skp_type' => $skp, 'skp_amount' => $assessment]);
             $this->case->objectionDecision()->update(['decision_type' => 'partially_granted', 'decision_amount' => $partial]);
-            $this->assertSame('150.00', $this->case->fresh()->exposureByStage()[10]['remainingExposure']);
+            $exposure = $this->case->fresh()->exposureByStage();
+            $this->assertSame('unresolved', $exposure[7]['evaluationState']);
+            $this->assertStringContainsString('document value, not recovery', $exposure[7]['evaluationReason']);
+            $this->assertNull($exposure[10]['remainingExposure']);
         }
         $payload = $this->decisionPayload('FINAL-CHAIN', false, false);
         unset($payload['continue_to_next_stage']);
         $payload['decision_amount'] = 1;
-        $this->postJson($this->url(12), $payload)->assertOk();
-        $this->assertSame('150.00', $this->case->fresh()->supremeCourtDecision->decision_amount);
-        $this->assertSame('0.00', $this->case->fresh()->exposureByStage()[12]['remainingExposure']);
-        $this->assertTrue($this->case->fresh()->is_completed);
+        $this->postJson($this->url(12), $payload)->assertUnprocessable()->assertJsonValidationErrors('prior_exposure');
+        $this->assertDatabaseCount('supreme_court_decisions', 0);
     }
 
     public function test_kian_rows_are_independent_stage_evidence_and_notifications_request_after_commit(): void
     {
         $this->prepareStage(7);
         $payload = $this->decisionPayload('STAGE-EVIDENCE', false, true);
-        $payload['decision_type'] = 'partially_granted';
+        $payload['decision_type'] = 'rejected';
         $payload['decision_amount'] = 300;
         $this->postJson($this->url(7), $payload)->assertOk();
-        foreach ([4 => '1000.00', 7 => '700.00'] as $stage => $amount) {
+        foreach ([4 => '1000.00', 7 => '1000.00'] as $stage => $amount) {
             $this->postJson("/api/tax-cases/{$this->case->id}/kian-submissions/{$stage}", [
                 'kian_number' => 'KIAN-'.$stage, 'submission_date' => '2026-10-01',
             ])->assertCreated()->assertJsonPath('data.loss_amount', $amount);
@@ -319,7 +320,7 @@ class DecisionPointContractNormalizationTest extends TestCase
     }
 
     #[DataProvider('recoveryStages')]
-    public function test_crafted_rejected_recovery_is_zero_and_kian_matches_status(int $stage): void
+    public function test_rejected_document_or_recovery_contract_and_kian_status(int $stage): void
     {
         $this->prepareStage($stage);
         $payload = $this->decisionPayload('REJECTED-'.$stage, false, false);
@@ -328,7 +329,7 @@ class DecisionPointContractNormalizationTest extends TestCase
         $payload['decision_amount'] = '2200';
         $this->postJson($this->url($stage), $payload)->assertOk();
         $relation = [7 => 'objectionDecision', 10 => 'appealDecision', 12 => 'supremeCourtDecision'][$stage];
-        $this->assertSame('0.00', $this->case->fresh()->{$relation}->decision_amount);
+        $this->assertSame($stage === 7 ? '2200.00' : '0.00', $this->case->fresh()->{$relation}->decision_amount);
         $this->getJson('/api/tax-cases/'.$this->case->id)->assertOk()
             ->assertJsonPath("data.kian_status_by_stage.{$stage}.needsKian", true)
             ->assertJsonPath("data.kian_status_by_stage.{$stage}.lossAmount", '1000.00');
@@ -342,8 +343,95 @@ class DecisionPointContractNormalizationTest extends TestCase
     public static function invalidRecovery(): array
     {
         $cases = [];
-        foreach ([7, 10, 12] as $stage) foreach (['0', '1000', '1000.01', '-0.01', '0.001'] as $amount) $cases[] = [$stage, $amount];
+        foreach ([10, 12] as $stage) foreach (['0', '1000', '1000.01', '-0.01', '0.001'] as $amount) $cases[] = [$stage, $amount];
         return $cases;
+    }
+
+    public static function documentOutcomes(): array
+    {
+        return [['granted'], ['partially_granted'], ['rejected']];
+    }
+
+    #[DataProvider('documentOutcomes')]
+    public function test_stage_seven_draft_submit_reload_preserves_document_value(string $outcome): void
+    {
+        $this->prepareStage(7);
+        $this->case->update(['disputed_amount' => '100000', 'reported_amount' => '100000']);
+        $this->case->skpRecord()->update(['skp_type' => 'LB', 'skp_amount' => '70000']);
+        $this->case->objectionSubmission()->create(['objection_number' => 'OBJ-25000', 'submission_date' => '2026-09-01', 'objection_amount' => '25000']);
+        $this->assertSame('30000.00', $this->case->fresh()->exposureByStage()[4]['remainingExposure']);
+        $payload = $this->decisionPayload('MANUAL-90000', false, true);
+        $payload['decision_type'] = $outcome;
+        $payload['decision_amount'] = '90000.12';
+        $payload['action'] = 'draft';
+        $this->postJson($this->url(7), $payload)->assertOk();
+        $this->assertSame('90000.12', $this->case->fresh()->objectionDecision->decision_amount);
+        $payload['action'] = 'submit';
+        $payload['decision_amount'] = '90000';
+        $this->postJson($this->url(7), $payload)->assertOk();
+        $this->getJson('/api/tax-cases/'.$this->case->id)->assertOk()
+            ->assertJsonPath('data.objection_decision.decision_amount', '90000.00');
+        $this->assertSame('25000.00', $this->case->fresh()->objectionSubmission->objection_amount);
+        $this->assertDatabaseCount('refund_processes', 0);
+        $this->assertNull($this->case->fresh()->objectionDecision->refund_amount);
+        if ($outcome === 'partially_granted') {
+            $this->assertNull($this->case->fresh()->exposureByStage()[7]['needsKian']);
+            $this->assertDatabaseMissing('notification_logs', ['stage_id' => 7]);
+            $this->postJson('/api/tax-cases/'.$this->case->id.'/kian-submissions/7', [])->assertUnprocessable();
+        }
+        $payload['decision_amount'] = '1';
+        $this->postJson($this->url(7), $payload)->assertConflict();
+        $this->assertSame('90000.00', $this->case->fresh()->objectionDecision->decision_amount);
+    }
+
+    public static function invalidDocumentAmounts(): array
+    {
+        $cases = [];
+        foreach (['draft', 'submit'] as $action) {
+            foreach (['-0.01', 'abc', 'NaN', 'INF', '1e5', '0.001', '1.000', true, ['90000']] as $amount) {
+                $cases[] = [$action, $amount];
+            }
+        }
+        $cases[] = ['submit', null];
+        return $cases;
+    }
+
+    #[DataProvider('invalidDocumentAmounts')]
+    public function test_stage_seven_invalid_document_amount_has_no_partial_writes(string $action, mixed $amount): void
+    {
+        $this->prepareStage(7);
+        $payload = $this->decisionPayload('INVALID-DOCUMENT', true, true);
+        $payload['action'] = $action;
+        $payload['decision_amount'] = $amount;
+        $this->postJson($this->url(7), $payload)->assertUnprocessable()->assertJsonValidationErrors('decision_amount');
+        $this->assertDatabaseCount('objection_decisions', 0);
+        $this->assertDatabaseCount('refund_processes', 0);
+        $this->assertDatabaseCount('notification_attempts', 0);
+        $this->assertDatabaseMissing('workflow_histories', ['stage_id' => 7]);
+    }
+
+    public function test_dedicated_stage_seven_endpoint_preserves_manual_document_amount(): void
+    {
+        $this->prepareStage(7);
+        $this->case->update(['current_stage' => 7]);
+        $payload = $this->decisionPayload('DEDICATED-DOCUMENT', false, true);
+        $payload['decision_type'] = 'partially_granted';
+        $payload['decision_amount'] = '90000.12';
+        $this->postJson('/api/tax-cases/'.$this->case->id.'/objection-decisions', $payload)
+            ->assertCreated()->assertJsonPath('data.decision_amount', '90000.12');
+        $this->assertDatabaseCount('refund_processes', 0);
+    }
+
+    public function test_stage_seven_zero_is_valid_and_prior_exposure_is_not_a_write_dependency(): void
+    {
+        $this->prepareStage(7);
+        $this->case->update(['spt_position_type' => null]);
+        $payload = $this->decisionPayload('ZERO-DOCUMENT', false, false);
+        $payload['decision_type'] = 'partially_granted';
+        $payload['decision_amount'] = '0.00';
+        $this->postJson($this->url(7), $payload)->assertOk();
+        $this->assertSame('0.00', $this->case->fresh()->objectionDecision->decision_amount);
+        $this->assertDatabaseCount('refund_processes', 0);
     }
 
     #[DataProvider('invalidRecovery')]

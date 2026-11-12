@@ -114,7 +114,8 @@
               <p v-if="[7, 10, 12].includes(stageId)">Previous remaining exposure: {{ exposure.previousExposure ?? 'Unresolved' }}</p>
               <p>Remaining exposure after decision: {{ exposure.remainingExposure ?? 'Pending evaluation' }}</p>
               <p v-if="exposure.evaluationState === 'unresolved'" class="text-amber-800">Exposure unresolved: {{ exposure.evaluationReason }}</p>
-              <p v-if="formData.decision_type === 'partially_granted'">Recovery must be greater than zero and less than previous remaining exposure.</p>
+              <p v-if="stageId === 7">Decision Amount is the value stated in the decision document, not exposure, recovery, Refund or KIAN amount.</p>
+              <p v-else-if="formData.decision_type === 'partially_granted'">Recovery must be greater than zero and less than previous remaining exposure.</p>
             </div>
 
             <!-- Dynamic Fields -->
@@ -138,7 +139,8 @@
               <FormField
                 v-if="field.type === 'number'"
                 :label="field.label"
-                type="number"
+                :type="stageId === 7 && field.key === 'decision_amount' ? 'text' : 'number'"
+                :inputmode="stageId === 7 && field.key === 'decision_amount' ? 'decimal' : undefined"
                 v-model="formData[field.key]"
                 :placeholder="field.placeholder"
                 :required="field.required"
@@ -148,7 +150,7 @@
                 :integer-only="field.integerOnly ?? field.integer_only ?? false"
                 :allow-negative="field.allowNegative ?? field.allow_negative ?? false"
                 :min="field.min ?? 0"
-                :max="field.key === 'decision_amount' ? exposure?.previousExposure : field.max"
+                :max="field.key === 'decision_amount' && stageId !== 7 ? exposure?.previousExposure : field.max"
               />
 
               <!-- Email Input -->
@@ -590,9 +592,9 @@ const decisionActions = ref({
 })
 
 // Fixed recovery comes from the backend, without client exposure arithmetic.
-const fixedRecovery = computed(() => [7, 10, 12].includes(props.stageId) && ['granted', 'rejected'].includes(formData.decision_type))
+const fixedRecovery = computed(() => [10, 12].includes(props.stageId) && ['granted', 'rejected'].includes(formData.decision_type))
 watch(() => [formData.decision_type, props.exposure?.previousExposure], ([outcome, prior]) => {
-  if (![7, 10, 12].includes(props.stageId) || submissionComplete.value) return
+  if (![10, 12].includes(props.stageId) || submissionComplete.value) return
   if (outcome === 'rejected') formData.decision_amount = '0.00'
   if (outcome === 'granted' && prior != null) formData.decision_amount = prior
 }, { immediate: true })
@@ -1229,6 +1231,14 @@ const validateForm = () => {
     }
 
     const value = formData[field.key]
+
+    if (props.stageId === 7 && field.key === 'decision_amount' && value !== null && value !== undefined && value !== '') {
+      if (!/^\d+(?:\.\d{1,2})?$/.test(String(value))) {
+        formErrors[field.key] = 'Enter a nonnegative decision document amount with at most two decimal places'
+        isValid = false
+      }
+      return
+    }
 
     // Check if required field is empty
     if (field.required) {

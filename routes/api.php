@@ -351,6 +351,9 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                     ];
                     $rules['continue_to_next_stage'] = $stage === 12 ? 'prohibited' : 'sometimes|boolean';
                     $request->validate($rules);
+                    if ($stage === 7 && $request->input('decision_amount') !== null) {
+                        $request->merge(['decision_amount' => app(\App\Services\DecisionPointTaxExposure::class)->documentAmount($request->input('decision_amount'))]);
+                    }
                 }
 
                 if (!$isDraft && in_array($stage, [1, 4, 7, 10, 12], true)) {

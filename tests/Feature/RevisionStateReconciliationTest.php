@@ -257,7 +257,7 @@ class RevisionStateReconciliationTest extends TestCase
         return $this->actingAs($this->requester)->postJson($this->requestUrl(), ['payload'=>json_encode($this->payload($values,$fields))]);
     }
 
-    public function test_approved_decision_revision_normalizes_recovery_and_preserves_prior_evidence(): void
+    public function test_approved_stage_seven_revision_preserves_document_value_and_prior_evidence(): void
     {
         foreach ([5, 6, 7] as $stage) $this->history($stage);
         $decision = ObjectionDecision::create(['tax_case_id' => $this->case->id, 'decision_number' => 'REV-RECOVERY',
@@ -265,21 +265,21 @@ class RevisionStateReconciliationTest extends TestCase
         $service = app(\App\Services\KianNotificationService::class);
         $service->evaluateFinalSubmit($this->case->fresh(), 7);
         $priorLog = \App\Models\NotificationLog::sole();
-        $payload = ['stage_code' => 7, 'fields' => ['decision_type', 'decision_amount'], 'reason' => 'Correct effective recovery after review.',
+        $payload = ['stage_code' => 7, 'fields' => ['decision_type', 'decision_amount'], 'reason' => 'Correct the recorded document value after review.',
             'proposed_values' => ['decision_type' => 'granted', 'decision_amount' => 1], 'proposed_document_changes' => []];
         $revision = $this->actingAs($this->requester)->postJson($this->requestUrl(), ['payload' => json_encode($payload)])
             ->assertCreated()->json('revision');
         $url = "/api/tax-cases/{$this->case->id}/revisions/{$revision['id']}/decide";
         $this->actingAs($this->approver)->patchJson($url, ['decision' => 'approve'])->assertOk();
         $this->patchJson($url, ['decision' => 'approve'])->assertOk();
-        $this->assertSame('200.00', $decision->fresh()->decision_amount);
+        $this->assertSame('1.00', $decision->fresh()->decision_amount);
         $this->assertFalse($this->case->fresh()->needsKianAtStage(7));
         $this->assertSame('QUEUED', $priorLog->fresh()->current_status);
         $this->assertDatabaseCount('notification_attempts', 1);
         $audit = \App\Models\Revision::findOrFail($revision['id'])->audit_data;
         // Raw audit decimals vary by driver; compare exact cents without rounding.
         $this->assertSame('500.00', (string) \Brick\Math\BigDecimal::of($audit['before']['decision_amount'])->toScale(2));
-        $this->assertSame('200.00', (string) \Brick\Math\BigDecimal::of($audit['after']['decision_amount'])->toScale(2));
+        $this->assertSame('1.00', (string) \Brick\Math\BigDecimal::of($audit['after']['decision_amount'])->toScale(2));
     }
 
     public function test_invalid_partial_revision_does_not_apply_or_queue_a_notification(): void
@@ -288,7 +288,7 @@ class RevisionStateReconciliationTest extends TestCase
         $decision = ObjectionDecision::create(['tax_case_id' => $this->case->id, 'decision_number' => 'REV-INVALID',
             'decision_date' => '2026-09-30', 'decision_type' => 'rejected', 'decision_amount' => 0, 'status' => 'submitted']);
         $payload = ['stage_code' => 7, 'fields' => ['decision_type', 'decision_amount'], 'reason' => 'Invalid partial must remain unapplied.',
-            'proposed_values' => ['decision_type' => 'partially_granted', 'decision_amount' => 200], 'proposed_document_changes' => []];
+            'proposed_values' => ['decision_type' => 'partially_granted', 'decision_amount' => '200.001'], 'proposed_document_changes' => []];
         $revision = $this->actingAs($this->requester)->postJson($this->requestUrl(), ['payload' => json_encode($payload)])
             ->assertCreated()->json('revision');
         $this->actingAs($this->approver)->patchJson("/api/tax-cases/{$this->case->id}/revisions/{$revision['id']}/decide", ['decision' => 'approve'])->assertUnprocessable();
