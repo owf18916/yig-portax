@@ -297,6 +297,68 @@ class RevisionStateReconciliationTest extends TestCase
         $this->assertDatabaseCount('notification_attempts', 0);
     }
 
+    public static function appealDocumentRevisions(): array
+    {
+        return [
+            ['granted', '90000.12', true], ['rejected', '90000.12', true],
+            ['partially_granted', '0.00', true], ['partially_granted', '90000.12', true],
+            ['partially_granted', '1.000', false], ['granted', '1e5', false],
+            ['rejected', '-1', false], ['granted', 'abc', false], ['rejected', 'NaN', false], ['granted', 'Infinity', false],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('appealDocumentRevisions')]
+    public function test_appeal_revision_preserves_document_value_with_unresolved_prior_exposure(string $outcome, string $amount, bool $valid): void
+    {
+        foreach (range(5, 10) as $stage) $this->history($stage);
+        ObjectionDecision::create(['tax_case_id' => $this->case->id, 'decision_number' => 'PARTIAL-PRIOR', 'decision_date' => '2026-09-01',
+            'decision_type' => 'partially_granted', 'decision_amount' => '90000', 'status' => 'submitted']);
+        $target = \App\Models\AppealDecision::create(['tax_case_id' => $this->case->id, 'decision_number' => 'REV-APPEAL',
+            'decision_date' => '2026-09-30', 'decision_type' => 'rejected', 'decision_amount' => '123.45', 'status' => 'submitted']);
+        $payload = ['stage_code' => 10, 'fields' => ['decision_type', 'decision_amount'], 'reason' => 'Correct the exact amount stated in the appeal document.',
+            'proposed_values' => ['decision_type' => $outcome, 'decision_amount' => $amount], 'proposed_document_changes' => []];
+        $request = $this->actingAs($this->requester)->postJson($this->requestUrl(), ['payload' => json_encode($payload)]);
+        if (in_array($amount, ['-1', 'abc', 'NaN', 'Infinity'], true)) {
+            $request->assertUnprocessable();
+            $this->assertSame('123.45', $target->fresh()->decision_amount);
+            $this->assertDatabaseCount('revisions', 0);
+            $this->assertDatabaseCount('notification_attempts', 0);
+            return;
+        }
+        $revision = $request->assertCreated()->json('revision');
+        $response = $this->actingAs($this->approver)->patchJson("/api/tax-cases/{$this->case->id}/revisions/{$revision['id']}/decide", ['decision' => 'approve']);
+        if ($valid) {
+            $response->assertOk();
+            $this->assertSame($amount, $target->fresh()->decision_amount);
+            $this->assertDatabaseHas('revisions', ['id' => $revision['id'], 'revision_status' => 'approved']);
+        } else {
+            $response->assertUnprocessable();
+            $this->assertSame('123.45', $target->fresh()->decision_amount);
+            $this->assertSame('rejected', $target->fresh()->decision_type);
+            $this->assertDatabaseHas('revisions', ['id' => $revision['id'], 'revision_status' => 'requested', 'audit_data' => null]);
+        }
+        $this->assertNull($this->case->fresh()->exposureByStage()[10]['needsKian']);
+        $this->assertDatabaseCount('notification_attempts', 0);
+        $this->assertDatabaseCount('refund_processes', 0);
+        $this->assertDatabaseCount('kian_submissions', 0);
+    }
+
+    public function test_appeal_document_revision_still_blocks_downstream_submitted_evidence(): void
+    {
+        foreach (range(5, 10) as $stage) $this->history($stage);
+        ObjectionDecision::create(['tax_case_id' => $this->case->id, 'decision_number' => 'PARTIAL-PRIOR', 'decision_date' => '2026-09-01',
+            'decision_type' => 'partially_granted', 'decision_amount' => '90000', 'status' => 'submitted']);
+        $target = \App\Models\AppealDecision::create(['tax_case_id' => $this->case->id, 'decision_number' => 'REV-APPEAL', 'decision_date' => '2026-09-30',
+            'decision_type' => 'rejected', 'decision_amount' => '123.45', 'status' => 'submitted']);
+        $payload = ['stage_code' => 10, 'fields' => ['decision_amount'], 'reason' => 'Attempt amount correction after downstream submission.',
+            'proposed_values' => ['decision_amount' => '90000.12'], 'proposed_document_changes' => []];
+        $revision = $this->actingAs($this->requester)->postJson($this->requestUrl(), ['payload' => json_encode($payload)])
+            ->assertCreated()->json('revision');
+        $this->history(11);
+        $this->actingAs($this->approver)->patchJson("/api/tax-cases/{$this->case->id}/revisions/{$revision['id']}/decide", ['decision' => 'approve'])->assertUnprocessable();
+        $this->assertSame('123.45', $target->fresh()->decision_amount);
+    }
+
     private function requestUrl(): string { return "/api/tax-cases/{$this->case->id}/revisions/request"; }
     private function payload(array $values, array $fields): array { return ['stage_code'=>4,'fields'=>$fields,'reason'=>'A sufficiently detailed revision reason','proposed_values'=>$values,'proposed_document_changes'=>['files_to_delete'=>[],'files_to_add'=>[]]]; }
     private function history(int $stage): void { WorkflowHistory::create(['tax_case_id'=>$this->case->id,'stage_id'=>$stage,'stage_from'=>$stage,'stage_to'=>$stage<12?$stage+1:null,'action'=>'submitted','status'=>'submitted','user_id'=>$this->requester->id]); }

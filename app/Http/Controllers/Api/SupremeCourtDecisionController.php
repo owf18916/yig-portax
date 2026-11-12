@@ -118,6 +118,9 @@ class SupremeCourtDecisionController extends ApiController
      */
     public function approve(Request $request, TaxCase $taxCase, SupremeCourtDecision $supremeCourtDecision)
     {
+        abort_unless((int) $supremeCourtDecision->tax_case_id === (int) $taxCase->id, 404);
+        app(\App\Services\DecisionPointTaxExposure::class)->normalizeForCase($taxCase, 12, $supremeCourtDecision->getAttributes());
+
         try {
             if ($supremeCourtDecision->tax_case_id !== $taxCase->id) {
                 return $this->error('Supreme court decision not found for this tax case', 404);

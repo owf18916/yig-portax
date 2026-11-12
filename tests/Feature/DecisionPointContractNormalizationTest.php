@@ -166,12 +166,9 @@ class DecisionPointContractNormalizationTest extends TestCase
         $this->assertSame(12, $this->case->fresh()->current_stage);
         $this->assertTrue($this->case->fresh()->is_completed);
         $this->assertDatabaseHas('refund_processes', ['tax_case_id' => $this->case->id, 'stage_id' => 12]);
-        $this->assertDatabaseHas('notification_logs', [
-            'tax_case_id' => $this->case->id,
-            'stage_id' => 12,
-            'current_status' => 'QUEUED',
-        ]);
-        $this->assertDatabaseCount('notification_attempts', 1);
+        $this->assertNull($this->case->fresh()->exposureByStage()[12]['needsKian']);
+        $this->assertDatabaseCount('notification_logs', 0);
+        $this->assertDatabaseCount('notification_attempts', 0);
         $this->assertDatabaseMissing('workflow_histories', ['tax_case_id' => $this->case->id, 'stage_to' => 13]);
 
         $this->postJson($this->url(12), $payload)->assertConflict();
@@ -299,8 +296,9 @@ class DecisionPointContractNormalizationTest extends TestCase
         $payload = $this->decisionPayload('FINAL-CHAIN', false, false);
         unset($payload['continue_to_next_stage']);
         $payload['decision_amount'] = 1;
-        $this->postJson($this->url(12), $payload)->assertUnprocessable()->assertJsonValidationErrors('prior_exposure');
-        $this->assertDatabaseCount('supreme_court_decisions', 0);
+        $this->postJson($this->url(12), $payload)->assertOk();
+        $this->assertSame('1.00', $this->case->fresh()->supremeCourtDecision->decision_amount);
+        $this->assertNull($this->case->fresh()->exposureByStage()[12]['needsKian']);
     }
 
     public function test_kian_rows_are_independent_stage_evidence_and_notifications_request_after_commit(): void
@@ -320,7 +318,7 @@ class DecisionPointContractNormalizationTest extends TestCase
     }
 
     #[DataProvider('recoveryStages')]
-    public function test_rejected_document_or_recovery_contract_and_kian_status(int $stage): void
+    public function test_rejected_document_value_and_outcome_only_kian_status(int $stage): void
     {
         $this->prepareStage($stage);
         $payload = $this->decisionPayload('REJECTED-'.$stage, false, false);
@@ -329,7 +327,7 @@ class DecisionPointContractNormalizationTest extends TestCase
         $payload['decision_amount'] = '2200';
         $this->postJson($this->url($stage), $payload)->assertOk();
         $relation = [7 => 'objectionDecision', 10 => 'appealDecision', 12 => 'supremeCourtDecision'][$stage];
-        $this->assertSame($stage === 7 ? '2200.00' : '0.00', $this->case->fresh()->{$relation}->decision_amount);
+        $this->assertSame('2200.00', $this->case->fresh()->{$relation}->decision_amount);
         $this->getJson('/api/tax-cases/'.$this->case->id)->assertOk()
             ->assertJsonPath("data.kian_status_by_stage.{$stage}.needsKian", true)
             ->assertJsonPath("data.kian_status_by_stage.{$stage}.lossAmount", '1000.00');
@@ -343,7 +341,7 @@ class DecisionPointContractNormalizationTest extends TestCase
     public static function invalidRecovery(): array
     {
         $cases = [];
-        foreach ([10, 12] as $stage) foreach (['0', '1000', '1000.01', '-0.01', '0.001'] as $amount) $cases[] = [$stage, $amount];
+        foreach ([10, 12] as $stage) foreach (['-0.01', '0.001'] as $amount) $cases[] = [$stage, $amount];
         return $cases;
     }
 
@@ -486,31 +484,190 @@ class DecisionPointContractNormalizationTest extends TestCase
         \Illuminate\Support\Facades\DB::disableQueryLog();
     }
 
-    public function test_active_legacy_decision_post_cannot_bypass_partial_bounds(): void
-    {
-        $this->prepareStage(10);
-        $this->case->update(['current_stage' => 10]);
-        $payload = $this->decisionPayload('BYPASS', true, true);
-        $payload['decision_type'] = 'partially_granted';
-        $payload['decision_amount'] = 1000;
-        $this->postJson("/api/tax-cases/{$this->case->id}/appeal-decisions", $payload)
-            ->assertUnprocessable()->assertJsonValidationErrors('decision_amount');
-        $this->assertDatabaseCount('appeal_decisions', 0);
-        $this->assertDatabaseCount('refund_processes', 0);
-        $this->assertDatabaseCount('notification_attempts', 0);
-    }
-
-    public function test_zero_exposure_denies_kian_and_unconfirmed_skp_kb_cannot_submit(): void
+    public function test_zero_exposure_denies_kian_after_granted_document(): void
     {
         $this->prepareStage(10);
         $payload = $this->decisionPayload('SKP-KB', false, false);
-        $payload['decision_type'] = 'skp_kb';
-        $this->postJson($this->url(10), $payload)->assertUnprocessable()->assertJsonValidationErrors('decision_type');
         $payload['decision_type'] = 'granted';
         $this->postJson($this->url(10), $payload)->assertOk();
         $this->assertSame('0.00', $this->case->fresh()->exposureByStage()[10]['remainingExposure']);
         $this->assertDatabaseHas('notification_logs', ['stage_id' => 10, 'current_status' => 'NOT_ELIGIBLE']);
         $this->postJson("/api/tax-cases/{$this->case->id}/kian-submissions/10", [])->assertUnprocessable();
+    }
+
+    public static function laterDocuments(): array
+    {
+        $cases = [];
+        foreach ([10, 12] as $stage) foreach (['granted', 'partially_granted', 'rejected'] as $outcome) {
+            foreach ([false, true] as $dedicated) $cases[] = [$stage, $outcome, $dedicated];
+        }
+        return $cases;
+    }
+
+    #[DataProvider('laterDocuments')]
+    public function test_later_document_draft_final_and_reload_are_independent_of_exposure(int $stage, string $outcome, bool $dedicated): void
+    {
+        $this->prepareStage($stage);
+        $this->case->update(['current_stage' => $stage]);
+        $this->case->objectionDecision()->update(['decision_type' => 'partially_granted', 'decision_amount' => '90000']);
+        $relation = $stage === 10 ? 'appealDecision' : 'supremeCourtDecision';
+        $payload = $this->decisionPayload('LATER-DOCUMENT', false, false);
+        unset($payload['continue_to_next_stage']);
+        $payload['decision_type'] = $outcome;
+        $payload['decision_amount'] = '90000.12';
+        if (!$dedicated) {
+            $this->postJson($this->url($stage), ['action' => 'draft'])->assertOk();
+            $this->assertNull($this->case->fresh()->{$relation}->decision_amount);
+            $this->postJson($this->url($stage), array_replace($payload, ['action' => 'draft']))->assertOk();
+            $this->assertSame('90000.12', $this->case->fresh()->{$relation}->decision_amount);
+        }
+        $url = $dedicated ? '/api/tax-cases/'.$this->case->id.'/'.($stage === 10 ? 'appeal-decisions' : 'supreme-court-decisions') : $this->url($stage);
+        $this->postJson($url, $payload)->assertSuccessful();
+        $this->assertSame('90000.12', $this->case->fresh()->{$relation}->decision_amount);
+        $key = $stage === 10 ? 'appeal_decision' : 'supreme_court_decision';
+        $this->getJson('/api/tax-cases/'.$this->case->id)->assertOk()->assertJsonPath("data.{$key}.decision_amount", '90000.12')
+            ->assertJsonPath("data.kian_status_by_stage.{$stage}.evaluationState", 'unresolved')
+            ->assertJsonPath("data.kian_status_by_stage.{$stage}.remainingExposure", null)
+            ->assertJsonPath("data.kian_status_by_stage.{$stage}.needsKian", null);
+        $this->assertDatabaseCount('refund_processes', 0);
+        $this->assertDatabaseCount('kian_submissions', 0);
+        $this->assertDatabaseCount('notification_attempts', 0);
+        $this->assertNull($this->case->fresh()->{$relation}->refund_amount);
+        $this->postJson($url, array_replace($payload, ['decision_amount' => '1']))->assertConflict();
+        $this->assertSame('90000.12', $this->case->fresh()->{$relation}->decision_amount);
+    }
+
+    public static function invalidLaterDocuments(): array
+    {
+        $cases = [];
+        foreach ([10, 12] as $stage) foreach (['draft', 'submit', 'dedicated'] as $action) {
+            foreach (['-1', 'abc', 'NaN', 'Infinity', '1e5', '0.001', '1.000'] as $amount) $cases[] = [$stage, $action, $amount];
+            if ($action !== 'draft') $cases[] = [$stage, $action, null];
+        }
+        return $cases;
+    }
+
+    #[DataProvider('invalidLaterDocuments')]
+    public function test_later_invalid_money_rolls_back_every_write(int $stage, string $action, mixed $amount): void
+    {
+        $this->prepareStage($stage);
+        $this->case->update(['current_stage' => $stage]);
+        $payload = $this->decisionPayload('INVALID-LATER', true, false);
+        unset($payload['continue_to_next_stage']);
+        $payload['decision_amount'] = $amount;
+        $payload['action'] = $action === 'draft' ? 'draft' : 'submit';
+        $url = $action === 'dedicated' ? '/api/tax-cases/'.$this->case->id.'/'.($stage === 10 ? 'appeal-decisions' : 'supreme-court-decisions') : $this->url($stage);
+        $this->postJson($url, $payload)->assertUnprocessable()->assertJsonValidationErrors('decision_amount');
+        $this->assertDatabaseCount($stage === 10 ? 'appeal_decisions' : 'supreme_court_decisions', 0);
+        $this->assertDatabaseCount('refund_processes', 0);
+        $this->assertDatabaseCount('notification_attempts', 0);
+        $this->assertDatabaseMissing('workflow_histories', ['stage_id' => $stage]);
+    }
+
+    public function test_matrix_continues_through_actual_stage_eleven_with_submitted_stage_four_kian(): void
+    {
+        $this->prepareStage(10);
+        $this->case->update(['disputed_amount' => '100000', 'reported_amount' => '100000']);
+        $this->case->skpRecord()->update(['skp_type' => 'LB', 'skp_amount' => '70000']);
+        $this->case->objectionSubmission()->create(['objection_number' => 'OBJ-25000', 'submission_date' => '2026-09-01', 'objection_amount' => '25000']);
+        $this->case->objectionDecision()->update(['decision_type' => 'partially_granted', 'decision_amount' => '90000']);
+        \App\Models\KianSubmission::create(['tax_case_id' => $this->case->id, 'stage_id' => 4, 'kian_number' => 'SUBMITTED-4',
+            'submission_date' => '2026-09-01', 'kian_amount' => '30000', 'loss_amount' => '30000', 'status' => 'submitted']);
+        $this->assertFalse($this->case->fresh()->stageFourKianAccessBlocked());
+        $payload = $this->decisionPayload('APPEAL-MATRIX', false, true);
+        $payload['decision_type'] = 'partially_granted';
+        $payload['decision_amount'] = '95000.12';
+        $this->postJson($this->url(10), $payload)->assertOk();
+        foreach ([11, 12] as $stage) {
+            $document = Document::where('tax_case_id', $this->case->id)->first()->replicate();
+            $document->stage_code = (string) $stage;
+            $document->save();
+        }
+        $this->postJson($this->url(11), ['action' => 'submit', 'supreme_court_letter_number' => 'SC-MATRIX',
+            'submission_date' => '2026-10-01', 'review_amount' => '20000'])->assertOk();
+        unset($payload['continue_to_next_stage']);
+        $payload['decision_number'] = 'SUPREME-MATRIX';
+        $payload['decision_amount'] = '110000.34';
+        $this->postJson($this->url(12), $payload)->assertOk();
+        $case = $this->case->fresh();
+        $this->assertSame('95000.12', $case->appealDecision->decision_amount);
+        $this->assertSame('110000.34', $case->supremeCourtDecision->decision_amount);
+        foreach ([7, 10, 12] as $stage) {
+            $this->assertSame('unresolved', $case->exposureByStage()[$stage]['evaluationState']);
+            $this->assertNull($case->exposureByStage()[$stage]['needsKian']);
+        }
+        $this->assertSame('30000.00', $case->kianSubmissions->sole()->kian_amount);
+        $this->assertDatabaseCount('refund_processes', 0);
+        $this->assertDatabaseCount('notification_attempts', 0);
+    }
+
+    #[DataProvider('recoveryStages')]
+    public function test_partial_zero_document_is_valid_but_exposure_stays_unresolved(int $stage): void
+    {
+        $this->prepareStage($stage);
+        $payload = $this->decisionPayload('ZERO-EXACT', false, false);
+        unset($payload['continue_to_next_stage']);
+        $payload['decision_type'] = 'partially_granted';
+        $payload['decision_amount'] = '0.00';
+        $this->postJson($this->url($stage), $payload)->assertOk();
+        $this->assertSame('unresolved', $this->case->fresh()->exposureByStage()[$stage]['evaluationState']);
+        $this->assertNull($this->case->fresh()->exposureByStage()[$stage]['needsKian']);
+        $this->assertDatabaseCount('notification_attempts', 0);
+    }
+
+    public static function laterStages(): array { return [[10], [12]]; }
+
+    #[DataProvider('laterStages')]
+    public function test_later_unresolved_exposure_does_not_bypass_documents_or_stage_order(int $stage): void
+    {
+        $this->prepareStage($stage);
+        $this->case->update(['current_stage' => $stage]);
+        $this->case->objectionDecision()->update(['decision_type' => 'partially_granted', 'decision_amount' => '90000']);
+        $payload = $this->decisionPayload('GUARDED-LATER', false, false);
+        unset($payload['continue_to_next_stage']);
+        $dedicated = '/api/tax-cases/'.$this->case->id.'/'.($stage === 10 ? 'appeal-decisions' : 'supreme-court-decisions');
+        $document = Document::where('tax_case_id', $this->case->id)->sole();
+        $document->update(['status' => 'DELETED']);
+        foreach ([$this->url($stage), $dedicated] as $url) {
+            $this->postJson($url, $payload)->assertUnprocessable()->assertJsonValidationErrors('supporting_docs');
+        }
+        $document->update(['status' => 'ACTIVE']);
+        WorkflowHistory::where('tax_case_id', $this->case->id)->where('stage_id', $stage - 1)->delete();
+        foreach ([$this->url($stage), $dedicated] as $url) $this->postJson($url, $payload)->assertConflict();
+        $this->assertDatabaseCount($stage === 10 ? 'appeal_decisions' : 'supreme_court_decisions', 0);
+        $this->assertDatabaseCount('refund_processes', 0);
+    }
+
+    #[DataProvider('laterStages')]
+    public function test_later_draft_null_amount_cannot_be_finalized_by_dedicated_approval(int $stage): void
+    {
+        $this->prepareStage($stage);
+        $payload = $this->decisionPayload('NULL-DRAFT', false, false);
+        unset($payload['continue_to_next_stage']);
+        $payload['action'] = 'draft';
+        $payload['decision_amount'] = null;
+        $this->postJson($this->url($stage), $payload)->assertOk();
+        $relation = $stage === 10 ? 'appealDecision' : 'supremeCourtDecision';
+        $target = $this->case->fresh()->{$relation};
+        $url = '/api/tax-cases/'.$this->case->id.'/'.($stage === 10 ? 'appeal-decisions' : 'supreme-court-decisions').'/'.$target->id.'/approve';
+        $this->postJson($url, [])->assertUnprocessable()->assertJsonValidationErrors('decision_amount');
+        $this->assertSame('draft', $target->fresh()->status);
+        $this->assertNull($target->fresh()->decision_amount);
+        $this->assertDatabaseCount('refund_processes', 0);
+        $this->assertDatabaseCount('notification_attempts', 0);
+    }
+
+    public function test_stage_ten_skp_kb_document_outcome_has_no_invented_exposure(): void
+    {
+        $this->prepareStage(10);
+        $payload = $this->decisionPayload('SKP-KB-DOCUMENT', false, false);
+        $payload['decision_type'] = 'skp_kb';
+        $payload['decision_amount'] = '90000.12';
+        $this->postJson($this->url(10), $payload)->assertOk();
+        $this->assertSame('90000.12', $this->case->fresh()->appealDecision->decision_amount);
+        $this->assertSame('unresolved', $this->case->fresh()->exposureByStage()[10]['evaluationState']);
+        $this->assertNull($this->case->fresh()->exposureByStage()[10]['needsKian']);
+        $this->assertDatabaseCount('notification_attempts', 0);
     }
 
     private function prepareStage(int $stage): void

@@ -17,7 +17,7 @@ async function fixture(stageId = 7) {
   const watchers = []
   const page = await component('components/StageForm.vue', {
     defineProps: () => props,
-    watch: (source, callback, options) => { watchers.push({ source, callback }); if (options?.immediate) callback(source()) },
+    watch: (source, callback, options) => { watchers.push({ source, callback }); return vue.watch(source, callback, options) },
     fetch: async (url, options) => { calls.push({ url, payload: JSON.parse(options.body) }); return { ok: true, json: async () => ({}) } },
     setTimeout() {},
   })
@@ -27,14 +27,13 @@ async function fixture(stageId = 7) {
   return { ...page, props, calls, watchers, reload }
 }
 
-test('Stage 7 load, outcome edits, draft/submit payloads and reload preserve exact document amount', async () => {
-  const page = await fixture()
+for (const stage of [7, 10, 12]) test(`Stage ${stage} load, outcome edits, draft/submit payloads and reload preserve exact document amount`, async () => {
+  const page = await fixture(stage)
   const state = page.state
   assert.equal(state.formData.decision_amount, '90000.12')
   for (const outcome of ['granted', 'rejected', 'partially_granted']) {
     state.formData.decision_type = outcome
-    page.watchers[0].callback([outcome, '30000.00'])
-    assert.equal(state.fixedRecovery.value, false)
+    await vue.nextTick()
     assert.equal(state.formData.decision_amount, '90000.12')
     const field = findField(page.client())
     assert.equal(field.props.type, 'text')
@@ -42,12 +41,16 @@ test('Stage 7 load, outcome edits, draft/submit payloads and reload preserve exa
     assert.equal(field.props.disabled, false)
     assert.equal(state.validateForm(), true)
   }
+  page.props.exposure = { previousExposure: null, evaluationState: 'unresolved' }
+  await vue.nextTick()
+  assert.equal(state.formData.decision_amount, '90000.12')
   await state.executeSaveDraft()
   assert.equal(page.calls[0].payload.decision_amount, '90000.12')
   state.uploadedFiles.value = [{ id: 1 }]
   await state.executeSubmitForm()
   assert.equal(page.calls[1].payload.decision_amount, '90000.12')
   page.props.prefillData = { decision_type: 'rejected', decision_amount: '90000.12' }
+  await vue.nextTick()
   page.reload()
   assert.equal(state.formData.decision_amount, '90000.12')
   state.submissionComplete.value = true
@@ -57,8 +60,8 @@ test('Stage 7 load, outcome edits, draft/submit payloads and reload preserve exa
   assert.doesNotMatch(html, /Recovery must be greater/)
 })
 
-test('Stage 7 rejects invalid exact-money text without changing it', async () => {
-  const { state } = await fixture()
+for (const stage of [7, 10, 12]) test(`Stage ${stage} rejects invalid exact-money text without changing it`, async () => {
+  const { state } = await fixture(stage)
   for (const amount of ['-1', 'NaN', 'Infinity', 'abc', '1e5', '0.001', '1.000', '']) {
     state.formData.decision_amount = amount
     assert.equal(state.validateForm(), false, amount)
@@ -67,18 +70,5 @@ test('Stage 7 rejects invalid exact-money text without changing it', async () =>
   for (const amount of ['0', '0.10', '90000.12']) {
     state.formData.decision_amount = amount
     assert.equal(state.validateForm(), true, amount)
-  }
-})
-
-test('Stage 10/12 keep fixed outcome input and prior-exposure cap', async () => {
-  for (const stage of [10, 12]) {
-    const page = await fixture(stage)
-    assert.equal(page.state.fixedRecovery.value, true)
-    page.watchers[0].callback(['granted', '30000.00'])
-    assert.equal(page.state.formData.decision_amount, '30000.00')
-    const field = findField(page.client())
-    assert.equal(field.props.type, 'number')
-    assert.equal(field.props.max, '30000.00')
-    assert.equal(field.props.disabled, true)
   }
 })

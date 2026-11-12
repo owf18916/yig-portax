@@ -19,6 +19,18 @@ class ValidateDecisionPointSubmission
             $case = TaxCase::query()->lockForUpdate()->findOrFail($request->route('taxCase')->id);
             $request->route()->setParameter('taxCase', $case);
             if ((int) $stage !== 4) app(RevisionMutationGuard::class)->assertStageIsEditable($case, (int) $stage);
+            if (in_array((int) $stage, [10, 12], true)) {
+                \Illuminate\Support\Facades\Gate::authorize('update', $case);
+                $access = app(\App\Services\MainWorkflowTransitionGuard::class)->inspect($case, (int) $stage);
+                abort_unless($access['allowed'], $access['status'], $access['message']);
+                if (! $case->documents()->where('stage_code', $stage)
+                    ->where('document_type', '!=', \App\Models\Document::SPHP_OTHER_FINDINGS)
+                    ->whereIn('status', ['DRAFT', 'ACTIVE', 'ARCHIVED'])->exists()) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'supporting_docs' => 'Please upload at least one supporting document before submitting.',
+                    ]);
+                }
+            }
             $request->merge(app(DecisionPointTaxExposure::class)->normalizeForCase($case, (int) $stage, $request->all()));
             $response = $next($request);
             if ($response->getStatusCode() >= 400) DB::rollBack();

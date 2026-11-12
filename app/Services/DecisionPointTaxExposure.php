@@ -53,14 +53,14 @@ final class DecisionPointTaxExposure
             $remaining = null;
             if (!$problem && $record && ($stage === 4 || $prior !== null)) {
                 try {
-                    if ($stage === 7 && $record->decision_type === 'partially_granted') {
-                        throw ValidationException::withMessages(['decision_amount' => 'Stage 7 records the decision document value, not recovery. Partial-decision exposure requires an owner-approved recovery contract.']);
+                    if ($stage !== 4 && $record->decision_type === 'partially_granted') {
+                        throw ValidationException::withMessages(['decision_amount' => "Stage {$stage} records the decision document value, not recovery. Partial-decision exposure requires an owner-approved recovery contract."]);
                     }
-                    // Stage 7 fixed outcomes retain existing outcome-only semantics;
-                    // its document amount is never supplied as recovery.
+                    // Fixed outcomes retain existing outcome-only semantics;
+                    // document amounts are never supplied as recovery.
                     $remaining = $stage === 4
                         ? $this->stageFour($case->spt_position_type, $case->disputed_amount, (string) $record->skp_type, $record->skp_amount)
-                        : $this->afterDecision($prior, (string) $record->decision_type, $stage === 7 ? '0' : $record->decision_amount);
+                        : $this->afterDecision($prior, (string) $record->decision_type, '0');
                     $state = 'resolved';
                 } catch (ValidationException $e) {
                     $problem = implode(' ', array_merge(...array_values($e->errors())));
@@ -90,25 +90,20 @@ final class DecisionPointTaxExposure
                 (string) ($values['disputed_amount'] ?? $case->disputed_amount));
         } elseif ($stage === 4) {
             $this->validatePosition((string) ($values['skp_type'] ?? ''), (string) ($values['skp_amount'] ?? ''), 'skp');
-        } elseif ($stage === 7) {
-            if (!in_array($values['decision_type'] ?? null, ['granted', 'partially_granted', 'rejected'], true)) {
+        } elseif (in_array($stage, [7, 10, 12], true)) {
+            $outcomes = $stage === 10
+                ? ['granted', 'partially_granted', 'rejected', 'skp_kb']
+                : ['granted', 'partially_granted', 'rejected'];
+            if (!in_array($values['decision_type'] ?? null, $outcomes, true)) {
                 throw ValidationException::withMessages(['decision_type' => 'A valid decision outcome is required.']);
             }
             $values['decision_amount'] = $this->documentAmount($values['decision_amount'] ?? null);
-        } elseif (in_array($stage, [10, 12], true)) {
-            $previousStage = [7 => 4, 10 => 7, 12 => 10][$stage];
-            $evaluation = $this->evaluate($case)[$previousStage];
-            if ($evaluation['evaluationState'] !== 'resolved') {
-                throw ValidationException::withMessages(['prior_exposure' => $evaluation['evaluationReason'] ?? 'Previous Decision Point exposure is unavailable.']);
-            }
-            $values['decision_amount'] = $this->normalizeRecovery($evaluation['remainingExposure'],
-                (string) ($values['decision_type'] ?? ''), (string) ($values['decision_amount'] ?? ''));
         }
 
         return $values;
     }
 
-    /** Stage 7 document value: exact money, independent of outcome/exposure. */
+    /** Decision document value: exact money, independent of outcome/exposure. */
     public function documentAmount(mixed $value): string
     {
         if ((!is_string($value) && !is_int($value) && !(is_float($value) && is_finite($value)))

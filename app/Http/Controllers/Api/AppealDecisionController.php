@@ -134,6 +134,8 @@ class AppealDecisionController extends ApiController
             'notes' => 'nullable|string',
         ]);
 
+        app(\App\Services\DecisionPointTaxExposure::class)->normalizeForCase($taxCase, 10, $decision->getAttributes());
+
         $decision->update([
             'approved_by' => auth()->id(),
             'approved_at' => now(),
