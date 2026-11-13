@@ -47,6 +47,9 @@ class KianSubmissionController extends ApiController
 
             // Manual signed-document money; never derive it from exposure.
             $lossAmount = $this->manualAmount($request->all());
+            $writeOffAmount = $request->exists('write_off_amount')
+                ? $this->normalizeMoney($request->input('write_off_amount'), 'write_off_amount')
+                : ($existingKian?->write_off_amount ?? '0.00');
 
             $validated = $request->validate([
                 'kian_number' => 'required|string',
@@ -67,6 +70,7 @@ class KianSubmissionController extends ApiController
                 // Update existing draft KIAN
                 $existingKian->update([
                     'loss_amount' => $lossAmount,
+                    'write_off_amount' => $writeOffAmount,
                     'kian_amount' => $lossAmount,
                     'kian_number' => $validated['kian_number'],
                     'submission_date' => $validated['submission_date'],
@@ -87,6 +91,7 @@ class KianSubmissionController extends ApiController
                     'kian_amount' => $lossAmount,  // Amount requested for KIAN
                     'loss_amount' => $lossAmount,  // Same signed-document amount as kian_amount.
                     'status' => 'draft',
+                    'write_off_amount' => $writeOffAmount,
                     'notes' => $validated['notes'] ?? null,
                     'next_action' => $validated['next_action'] ?? null,
                     'next_action_due_date' => $validated['next_action_due_date'] ?? null,
@@ -98,6 +103,9 @@ class KianSubmissionController extends ApiController
 
             // Reject lossy database storage (notably SQLite numeric affinity) rather than silently rounding.
             $kianSubmission->refresh();
+            if ($kianSubmission->write_off_amount !== $writeOffAmount) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['write_off_amount' => 'The configured database cannot store this write-off amount exactly. No changes were saved.']);
+            }
             if ($kianSubmission->kian_amount !== $lossAmount || $kianSubmission->loss_amount !== $lossAmount) {
                 throw \Illuminate\Validation\ValidationException::withMessages(['loss_amount' => 'The configured database cannot store this KIAN amount exactly. No changes were saved.']);
             }
@@ -221,22 +229,25 @@ class KianSubmissionController extends ApiController
 
     private function manualAmount(array $input): string
     {
-        $normalize = function ($value): string {
-            if (! is_string($value) || ! preg_match('/^\d+(?:\.\d{1,2})?$/D', $value)) {
-                throw \Illuminate\Validation\ValidationException::withMessages(['loss_amount' => 'Enter the signed internal KIAN amount as a nonnegative decimal string with at most two decimal places.']);
-            }
-            [$whole, $fraction] = array_pad(explode('.', $value, 2), 2, '');
-            $whole = ltrim($whole, '0') ?: '0';
-            if (strlen($whole) > 18) {
-                throw \Illuminate\Validation\ValidationException::withMessages(['loss_amount' => 'The KIAN amount exceeds the stored money field capacity (18 integer digits).']);
-            }
-            return $whole.'.'.str_pad($fraction, 2, '0');
-        };
+        $normalize = fn ($value) => $this->normalizeMoney($value, 'loss_amount');
         $amount = $normalize($input['loss_amount'] ?? $input['kian_amount'] ?? null);
         if (isset($input['loss_amount'], $input['kian_amount']) && $amount !== $normalize($input['kian_amount'])) {
             throw \Illuminate\Validation\ValidationException::withMessages(['loss_amount' => 'KIAN amount fields must identify the same signed-document amount.']);
         }
         return $amount;
+    }
+
+    private function normalizeMoney($value, string $field): string
+    {
+        if (! is_string($value) || ! preg_match('/^\d+(?:\.\d{1,2})?$/D', $value)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([$field => 'Enter a nonnegative decimal string with at most two decimal places.']);
+        }
+        [$whole, $fraction] = array_pad(explode('.', $value, 2), 2, '');
+        $whole = ltrim($whole, '0') ?: '0';
+        if (strlen($whole) > 18) {
+            throw \Illuminate\Validation\ValidationException::withMessages([$field => 'The amount exceeds the stored money field capacity (18 integer digits).']);
+        }
+        return $whole.'.'.str_pad($fraction, 2, '0');
     }
 
     private function requireSignedDocument(TaxCase $case, int $stage, ?int $id): void

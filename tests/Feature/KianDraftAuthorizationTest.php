@@ -42,7 +42,7 @@ class KianDraftAuthorizationTest extends TestCase
 
     private function payload(): array
     {
-        return ['kian_number' => 'K-DRAFT', 'submission_date' => '2026-11-01', 'notes' => 'Changed', 'loss_amount' => '50000.01'];
+        return ['kian_number' => 'K-DRAFT', 'submission_date' => '2026-11-01', 'notes' => 'Changed', 'loss_amount' => '50000.01', 'write_off_amount' => '500.25'];
     }
 
     private function snapshot(): array

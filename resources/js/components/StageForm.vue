@@ -119,6 +119,7 @@
 
             <!-- Dynamic Fields -->
             <div v-for="field in fields" :key="field.id" class="space-y-1">
+              <p v-if="field.key === 'write_off_amount' && Object.hasOwn(prefillData || {}, 'kianSubmissionStatus')" class="text-sm text-gray-500">Amount intended to be recognized as a company expense; recorded for reference only.</p>
               <SptFilingMethod v-if="field.type === 'spt-method'"
                 v-model="formData.spt_type" :position="formData.spt_position_type"
                 :case-type="prefillData.case_type" :disabled="submissionComplete || fieldsDisabled" />
@@ -1237,9 +1238,11 @@ const validateForm = (draft = false) => {
 
     const value = formData[field.key]
 
-    if (Object.hasOwn(props.prefillData || {}, 'kianSubmissionStatus') && field.key === 'loss_amount' && value !== null && value !== undefined && value !== '') {
-      if (!/^\d+(?:\.\d{1,2})?$/.test(String(value))) {
-        formErrors[field.key] = 'Enter the signed KIAN amount with at most two decimal places'
+    if (Object.hasOwn(props.prefillData || {}, 'kianSubmissionStatus') && ['loss_amount', 'write_off_amount'].includes(field.key) && value !== null && value !== undefined && value !== '') {
+      if (typeof value !== 'string' || !/^\d+(?:\.\d{1,2})?$/.test(value) || value.split('.')[0].replace(/^0+/, '').length > 18) {
+        formErrors[field.key] = field.key === 'write_off_amount'
+          ? 'Enter a nonnegative Write Off Amount with at most 18 integer digits and two decimal places'
+          : 'Enter the signed KIAN amount with at most two decimal places'
         isValid = false
       }
       return

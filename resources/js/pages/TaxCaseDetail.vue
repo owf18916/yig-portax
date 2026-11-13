@@ -66,6 +66,7 @@
               <div>
                 <p class="font-semibold">Stage {{ stageId }} - {{ getStageNameForKian(stageId) }}: {{ Number(stageId) === 4 ? 'Required KIAN' : 'Optional Additional KIAN' }}</p>
                 <p class="text-sm text-gray-700">Signed KIAN amount: {{ status.lossAmount === null ? 'Not recorded' : formatKianAmount(status.lossAmount) }}</p>
+                <p class="text-sm text-gray-700">Write Off Amount: {{ formatKianAmount(status.writeOffAmount) }}</p>
               </div>
               <Button @click="navigateToKianSubmission(stageId)">
                 {{ status.submitted ? 'View KIAN' : status.kianId ? (status.draft_actions?.save_draft ? 'Continue Draft KIAN' : 'View KIAN') : Number(stageId) === 4 ? 'Create KIAN' : 'Additional KIAN' }}

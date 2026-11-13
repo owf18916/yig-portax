@@ -437,6 +437,7 @@ class TaxCase extends Model
             $amount = $result['remainingExposure'];
             $result += [
                 'lossAmount' => $kian?->kian_amount,
+                'writeOffAmount' => $kian?->write_off_amount,
                 'reason' => $result['needsKian'] === true ? "Stage {$stageId} remaining company tax exposure: {$amount}" : $result['evaluationReason'],
                 'submitted' => $kian ? $kian->status !== 'draft' : false,
                 'kianId' => $kian?->id,

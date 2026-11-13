@@ -12,6 +12,7 @@
           <div><dt class="text-gray-500">KIAN number</dt><dd class="mt-1 break-all">{{ safeText(submission?.kian_number, 'Not recorded') }}</dd></div>
           <div><dt class="text-gray-500">Submission date</dt><dd>{{ dateLabel(submission?.submission_date) }}</dd></div>
           <div><dt class="text-gray-500">Submitted amount</dt><dd>{{ amountLabel(submission?.kian_amount) }}</dd></div>
+          <div><dt class="text-gray-500">Write Off Amount</dt><dd>{{ amountLabel(submission?.write_off_amount) }}</dd></div>
           <div class="sm:col-span-2"><dt class="text-gray-500">Submission notes</dt><dd class="whitespace-pre-wrap break-words">{{ safeText(submission?.notes, 'No notes recorded.') }}</dd></div>
         </dl>
         <p v-if="!draftEditable" class="mt-5 text-sm leading-6 text-gray-600">Submission details are read-only. Submission completes the internal KIAN process.</p>
@@ -89,6 +90,7 @@ const finalResponse = computed(() => submission.value?.final_response && typeof 
 const prefillData = computed(() => ({
   kian_number: submission.value?.kian_number || '', submission_date: submission.value?.submission_date?.slice(0, 10) || null,
   loss_amount: submission.value?.kian_amount ?? submission.value?.loss_amount ?? '',
+  write_off_amount: submission.value?.write_off_amount ?? '0.00',
   notes: submission.value?.notes || '', kianSubmissionStatus: submission.value?.status ?? 'draft',
   kianDraftActions: resolved.value ? draftActions.value : {},
 }))
@@ -96,7 +98,8 @@ const fields = computed(() => [
   { id: 1, key: 'kian_number', label: 'KIAN number', type: 'text', required: true, order: 1 },
   { id: 2, key: 'submission_date', label: 'Submission date', type: 'date', required: true, order: 2 },
   { id: 3, key: 'loss_amount', label: `Signed internal KIAN amount (${caseData.value.currency?.code ?? 'Currency unavailable'})`, type: 'text', required: true, placeholder: 'Enter the signed document amount; up to two decimal places', order: 3 },
-  { id: 4, key: 'notes', label: 'Notes', type: 'textarea', placeholder: 'Optional notes', order: 4 },
+  { id: 5, key: 'write_off_amount', label: `Write Off Amount (${caseData.value.currency?.code ?? 'Currency unavailable'})`, type: 'text', required: true, placeholder: '0.00', order: 4 },
+  { id: 4, key: 'notes', label: 'Notes', type: 'textarea', placeholder: 'Optional notes', order: 5 },
 ])
 const documentClass = 'flex w-full min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-left text-sm text-blue-800 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-60'
 function safeText(value, fallback) { return typeof value === 'string' && value.trim() ? value : fallback }

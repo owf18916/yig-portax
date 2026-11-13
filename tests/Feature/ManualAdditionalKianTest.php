@@ -24,6 +24,9 @@ class ManualAdditionalKianTest extends TestCase
         $this->assertSame('', DB::select('PRAGMA database_list')[0]->file);
         $this->assertStringStartsWith(sys_get_temp_dir(), storage_path());
         Queue::fake();
+        \Illuminate\Support\Facades\Http::preventStrayRequests();
+        \Illuminate\Support\Facades\Mail::fake();
+        \Illuminate\Support\Facades\Notification::fake();
         Storage::fake('local');
         $entity = Entity::create(['code' => 'KD', 'name' => 'Draft entity', 'entity_type' => 'AFFILIATE', 'tax_id' => 'KD']);
         $role = Role::create(['code' => 'KD', 'name' => 'Writer', 'permissions' => ['submit_cases'], 'is_active' => true]);
@@ -43,6 +46,90 @@ class ManualAdditionalKianTest extends TestCase
     private function payload(): array
     {
         return ['kian_number' => 'K-DRAFT', 'submission_date' => '2026-11-01', 'notes' => 'Changed', 'loss_amount' => '50000.01'];
+    }
+
+    public static function writeOffOrigins(): array
+    {
+        $rows = [];
+        foreach ([4, 7, 10, 12] as $stage) foreach ([true, false] as $store) $rows[] = [$stage, $store];
+        return $rows;
+    }
+
+    #[DataProvider('writeOffOrigins')]
+    public function test_independent_write_off_round_trip(int $stage, bool $store): void
+    {
+        $this->case->objectionSubmission()->create(['objection_number' => 'MANUAL', 'submission_date' => '2026-11-01', 'objection_amount' => '1500.00']);
+        if ($stage !== 4) $this->case->update(['spt_position_type' => null]);
+        $before = $this->snapshot();
+        $exposure = $this->case->fresh()->exposureByStage();
+        $url = $this->url.'/kian-submissions/'.$stage;
+        $payload = array_replace($this->payload(), ['loss_amount' => '2000.00']);
+        $this->postJson($url, $payload)->assertCreated()->assertJsonPath('data.write_off_amount', '0.00');
+        foreach (['500.00', '500.25', '0.00', '2500.99', '123456789012.34', '500.25'] as $value) {
+            $this->putJson($url, $payload + ['write_off_amount' => $value])->assertOk()->assertJsonPath('data.write_off_amount', $value)->assertJsonPath('data.kian_amount', '2000.00');
+            $this->getJson($url)->assertOk()->assertJsonPath('data.write_off_amount', $value);
+            $this->assertSame($value, KianSubmission::sole()->write_off_amount);
+        }
+        $this->putJson($url, $payload)->assertOk()->assertJsonPath('data.write_off_amount', '500.25');
+        $this->postJson($this->url.'/kian-submissions/'.KianSubmission::sole()->id.'/submit', ['write_off_amount' => '999.99'])->assertUnprocessable();
+        $this->signed($stage);
+        $id = KianSubmission::sole()->id;
+        if ($store) $this->postJson($url, $payload + ['write_off_amount' => '500.25', 'action' => 'submit'])->assertOk();
+        else $this->postJson($this->url.'/kian-submissions/'.$id.'/submit', ['write_off_amount' => '999.99'])->assertOk();
+        $this->getJson($url)->assertOk()->assertJsonPath('data.write_off_amount', '500.25')->assertJsonPath('data.status', 'submitted')->assertJsonPath('draft_actions.save_draft', false);
+        $this->getJson($this->url)->assertOk()->assertJsonPath('data.kian_status_by_stage.'.$stage.'.writeOffAmount', '500.25');
+        $final = $this->snapshot();
+        $this->putJson($url, $payload + ['write_off_amount' => '1.00'])->assertUnprocessable();
+        $this->postJson($this->url.'/kian-submissions/'.$id.'/submit', ['write_off_amount' => '1.00'])->assertStatus(400);
+        $this->assertSame($final, $this->snapshot());
+        foreach (['tax_cases', 'workflow_histories', 'status_histories', 'notification_logs', 'notification_attempts', 'refund_processes', 'skp_records', 'objection_decisions', 'appeal_decisions', 'supreme_court_decisions'] as $table) $this->assertSame($before[$table], $final[$table], $table);
+        $this->assertSame('1500.00', $this->case->fresh()->objectionSubmission->objection_amount);
+        $this->assertSame($exposure, $this->case->fresh()->exposureByStage());
+        $this->assertDatabaseCount('kian_submissions', 1);
+        Queue::assertNothingPushed();
+        \Illuminate\Support\Facades\Mail::assertNothingSent();
+        \Illuminate\Support\Facades\Notification::assertNothingSent();
+    }
+
+    public static function invalidWriteOff(): array
+    {
+        return array_map(fn ($v) => [$v], ['-1', '1.001', '1e3', 'NaN', 'Infinity', 'abc', '', null, 500, ['500.00'], '1000000000000000000', '999999999999999999.99']);
+    }
+
+    #[DataProvider('invalidWriteOff')]
+    public function test_invalid_or_lossy_write_off_is_atomic(mixed $value): void
+    {
+        $url = $this->url.'/kian-submissions/7';
+        $payload = $this->payload() + ['write_off_amount' => $value];
+        $before = $this->snapshot();
+        $this->postJson($url, $payload)->assertUnprocessable()->assertJsonValidationErrors('write_off_amount');
+        $this->assertSame($before, $this->snapshot());
+        $this->postJson($url, $this->payload() + ['write_off_amount' => '500.25'])->assertCreated();
+        $before = $this->snapshot();
+        $this->putJson($url, $payload)->assertUnprocessable()->assertJsonValidationErrors('write_off_amount');
+        $this->assertSame($before, $this->snapshot());
+    }
+
+    public function test_independent_origins_and_zero_submission(): void
+    {
+        foreach ([4 => '500.00', 7 => '500.25', 10 => '0.00', 12 => '12.34'] as $stage => $value) {
+            $this->signed($stage);
+            $this->postJson($this->url.'/kian-submissions/'.$stage, $this->payload() + ['write_off_amount' => $value, 'action' => 'submit'])->assertCreated()->assertJsonPath('data.write_off_amount', $value);
+        }
+        $this->assertSame(['500.00', '500.25', '0.00', '12.34'], KianSubmission::orderBy('stage_id')->get()->pluck('write_off_amount')->all());
+        $method = new \ReflectionMethod(\App\Http\Controllers\Api\KianSubmissionController::class, 'normalizeMoney');
+        $this->assertSame('999999999999999999.99', $method->invoke(new \App\Http\Controllers\Api\KianSubmissionController, '999999999999999999.99', 'write_off_amount'));
+    }
+
+    public function test_additive_migration_initializes_historical_submitted_record(): void
+    {
+        // Only this verified in-memory database is changed; no environment migration.
+        \Illuminate\Support\Facades\Schema::table('kian_submissions', fn ($table) => $table->dropColumn('write_off_amount'));
+        $kian = KianSubmission::create($this->payload() + ['tax_case_id' => $this->case->id, 'stage_id' => 4, 'kian_amount' => '2000.00', 'status' => 'submitted']);
+        $migration = require database_path('migrations/2026_11_13_000001_add_write_off_amount_to_kian_submissions.php');
+        $migration->up();
+        $this->assertSame('0.00', $kian->fresh()->write_off_amount);
+        $this->getJson($this->url.'/kian-submissions/4')->assertOk()->assertJsonPath('data.write_off_amount', '0.00')->assertJsonPath('draft_actions.save_draft', false);
     }
 
     private function snapshot(): array
