@@ -41,27 +41,18 @@ async function fixture({ stage = 4, record = model(stage), fetcher, download, dr
 }
 const writes = page => page.calls.filter(call => call.method === 'POST')
 
-test('legacy KIAN selection requires a current scoped capability and direct save fails closed', async () => {
+test('legacy KIAN route selects the canonical scoped flow using server capabilities', async () => {
   const route = vue.reactive({ params: { id: '9' } })
-  let grant = false
-  const calls = []
-  const page = await component('pages/KianSubmissionForm.vue', { useRoute: () => route, fetch: async (url, options = {}) => {
-    calls.push({ url, ...options })
-    return { ok: true, json: async () => ({ data: model(4, 'draft'), ...(grant ? { draft_actions: { save_draft: true, submit: true } } : {}) }) }
-  } })
-  page.state.isLoading.value = false
-  await page.state.selectStageForKian(4)
-  assert.equal(page.state.selectedDraftAllowed.value, false)
-  assert.doesNotMatch(await page.render(), /<form/)
-  await page.state.submitKianForStage()
-  assert.equal(calls.some(c => c.method === 'POST'), false)
-  grant = true
-  await page.state.selectStageForKian(4)
-  assert.equal(page.state.selectedDraftAllowed.value, true)
+  const navigations = []
+  const page = await component('pages/KianSubmissionForm.vue', { useRoute: () => route, useRouter: () => ({ push: path => navigations.push(path) }), fetch: async () => ({ ok: true, json: async () => ({ data: { id: 9, kian_status_by_stage: { 7: { needsKian: null, draft_actions: { create: true } }, 10: { needsKian: true, draft_actions: { create: false } } } } }) }) })
+  await page.state.load()
+  page.state.selectStageForKian(10)
+  assert.equal(navigations.length, 0)
+  page.state.selectStageForKian(7)
+  assert.equal(navigations[0], '/tax-cases/9/kian/7')
   route.params.id = '10'
-  assert.equal(page.state.selectedDraftAllowed.value, false)
-  await page.state.submitKianForStage()
-  assert.equal(calls.some(c => c.method === 'POST'), false)
+  page.state.selectStageForKian(7)
+  assert.equal(navigations.length, 1)
 })
 
 test('delayed granted draft read cannot enable a different KIAN stage', async () => {

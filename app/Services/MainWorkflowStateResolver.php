@@ -112,6 +112,15 @@ class MainWorkflowStateResolver
         )));
     }
 
+    /** Reuse canonical completion evidence without resolving unrelated stage access. */
+    public function isStageCompleted(TaxCase $case, int $stage): bool
+    {
+        $definition = StageDefinitions::STAGES[$stage] ?? null;
+        if (! $definition) return false;
+        $case->loadMissing(array_filter(['workflowHistories', $definition['relation']]));
+        return $this->completionEvidence($case, $stage, $definition)['completed'];
+    }
+
     private function completionEvidence(TaxCase $taxCase, int $stage, array $definition): array
     {
         $finalHistory = $taxCase->workflowHistories

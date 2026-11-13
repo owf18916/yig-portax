@@ -22,7 +22,7 @@ class KianSubmissionController extends ApiController
         try {
             // If stageId not in route, try to get from request
             if (! $stageId) {
-                $stageId = $request->input('stage_id', 12);
+                $stageId = filter_var($request->input('stage_id'), FILTER_VALIDATE_INT) ?: 0;
             }
 
             // Validate stage_id is one of the allowed KIAN stages
@@ -30,15 +30,11 @@ class KianSubmissionController extends ApiController
                 return $this->error('Invalid stage ID. KIAN can only be submitted at stages 4, 7, 10, or 12', 422);
             }
 
-            // ✅ NEW: Check if KIAN is needed at this stage
+            // Lock the case before evaluating origin eligibility and upserting its draft.
             DB::beginTransaction();
             $taxCase = TaxCase::query()->lockForUpdate()->findOrFail($taxCase->id);
-            $evaluation = $taxCase->exposureByStage()[$stageId];
-            if ($evaluation['evaluationState'] !== 'resolved') {
-                return $this->error('KIAN exposure is unresolved: '.($evaluation['evaluationReason'] ?? 'Decision Point is pending.'), 422);
-            }
-            if ($evaluation['needsKian'] !== true) {
-                return $this->error("KIAN is not needed at Stage {$stageId} for this tax case", 422);
+            if (! app(\App\Services\KianDraftAccess::class)->originEligible($taxCase, $stageId)) {
+                return $this->error($stageId === 4 ? 'Stage 4 KIAN requirement is not confirmed.' : 'Submit the corresponding decision stage before creating Additional KIAN.', 422);
             }
 
             // ✅ NEW: Check if KIAN for this stage already exists
@@ -49,11 +45,8 @@ class KianSubmissionController extends ApiController
                 return $this->error("KIAN for Stage {$stageId} already exists with status '{$existingKian->status}'. Only draft submissions can be edited.", 422);
             }
 
-            // ✅ NEW: Get pre-calculated loss amount for this stage
-            $lossAmount = $evaluation['remainingExposure'];
-            if ($lossAmount === null) {
-                return $this->error("Unable to calculate loss amount for Stage {$stageId}", 422);
-            }
+            // Manual signed-document money; never derive it from exposure.
+            $lossAmount = $this->manualAmount($request->all());
 
             $validated = $request->validate([
                 'kian_number' => 'required|string',
@@ -66,6 +59,8 @@ class KianSubmissionController extends ApiController
 
             // ✅ NEW: Check action from request - can be 'save' (draft) or 'submit'
             $action = $request->input('action', 'save');
+            $request->validate(['action' => 'sometimes|in:save,draft,submit']);
+            if ($action === 'submit') $this->requireSignedDocument($taxCase, $stageId, $existingKian?->id);
 
             // ✅ NEW: If KIAN exists and is draft, update it; otherwise create new
             if ($existingKian) {
@@ -90,7 +85,7 @@ class KianSubmissionController extends ApiController
                     'kian_number' => $validated['kian_number'],
                     'submission_date' => $validated['submission_date'],
                     'kian_amount' => $lossAmount,  // Amount requested for KIAN
-                    'loss_amount' => $lossAmount,  // ✅ NEW: Pre-fill loss amount from calculation
+                    'loss_amount' => $lossAmount,  // Same signed-document amount as kian_amount.
                     'status' => 'draft',
                     'notes' => $validated['notes'] ?? null,
                     'next_action' => $validated['next_action'] ?? null,
@@ -99,6 +94,12 @@ class KianSubmissionController extends ApiController
                     'submitted_by' => auth()->id(),
                 ]);
                 $isUpdate = false;
+            }
+
+            // Reject lossy database storage (notably SQLite numeric affinity) rather than silently rounding.
+            $kianSubmission->refresh();
+            if ($kianSubmission->kian_amount !== $lossAmount || $kianSubmission->loss_amount !== $lossAmount) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['loss_amount' => 'The configured database cannot store this KIAN amount exactly. No changes were saved.']);
             }
 
             // ✅ NEW: If action='submit', transition status from draft → submitted
@@ -189,12 +190,13 @@ class KianSubmissionController extends ApiController
                 return $this->error('Only draft KIAN submissions can be submitted', 400);
             }
 
-            $evaluation = $taxCase->exposureByStage()[$kianSubmission->stage_id ?? 12];
-            if ($evaluation['needsKian'] !== true) {
-                return $this->error('KIAN requires resolved positive remaining exposure.', 422);
+            if (! app(\App\Services\KianDraftAccess::class)->originEligible($taxCase, $kianSubmission->stage_id)) {
+                return $this->error('KIAN origin is not eligible. Optional origins require a submitted decision stage.', 422);
             }
-            $kianSubmission->loss_amount = $evaluation['remainingExposure'];
-            $kianSubmission->kian_amount = $evaluation['remainingExposure'];
+            // Finalize the saved signed-document amount; submit never replaces it from a request or exposure.
+            $amount = $this->manualAmount(['kian_amount' => $kianSubmission->kian_amount]);
+            $kianSubmission->loss_amount = $amount;
+            $this->requireSignedDocument($taxCase, $kianSubmission->stage_id, $kianSubmission->id);
 
             $kianSubmission->update([
                 'status' => 'submitted',
@@ -210,10 +212,40 @@ class KianSubmissionController extends ApiController
         } catch (\Exception $e) {
             if (DB::transactionLevel() > $initialLevel) DB::rollBack();
 
+            if ($e instanceof \Illuminate\Validation\ValidationException) throw $e;
             return $this->error($e->getMessage(), 500);
         } finally {
             if (DB::transactionLevel() > $initialLevel) DB::rollBack();
         }
+    }
+
+    private function manualAmount(array $input): string
+    {
+        $normalize = function ($value): string {
+            if (! is_string($value) || ! preg_match('/^\d+(?:\.\d{1,2})?$/D', $value)) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['loss_amount' => 'Enter the signed internal KIAN amount as a nonnegative decimal string with at most two decimal places.']);
+            }
+            [$whole, $fraction] = array_pad(explode('.', $value, 2), 2, '');
+            $whole = ltrim($whole, '0') ?: '0';
+            if (strlen($whole) > 18) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['loss_amount' => 'The KIAN amount exceeds the stored money field capacity (18 integer digits).']);
+            }
+            return $whole.'.'.str_pad($fraction, 2, '0');
+        };
+        $amount = $normalize($input['loss_amount'] ?? $input['kian_amount'] ?? null);
+        if (isset($input['loss_amount'], $input['kian_amount']) && $amount !== $normalize($input['kian_amount'])) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['loss_amount' => 'KIAN amount fields must identify the same signed-document amount.']);
+        }
+        return $amount;
+    }
+
+    private function requireSignedDocument(TaxCase $case, int $stage, ?int $id): void
+    {
+        // The active StageForm uploads stage-scoped documents before the first draft (id 0).
+        $exists = $case->documents()->where('documentable_type', KianSubmission::class)
+            ->where('stage_code', (string) $stage)->whereIn('documentable_id', [0, $id ?? 0])
+            ->where('document_type', 'supporting_document')->exists();
+        if (! $exists) throw \Illuminate\Validation\ValidationException::withMessages(['document' => 'Upload the signed internal KIAN document before submitting.']);
     }
 
     /**

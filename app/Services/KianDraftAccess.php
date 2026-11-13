@@ -20,6 +20,15 @@ final class KianDraftAccess
         return true;
     }
 
+    public function originEligible(TaxCase $case, int $stage): bool
+    {
+        return match ($stage) {
+            4 => $case->needsKianAtStage(4) === true,
+            7, 10, 12 => app(MainWorkflowStateResolver::class)->isStageCompleted($case, $stage),
+            default => false,
+        };
+    }
+
     /** Evaluate permission once and reuse the fixed, loaded exposure/submission relations. */
     public function project(TaxCase $case, array $stages): array
     {
@@ -28,7 +37,7 @@ final class KianDraftAccess
         $case->loadMissing('kianSubmissions');
         foreach ($stages as $stage => &$state) {
             $kian = $case->kianSubmissions->firstWhere('stage_id', $stage);
-            $eligible = $allowed && $state['needsKian'] === true;
+            $eligible = $allowed && $this->originEligible($case, (int) $stage);
             $editable = $eligible && ($kian === null || $this->isDraft($kian));
             $state['draft_actions'] = ['create' => $editable && $kian === null, 'save_draft' => $editable, 'submit' => $editable];
         }

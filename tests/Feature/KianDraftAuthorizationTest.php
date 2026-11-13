@@ -34,7 +34,7 @@ class KianDraftAuthorizationTest extends TestCase
         $this->case = TaxCase::create(['entity_id' => $entity->id, 'user_id' => $this->actor->id, 'fiscal_year_id' => $year->id, 'case_number' => 'KD', 'case_type' => 'VAT', 'case_status_id' => $status->id, 'currency_id' => $currency->id, 'spt_position_type' => 'LB', 'spt_type' => 'Restitusi', 'reported_amount' => '1000.00', 'disputed_amount' => '1000.00', 'current_stage' => 12]);
         $this->case->skpRecord()->create(['skp_number' => 'SKP', 'skp_type' => 'NIHIL', 'skp_amount' => '0']);
         foreach (['objectionDecision', 'appealDecision', 'supremeCourtDecision'] as $relation) {
-            $this->case->$relation()->create(['decision_number' => $relation, 'decision_date' => '2026-11-01', 'decision_type' => 'rejected', 'decision_amount' => '0']);
+            $this->case->$relation()->create(['decision_number' => $relation, 'decision_date' => '2026-11-01', 'decision_type' => 'rejected', 'decision_amount' => '0', 'status' => 'submitted']);
         }
         $this->url = '/api/tax-cases/'.$this->case->id;
         $this->actingAs($this->actor);
@@ -42,7 +42,7 @@ class KianDraftAuthorizationTest extends TestCase
 
     private function payload(): array
     {
-        return ['kian_number' => 'K-DRAFT', 'submission_date' => '2026-11-01', 'notes' => 'Changed'];
+        return ['kian_number' => 'K-DRAFT', 'submission_date' => '2026-11-01', 'notes' => 'Changed', 'loss_amount' => '50000.01'];
     }
 
     private function snapshot(): array

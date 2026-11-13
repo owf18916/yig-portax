@@ -310,7 +310,7 @@ class DecisionPointContractNormalizationTest extends TestCase
         $this->postJson($this->url(7), $payload)->assertOk();
         foreach ([4 => '1000.00', 7 => '1000.00'] as $stage => $amount) {
             $this->postJson("/api/tax-cases/{$this->case->id}/kian-submissions/{$stage}", [
-                'kian_number' => 'KIAN-'.$stage, 'submission_date' => '2026-10-01',
+                'kian_number' => 'KIAN-'.$stage, 'submission_date' => '2026-10-01', 'loss_amount' => $amount,
             ])->assertCreated()->assertJsonPath('data.loss_amount', $amount);
         }
         $this->assertDatabaseCount('kian_submissions', 2);
@@ -330,11 +330,12 @@ class DecisionPointContractNormalizationTest extends TestCase
         $this->assertSame('2200.00', $this->case->fresh()->{$relation}->decision_amount);
         $this->getJson('/api/tax-cases/'.$this->case->id)->assertOk()
             ->assertJsonPath("data.kian_status_by_stage.{$stage}.needsKian", true)
-            ->assertJsonPath("data.kian_status_by_stage.{$stage}.lossAmount", '1000.00');
+            ->assertJsonPath("data.kian_status_by_stage.{$stage}.remainingExposure", '1000.00')
+            ->assertJsonPath("data.kian_status_by_stage.{$stage}.lossAmount", null);
         $this->assertDatabaseHas('notification_logs', ['stage_id' => $stage, 'current_status' => 'QUEUED']);
         $this->postJson("/api/tax-cases/{$this->case->id}/kian-submissions/{$stage}", [
-            'kian_number' => 'KIAN-'.$stage, 'submission_date' => '2026-10-01', 'kian_amount' => 1,
-        ])->assertCreated()->assertJsonPath('data.kian_amount', '1000.00');
+            'kian_number' => 'KIAN-'.$stage, 'submission_date' => '2026-10-01', 'kian_amount' => '1.00',
+        ])->assertCreated()->assertJsonPath('data.kian_amount', '1.00');
         if ($stage === 12) $this->assertTrue($this->case->fresh()->is_completed);
     }
 
@@ -479,12 +480,12 @@ class DecisionPointContractNormalizationTest extends TestCase
         $first = count(\Illuminate\Support\Facades\DB::getQueryLog());
         $case->getKianStatusByStage();
         $this->assertSame($first, count(\Illuminate\Support\Facades\DB::getQueryLog()));
-        // Five fixed case relations plus the actor's role/entity, loaded once.
-        $this->assertLessThanOrEqual(7, $first);
+        // Five fixed case relations, canonical completion history, actor role/entity; loaded once.
+        $this->assertLessThanOrEqual(8, $first);
         \Illuminate\Support\Facades\DB::disableQueryLog();
     }
 
-    public function test_zero_exposure_denies_kian_after_granted_document(): void
+    public function test_zero_exposure_keeps_reminder_ineligible_but_allows_optional_manual_kian(): void
     {
         $this->prepareStage(10);
         $payload = $this->decisionPayload('SKP-KB', false, false);
@@ -492,7 +493,9 @@ class DecisionPointContractNormalizationTest extends TestCase
         $this->postJson($this->url(10), $payload)->assertOk();
         $this->assertSame('0.00', $this->case->fresh()->exposureByStage()[10]['remainingExposure']);
         $this->assertDatabaseHas('notification_logs', ['stage_id' => 10, 'current_status' => 'NOT_ELIGIBLE']);
-        $this->postJson("/api/tax-cases/{$this->case->id}/kian-submissions/10", [])->assertUnprocessable();
+        $this->postJson("/api/tax-cases/{$this->case->id}/kian-submissions/10", [
+            'kian_number' => 'OPTIONAL-ZERO', 'submission_date' => '2026-10-01', 'loss_amount' => '123.45',
+        ])->assertCreated()->assertJsonPath('data.kian_amount', '123.45');
     }
 
     public static function laterDocuments(): array

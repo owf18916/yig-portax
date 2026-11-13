@@ -1223,6 +1223,14 @@ const validateForm = () => {
 
     const value = formData[field.key]
 
+    if (Object.hasOwn(props.prefillData || {}, 'kianSubmissionStatus') && field.key === 'loss_amount' && value !== null && value !== undefined && value !== '') {
+      if (!/^\d+(?:\.\d{1,2})?$/.test(String(value))) {
+        formErrors[field.key] = 'Enter the signed KIAN amount with at most two decimal places'
+        isValid = false
+      }
+      return
+    }
+
     if ([7, 10, 12].includes(props.stageId) && field.key === 'decision_amount' && value !== null && value !== undefined && value !== '') {
       if (!/^\d+(?:\.\d{1,2})?$/.test(String(value))) {
         formErrors[field.key] = 'Enter a nonnegative decision document amount with at most two decimal places'

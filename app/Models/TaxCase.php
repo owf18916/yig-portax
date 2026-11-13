@@ -332,7 +332,7 @@ class TaxCase extends Model
     public function canCreateKian(): bool
     {
         foreach ($this->getKianStatusByStage() as $result) {
-            if ($result['needsKian'] === true && !$result['kianId']) return true;
+            if ($result['draft_actions']['create']) return true;
         }
         return false;
     }
@@ -405,20 +405,12 @@ class TaxCase extends Model
     /**
      * ✅ NEW METHOD 3: Check if KIAN can be created for a specific stage
      * Returns true only if:
-     * - KIAN is needed at that stage
+     * - Server capability permits creation at that origin
      * - KIAN for that stage doesn't already exist
      */
     public function canCreateKianForStage(int $stageId): bool
     {
-        // KIAN must be needed at this stage
-        if (!$this->needsKianAtStage($stageId)) {
-            return false;
-        }
-        
-        // KIAN for this stage must not already exist
-        return !$this->kianSubmissions()
-            ->where('kian_submissions.stage_id', $stageId)
-            ->exists();
+        return $this->getKianStatusByStage()[$stageId]['draft_actions']['create'] ?? false;
     }
 
     /**
@@ -444,7 +436,7 @@ class TaxCase extends Model
             $kian = $this->kianSubmissions->firstWhere('stage_id', $stageId);
             $amount = $result['remainingExposure'];
             $result += [
-                'lossAmount' => $result['needsKian'] === true ? $amount : null,
+                'lossAmount' => $kian?->kian_amount,
                 'reason' => $result['needsKian'] === true ? "Stage {$stageId} remaining company tax exposure: {$amount}" : $result['evaluationReason'],
                 'submitted' => $kian ? $kian->status !== 'draft' : false,
                 'kianId' => $kian?->id,

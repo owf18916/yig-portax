@@ -18,7 +18,7 @@
         <p v-if="!submission" class="mt-4 text-sm text-gray-600">No KIAN submission is recorded for this stage.</p>
       </Card>
       <StageForm v-if="draftEditable" :key="scopeKey" :stageName="`Stage ${stageId}: KIAN Submission`"
-        stageDescription="KIAN submission details" :stageId="stageId" :nextStageId="null" :caseId="caseId"
+        :stageDescription="Number(stageId) === 4 ? 'Enter the signed internal KIAN amount.' : 'Enter the incremental additional signed KIAN amount, independent of the Stage 4 baseline.'" :stageId="stageId" :nextStageId="null" :caseId="caseId"
         :caseNumber="caseNumber" :fields="fields" :apiEndpoint="stageUrl" :isReviewMode="false"
         :isLoading="isLoading" :caseStatus="caseStatus" :prefillData="prefillData"
         preFilledMessage="Review the current stage details before saving or submitting."
@@ -88,16 +88,16 @@ const draftEditable = computed(() => resolved.value && draftActions.value.save_d
 const finalResponse = computed(() => submission.value?.final_response && typeof submission.value.final_response === 'object' ? submission.value.final_response : null)
 const prefillData = computed(() => ({
   kian_number: submission.value?.kian_number || '', submission_date: submission.value?.submission_date?.slice(0, 10) || null,
-  loss_amount: submission.value?.loss_amount ?? submission.value?.kian_amount ?? caseData.value.kian_status_by_stage?.[stageId.value]?.lossAmount ?? '0',
+  loss_amount: submission.value?.kian_amount ?? submission.value?.loss_amount ?? '',
   notes: submission.value?.notes || '', kianSubmissionStatus: submission.value?.status ?? 'draft',
   kianDraftActions: resolved.value ? draftActions.value : {},
 }))
-const fields = [
+const fields = computed(() => [
   { id: 1, key: 'kian_number', label: 'KIAN number', type: 'text', required: true, order: 1 },
   { id: 2, key: 'submission_date', label: 'Submission date', type: 'date', required: true, order: 2 },
-  { id: 3, key: 'loss_amount', label: 'Loss amount (pre-calculated)', type: 'text', readonly: true, order: 3 },
+  { id: 3, key: 'loss_amount', label: `Signed internal KIAN amount (${caseData.value.currency?.code ?? 'Currency unavailable'})`, type: 'text', required: true, placeholder: 'Enter the signed document amount; up to two decimal places', order: 3 },
   { id: 4, key: 'notes', label: 'Notes', type: 'textarea', placeholder: 'Optional notes', order: 4 },
-]
+])
 const documentClass = 'flex w-full min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-left text-sm text-blue-800 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-60'
 function safeText(value, fallback) { return typeof value === 'string' && value.trim() ? value : fallback }
 function lifecycleLabel(value) {
@@ -114,7 +114,7 @@ function amountLabel(value) {
   const text = String(value)
   if (!/^\d+(?:\.\d{1,2})?$/.test(text)) return 'Amount unavailable'
   const [whole, fraction = ''] = text.split('.')
-  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${fraction.padEnd(2, '0')}`
+  return `${caseData.value.currency?.code ?? 'Currency unavailable'} ${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${fraction.padEnd(2, '0')}`
 }
 function dateLabel(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}(?:T|$)/.test(value)) return 'Date unavailable'

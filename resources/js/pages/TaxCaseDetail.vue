@@ -56,64 +56,24 @@
         </div>
       </Card>
 
-      <!-- ✅ MULTI-STAGE KIAN Opportunities (Stages 4, 7, 10, 12) -->
-      <div v-if="Object.values(caseData.kian_status_by_stage || {}).some(s => s.evaluationState === 'unresolved')" class="bg-amber-50 border border-amber-300 p-4 rounded-lg">
-        KIAN exposure is unresolved. A confirmed SPT tax position and compatible Decision Point inputs are required before eligibility can be determined.
+      <div v-if="caseData.kian_status_by_stage?.[4]?.evaluationState === 'unresolved'" class="bg-amber-50 border border-amber-300 p-4 rounded-lg">
+        The Stage 4 KIAN requirement is undetermined. Additional KIAN at submitted decision stages remains optional.
       </div>
-      <div v-if="caseData.kian_status_by_stage && Object.values(caseData.kian_status_by_stage).some(s => s.needsKian)" class="bg-red-100 border-2 border-red-500 p-4 rounded-lg">
-        <div class="text-red-900 font-bold mb-3">🚨 IMPORTANT: KIAN Required At These Stages</div>
+      <Card v-if="Object.values(caseData.kian_status_by_stage || {}).some(s => s.kianId || s.draft_actions?.create)" title="Internal KIAN">
         <div class="space-y-3">
-          <div
-            v-for="(status, stageId) in caseData.kian_status_by_stage"
-            v-show="status.needsKian"
-            :key="`kian-${stageId}`"
-            class="bg-white p-4 rounded border-l-4 border-red-500"
-          >
-            <div class="flex items-start justify-between">
+          <template v-for="(status, stageId) in caseData.kian_status_by_stage" :key="`kian-${stageId}`">
+            <div v-if="status.kianId || status.draft_actions?.create" class="flex flex-wrap items-center justify-between gap-3 rounded border p-4">
               <div>
-                <p class="font-bold text-lg text-red-900">
-                  Stage {{ stageId }} - {{ getStageNameForKian(stageId) }}
-                </p>
-                <p class="text-sm text-gray-700 mt-1">{{ status.reason }}</p>
-                <p class="text-sm font-bold text-red-900 mt-2">
-                  Loss Amount: {{ formatCurrency(status.lossAmount, 'IDR') }}
-                </p>
+                <p class="font-semibold">Stage {{ stageId }} - {{ getStageNameForKian(stageId) }}: {{ Number(stageId) === 4 ? 'Required KIAN' : 'Optional Additional KIAN' }}</p>
+                <p class="text-sm text-gray-700">Signed KIAN amount: {{ status.lossAmount === null ? 'Not recorded' : formatKianAmount(status.lossAmount) }}</p>
               </div>
-              <div class="flex gap-2">
-                <button
-                  v-if="status.draft_actions?.submit === true"
-                  @click="navigateToKianSubmission(stageId)"
-                  class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded font-semibold whitespace-nowrap"
-                >
-                  ➜ Submit KIAN
-                </button>
-                <span v-else-if="status.submitted" class="px-4 py-2 bg-green-600 text-white rounded font-semibold inline-block">
-                  ✅ Submitted
-                </span>
-              </div>
+              <Button @click="navigateToKianSubmission(stageId)">
+                {{ status.submitted ? 'View KIAN' : status.kianId ? (status.draft_actions?.save_draft ? 'Continue Draft KIAN' : 'View KIAN') : Number(stageId) === 4 ? 'Create KIAN' : 'Additional KIAN' }}
+              </Button>
             </div>
-          </div>
+          </template>
         </div>
-      </div>
-
-      <!-- KIAN Eligibility Notice and Button (Legacy - kept for backward compatibility) -->
-      <Alert
-        v-if="caseData.can_create_kian && !(caseData.kian_status_by_stage && Object.values(caseData.kian_status_by_stage).some(s => s.needsKian))"
-        type="warning"
-        title="KIAN Eligible"
-        :message="`You are eligible to submit KIAN: ${caseData.kian_eligibility_reason}`"
-      >
-        <template #actions>
-          <Button
-            @click="showKianModal = true"
-            variant="primary"
-            size="sm"
-            class="bg-red-600 hover:bg-red-700 text-white"
-          >
-            📄 Submit KIAN
-          </Button>
-        </template>
-      </Alert>
+      </Card>
 
       <!-- Workflow Progress with Collapsible Sections -->
       <Card title="Workflow Progress" subtitle="Track the case through stages">
@@ -192,12 +152,12 @@
                     <!-- KIAN Button for Stages 4, 7, 10, 12 -->
                     <!-- ⭐ FIXED: KIAN button is independent from stage accessibility (side action) -->
                     <Button
-                      v-if="[4, 7, 10, 12].includes(stage.id) && (caseData.kian_status_by_stage?.[stage.id]?.needsKian || caseData.kian_status_by_stage?.[stage.id]?.kianId)"
+                      v-if="[4, 7, 10, 12].includes(stage.id) && (caseData.kian_status_by_stage?.[stage.id]?.draft_actions?.create || caseData.kian_status_by_stage?.[stage.id]?.kianId)"
                       @click="navigateToKianSubmission(stage.id)"
                       :variant="caseData.kian_status_by_stage[stage.id]?.submitted ? 'secondary' : 'danger'"
                       size="sm"
                     >
-                      {{ caseData.kian_status_by_stage[stage.id]?.submitted ? '👁️ View KIAN' : '📄 KIAN' }}
+                      {{ caseData.kian_status_by_stage[stage.id]?.submitted ? 'View KIAN' : caseData.kian_status_by_stage[stage.id]?.kianId ? 'Continue Draft KIAN' : stage.id === 4 ? 'Create KIAN' : 'Additional KIAN' }}
                     </Button>
                     <button
                       v-if="canEditFollowUp(stage)"
@@ -366,14 +326,7 @@
     />
 
     <!-- KIAN Modal -->
-    <KianModal
-      :is-open="showKianModal && caseData.can_create_kian === true"
-      :tax-case="caseData"
-      :loss-amount="caseData.disputed_amount - (caseData.total_refunded_amount || 0)"
-      :reason="caseData.kian_eligibility_reason || ''"
-      @close="showKianModal = false"
-      @success="onKianSubmissionSuccess"
-    />
+
     </div>
   </div>
 </template>
@@ -390,7 +343,6 @@ import Button from '../components/Button.vue'
 import Alert from '../components/Alert.vue'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
 import NextActionModal from '../components/NextActionModal.vue'
-import KianModal from '../components/KianModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -402,7 +354,6 @@ const caseNumber = ref('')
 const caseData = ref({})
 const documents = ref([])
 const workflowHistory = ref([])
-const showKianModal = ref(false)
 let activeLoadRequest = 0
 
 // State for collapsible sections
@@ -979,6 +930,12 @@ const formatStatus = (status) => {
   return status.charAt(0).toUpperCase() + status.slice(1)
 }
 
+const formatKianAmount = (value) => {
+  if (value === null || value === undefined) return 'Not recorded'
+  const [whole, fraction = ''] = String(value).split('.')
+  return `${caseData.value.currency?.code ?? 'Currency unavailable'} ${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${fraction.padEnd(2, '0')}`
+}
+
 const formatCurrency = (amount, currencyCode = 'IDR') => {
   // Map currency codes to locale and options
   const currencyMap = {
@@ -1247,7 +1204,6 @@ const saveNextAction = async (formData) => {
 
 const onKianSubmissionSuccess = () => {
   showSuccess('Success', 'KIAN submitted successfully!')
-  showKianModal.value = false
   // Reload case data to show updated KIAN status
   reloadCaseData()
 }
