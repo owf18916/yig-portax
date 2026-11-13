@@ -22,6 +22,7 @@
       :caseStatus="caseStatus"
       :preFilledMessage="preFilledMessage"
       :prefillData="prefillData"
+      :currency-code="caseData.currency?.code || ''"
       :exposure="caseData.kian_status_by_stage?.[7]"
       :requireDocuments="true"
       :showDecisionOptions="true"
@@ -196,6 +197,7 @@ const loadTaxCase = async () => {
         decision_type: od.decision_type || '',
         decision_amount: od.decision_amount || 0,
         create_refund: od.create_refund ?? false,
+        refund_amount: od.refund_amount ?? '',
         continue_to_next_stage: od.continue_to_next_stage ?? false,
         workflowHistories: caseFetchedData.workflow_histories || []
       }

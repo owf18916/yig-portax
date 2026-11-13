@@ -60,6 +60,7 @@ class RefundStageController extends ApiController
                 'id' => $refundProcess->id,
                 'refund_number' => $refundProcess->refund_number,
                 'refund_amount' => $refundProcess->refund_amount,
+                'currency_code' => $taxCase->currency?->code,
                 'refund_method' => $refundProcess->refund_method,
                 'refund_status' => $refundProcess->refund_status,
                 'stage_label' => $refundProcess->stage_label,
@@ -155,8 +156,10 @@ class RefundStageController extends ApiController
             // Return refund data (required) + bank transfer data (optional)
             $data = [
                 'refund_id' => $refundProcess->id,
+                'is_preliminary' => \App\Services\PreliminaryRefundLifecycle::concerns($taxCase, $refundProcess),
                 'refund_number' => $refundProcess->refund_number,
                 'refund_amount' => $refundProcess->refund_amount,
+                'currency_code' => $taxCase->currency?->code,
                 'refund_method' => $refundProcess->refund_method,
                 'refund_status' => $refundProcess->refund_status,
                 'current_stage' => $refundProcess->getCurrentRefundStage(),
@@ -230,6 +233,7 @@ class RefundStageController extends ApiController
                 'is_preliminary' => \App\Services\PreliminaryRefundLifecycle::concerns($taxCase, $refundProcess),
                 'refund_number' => $refundProcess->refund_number,
                 'refund_amount' => $refundProcess->refund_amount,
+                'currency_code' => $taxCase->currency?->code,
                 'current_stage' => $refundProcess->getCurrentRefundStage(),
             ];
 
@@ -314,6 +318,7 @@ class RefundStageController extends ApiController
                 'refund_id' => $refundProcess->id,
                 'refund_number' => $refundProcess->refund_number,
                 'refund_amount' => $refundProcess->refund_amount,
+                'currency_code' => $taxCase->currency?->code,
                 'refund_method' => $refundProcess->refund_method,
                 'is_preliminary' => \App\Services\PreliminaryRefundLifecycle::concerns($taxCase, $refundProcess),
                 'refund_status' => $refundProcess->refund_status,

@@ -3,7 +3,7 @@
     <h3 class="text-lg font-semibold text-gray-900 mb-4">📊 Decision Actions</h3>
     <p class="text-sm text-gray-600 mb-4">
       Choose the independent process actions that apply to this decision.
-      <strong>Note:</strong> Refund amounts are set in the dedicated Refund stages (1-4).
+      Enter the independent amount approved for this Refund.
     </p>
 
     <!-- Actions Container -->
@@ -21,10 +21,19 @@
           <div class="ml-3 flex-1">
             <p class="font-medium text-gray-900">💰 Create Refund Process</p>
             <p class="text-xs text-gray-600 mt-1">
-              Trigger refund creation. Amount will be set in the refund filling stage.
+              Create a parallel Refund using the manual amount entered below.
             </p>
           </div>
         </label>
+        <div v-if="actions.createRefund" class="mt-3">
+          <label class="block text-sm font-medium" for="decision-refund-amount">Refund Amount {{ currencyCode ? `(${currencyCode})` : '' }}</label>
+          <input id="decision-refund-amount" type="text" inputmode="decimal"
+            :value="actions.refundAmount" :disabled="disabled"
+            @input="updateAction('refundAmount', $event.target.value)"
+            class="mt-1 w-full border rounded p-2" aria-describedby="refund-amount-error" />
+          <p id="refund-amount-error" v-if="error || refundAmountError" class="text-sm text-red-600">{{ error || refundAmountError }}</p>
+          <p class="text-xs text-gray-600 mt-1">Required and greater than zero on final submission. Up to two decimal places.</p>
+        </div>
       </div>
 
       <!-- Action 2: Continue to Next Stage -->
@@ -87,8 +96,11 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
+import { refundAmountError as validateRefundAmount } from '../utils/refundPresentation.js'
 
 const props = defineProps({
+  currencyCode: { type: String, default: '' },
+  error: { type: String, default: '' },
   availableAmount: {
     type: Number,
     required: true,
@@ -111,7 +123,7 @@ const props = defineProps({
     type: Object,
     default: () => ({
       createRefund: false,
-      refundAmount: 0,
+      refundAmount: '',
       continueToNextStage: false
     })
   }
@@ -122,16 +134,11 @@ const emit = defineEmits(['update:modelValue', 'change'])
 // Local state for actions
 const actions = ref({
   createRefund: props.modelValue?.createRefund || false,
-  refundAmount: props.modelValue?.refundAmount || 0,
+  refundAmount: props.modelValue?.refundAmount ?? '',
   continueToNextStage: props.modelValue?.continueToNextStage || false
 })
 
-// Computed: Formatted amounts for display
-const formattedAvailableAmount = computed(() => {
-  return new Intl.NumberFormat('id-ID').format(props.availableAmount)
-})
-
-// Note: refundAmountError is no longer needed since we don't have amount input at decision points
+const refundAmountError = computed(() => validateRefundAmount(actions.value.refundAmount, false))
 
 // Handler: Update individual action and emit change
 const updateAction = (key, value) => {
@@ -140,7 +147,7 @@ const updateAction = (key, value) => {
   
   const newActions = {
     createRefund: actions.value.createRefund,
-    refundAmount: 0, // Always 0 at decision points - amount is set in refund stage
+    refundAmount: actions.value.refundAmount,
     continueToNextStage: actions.value.continueToNextStage
   }
   
@@ -156,7 +163,7 @@ watch(
     if (newValue && JSON.stringify(newValue) !== JSON.stringify(actions.value)) {
       actions.value = {
         createRefund: newValue.createRefund || false,
-        refundAmount: newValue.refundAmount || 0,
+        refundAmount: newValue.refundAmount ?? '',
         continueToNextStage: newValue.continueToNextStage || false
       }
     }

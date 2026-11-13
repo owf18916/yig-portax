@@ -22,6 +22,7 @@
       :caseStatus="caseStatus"
       :preFilledMessage="preFilledMessage"
       :prefillData="prefillData"
+      :currency-code="caseData.currency?.code || ''"
       :exposure="caseData.kian_status_by_stage?.[12]"
       :showDecisionOptions="true"
       @submit="refreshTaxCase"
@@ -222,6 +223,7 @@ onMounted(async () => {
         decision_amount: supremeCourtDecision.decision_amount || 0,
         decision_notes: supremeCourtDecision.decision_notes || '',
         create_refund: supremeCourtDecision.create_refund ?? false,
+        refund_amount: supremeCourtDecision.refund_amount ?? '',
         workflowHistories: caseFetchedData.workflow_histories || []
       }
     } else {
@@ -310,6 +312,7 @@ const refreshTaxCase = async () => {
           decision_amount: supremeCourtDecision.decision_amount || 0,
           decision_notes: supremeCourtDecision.decision_notes || '',
           create_refund: supremeCourtDecision.create_refund ?? false,
+          refund_amount: supremeCourtDecision.refund_amount ?? '',
           workflowHistories: caseFetchedData.workflow_histories || []
         }
       }

@@ -22,6 +22,7 @@
       :caseStatus="caseStatus"
       :preFilledMessage="preFilledMessage"
       :prefillData="prefillData"
+      :currency-code="caseData.currency?.code || ''"
       :exposure="caseData.kian_status_by_stage?.[4]"
       :workflowState="caseData.workflow_state"
       :showDecisionOptions="true"
@@ -200,7 +201,7 @@ const prefillData = ref({
   correction_notes: '',
   user_routing_choice: '',
   create_refund: false,
-  refund_amount: 0,
+  refund_amount: '',
   continue_to_next_stage: false,
   workflowHistories: []
 })
@@ -208,7 +209,7 @@ const prefillData = ref({
 // ⭐ DECISION ACTIONS STATE
 const decisionActions = ref({
   createRefund: false,
-  refundAmount: 0,
+  refundAmount: '',
   continueToNextStage: false
 })
 
@@ -315,13 +316,14 @@ onMounted(async () => {
         correction_notes: skpRecord.correction_notes || '',
         user_routing_choice: skpRecord.user_routing_choice || '',
         create_refund: skpRecord.create_refund ?? false,
+        refund_amount: skpRecord.refund_amount ?? '',
         continue_to_next_stage: skpRecord.continue_to_next_stage ?? false,
         workflowHistories: caseFetchedData.workflow_histories || []
       }
       // Also update decisionActions to reflect loaded data
       decisionActions.value = {
         createRefund: skpRecord.create_refund ?? false,
-        refundAmount: 0,
+        refundAmount: skpRecord.refund_amount ?? '',
         continueToNextStage: skpRecord.continue_to_next_stage ?? false
       }
     } else {
@@ -416,13 +418,14 @@ const refreshTaxCase = async () => {
           correction_notes: skpRecord.correction_notes || '',
           user_routing_choice: skpRecord.user_routing_choice || '',
           create_refund: skpRecord.create_refund ?? false,
+          refund_amount: skpRecord.refund_amount ?? '',
           continue_to_next_stage: skpRecord.continue_to_next_stage ?? false,
           workflowHistories: caseFetchedData.workflow_histories || []
         }
         // Also update decisionActions to reflect loaded data
         decisionActions.value = {
           createRefund: skpRecord.create_refund ?? false,
-          refundAmount: 0,
+          refundAmount: skpRecord.refund_amount ?? '',
           continueToNextStage: skpRecord.continue_to_next_stage ?? false
         }
       }

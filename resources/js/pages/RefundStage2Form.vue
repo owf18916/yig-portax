@@ -159,6 +159,7 @@
 </template>
 
 <script setup>
+import { formatRefundAmount } from '../utils/refundPresentation.js'
 import { apiFetch as fetch } from '../composables/useSessionApi.js'
 
 import { ref, onMounted } from 'vue'
@@ -180,6 +181,8 @@ const isReadOnly = ref(false)  // Track if stage is read-only (completed)
 const currentRefundStage = ref(2)  // Track current stage
 const apiError = ref('')
 
+const currencyCode = ref('')
+const isPreliminary = ref(false)
 const refundNumber = ref('')
 const refundAmount = ref(0)
 const refundMethod = ref('')
@@ -192,6 +195,7 @@ const formData = ref({
 })
 
 const formatCurrency = (value) => {
+  if (!isPreliminary.value) return formatRefundAmount(value, currencyCode.value)
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
     currency: 'IDR',
@@ -226,6 +230,8 @@ const loadRefundData = async () => {
     console.log('[RefundStage2] Successfully loaded refund data:', result)
     
     const data = result.data || result
+    currencyCode.value = data.currency_code || ''
+    isPreliminary.value = !!data.is_preliminary
     canSubmit.value = !!data.can_submit
     
     for (const key of ['request_number', 'request_date', 'transfer_date', 'notes']) {

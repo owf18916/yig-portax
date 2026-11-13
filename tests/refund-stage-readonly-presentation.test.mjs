@@ -6,7 +6,7 @@ import vm from 'node:vm'
 import * as vue from 'vue'
 import * as serverRenderer from 'vue/server-renderer'
 import { parse, compileTemplate } from '@vue/compiler-sfc'
-import { formatRefundMethod } from '../resources/js/utils/refundPresentation.js'
+import { formatRefundMethod, formatRefundAmount } from '../resources/js/utils/refundPresentation.js'
 
 const pages = new Map()
 for (const stage of [1, 2, 3, 4]) {
@@ -34,7 +34,7 @@ function fixture(stage, data, refundId = '41', query = { stageId: '0' }, failure
       resolveComponent: name => name,
       withDirectives: (node, directives) => Object.assign(node, { testDirectives: directives }),
     },
-    serverRenderer, formatRefundMethod, console: { log() {}, error() {} },
+    serverRenderer, formatRefundMethod, formatRefundAmount, console: { log() {}, error() {} },
     onMounted() {}, useRoute: () => testRoute,
     useRouter: () => ({ back() {}, push: target => navigations.push(target) }), useToast: () => ({ showSuccess() {}, showError() {} }),
     setTimeout: callback => callback(),

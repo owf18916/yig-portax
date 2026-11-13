@@ -80,9 +80,9 @@
 
           <!-- Refund Amount -->
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Refund Amount (IDR) *</label>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Refund Amount {{ isPreliminary ? '(IDR)' : (currencyCode ? `(${currencyCode})` : '') }} *</label>
             <div class="relative">
-              <span class="absolute left-3 top-3 text-gray-500">IDR</span>
+              <span class="absolute left-3 top-3 text-gray-500">{{ isPreliminary ? 'IDR' : currencyCode }}</span>
               <FormField
                 v-model="formData.refund_amount"
                 type="formatted-number"
@@ -171,6 +171,7 @@
 </template>
 
 <script setup>
+import { formatRefundAmount } from '../utils/refundPresentation.js'
 import { apiFetch as fetch } from '../composables/useSessionApi.js'
 
 import { ref, computed, onMounted, watch } from 'vue'
@@ -192,6 +193,8 @@ const stageId = computed(() => {
 })
 const isEditingExisting = computed(() => !!refundId.value)
 const isReadOnly = ref(false)  // Track if stage is read-only (completed)
+const currencyCode = ref('')
+const isPreliminary = ref(false)
 const refundNumber = ref('')
 const originLabel = ref('')
 const existingLoaded = ref(false)
@@ -220,6 +223,7 @@ const selectedRefundMethod = computed({
 })
 
 const formatCurrency = (value) => {
+  if (!isPreliminary.value) return formatRefundAmount(value, currencyCode.value)
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
     currency: 'IDR',
@@ -259,6 +263,8 @@ const loadExistingRefund = async () => {
     const result = await response.json()
     if (!isSelected()) return
     const data = result.data || result
+    currencyCode.value = data.currency_code || ''
+    isPreliminary.value = !!data.is_preliminary
     
     console.log('[RefundStage1] Loaded refund data:', data)
     
@@ -320,6 +326,8 @@ const loadCaseData = async () => {
     const data = result.data || result
 
     if (!isSelected()) return false
+    currencyCode.value = data.currency?.code || ''
+    if (!refundId.value) isPreliminary.value = stageId.value === 0
     caseNumber.value = data.case_number || `Case #${caseId.value}`
     stageFourKianBlocked.value = data.stage4_kian_access_blocked === true
     maxRefundAmount.value = data.disputed_amount || 0

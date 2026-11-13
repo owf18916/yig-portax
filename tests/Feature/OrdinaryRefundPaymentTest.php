@@ -210,6 +210,9 @@ class OrdinaryRefundPaymentTest extends TestCase
                                 : ['receipt_number', 'received_date', 'received_amount']);
                         }
                     }
+                    $keys[] = 'currency_code';
+                    if ($stage === 2) $keys[] = 'is_preliminary';
+                    $this->assertSame('IDR', $data['currency_code']);
                     $actualKeys = array_keys($data);
                     sort($keys);
                     sort($actualKeys);
@@ -232,6 +235,7 @@ class OrdinaryRefundPaymentTest extends TestCase
                         $this->assertSame($preliminary, $data['is_preliminary']);
                     }
                     $queries = collect($db->getQueryLog())->pluck('query');
+                    $this->assertLessThanOrEqual(1, $queries->filter(fn ($sql) => str_contains($sql, 'from "currencies"'))->count());
                     $transfers = $queries->filter(fn ($sql) => str_contains($sql, 'from "bank_transfer_requests"'))->values();
                     $ordinaryEligibility = ! $preliminary && $stage >= 2;
                     $this->assertCount($ordinaryEligibility ? 2 : 1, $transfers);

@@ -6,7 +6,7 @@ import vm from 'node:vm'
 import * as vue from 'vue'
 import * as serverRenderer from 'vue/server-renderer'
 import { parse, compileTemplate } from '@vue/compiler-sfc'
-import { formatRefundMethod } from '../resources/js/utils/refundPresentation.js'
+import { formatRefundMethod, formatRefundAmount } from '../resources/js/utils/refundPresentation.js'
 
 const filename = 'RefundStage4Form.vue'
 const source = await readFile(new URL('../resources/js/pages/RefundStage4Form.vue', import.meta.url), 'utf8')
@@ -21,7 +21,7 @@ const renderCode = compiled.code
 function fixture(data, refundId = '41') {
   const calls = []
   const context = vm.createContext({
-    ...vue, vue, serverRenderer, formatRefundMethod, console,
+    ...vue, vue, serverRenderer, formatRefundMethod, formatRefundAmount, console,
     onMounted: () => {}, useRoute: () => ({ params: { id: '9', refundId } }),
     useRouter: () => ({ back() {} }), useToast: () => ({ showSuccess() {}, showError() {} }),
     fetch: async (url, options) => {
@@ -30,7 +30,7 @@ function fixture(data, refundId = '41') {
     },
   })
   vm.runInContext(descriptor.scriptSetup.content.replace(/^import .*$/gm, '') + `
-    globalThis.state = { isLoading, isSubmitting, canSubmit, apiError, isPreliminary,
+    globalThis.state = { currencyCode, isLoading, isSubmitting, canSubmit, apiError, isPreliminary,
       refundNumber, refundAmount, refundMethod, refundStatus, receiptCompleted,
       formData, formatCurrency, amountWarning, completionMessage, loadRefundData, submitForm };
     ${renderCode}

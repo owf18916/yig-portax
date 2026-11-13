@@ -233,6 +233,7 @@
 </template>
 
 <script setup>
+import { formatRefundAmount } from '../utils/refundPresentation.js'
 import { apiFetch as fetch } from '../composables/useSessionApi.js'
 
 import { ref, onMounted } from 'vue'
@@ -255,6 +256,7 @@ const isReadOnly = ref(false)
 const apiError = ref('')
 const isPreliminary = ref(false)
 
+const currencyCode = ref('')
 const refundNumber = ref('')
 const refundAmount = ref(0)
 
@@ -272,6 +274,7 @@ const formData = ref({
 })
 
 const formatCurrency = (value) => {
+  if (!isPreliminary.value) return formatRefundAmount(value, currencyCode.value)
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
     currency: 'IDR',
@@ -296,6 +299,7 @@ const loadRefundData = async () => {
 
     const result = await response.json()
     const data = result.data || result
+    currencyCode.value = data.currency_code || ''
     canSubmit.value = !!data.can_submit
     // Advisory replay capability does not make completed evidence editable.
     isReadOnly.value = !canSubmit.value || (data.current_stage || 3) > 3

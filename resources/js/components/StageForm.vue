@@ -287,6 +287,8 @@
             <DecisionActions
               v-if="showSkpDecisionOptions && formData.skp_type"
               v-model="decisionActions"
+              :currency-code="currencyCode"
+              :error="formErrors.refund_amount"
               :available-amount="computedAvailableRefundAmount"
               :next-stage-name="`Objection (Stage 5)`"
               :disabled="submissionComplete || fieldsDisabled"
@@ -297,6 +299,8 @@
             <DecisionActions
               v-if="showObjectionDecisionOptions && formData.decision_type"
               v-model="decisionActions"
+              :currency-code="currencyCode"
+              :error="formErrors.refund_amount"
               :available-amount="computedAvailableRefundAmount"
               :next-stage-name="`Appeal (Stage 8)`"
               :disabled="submissionComplete || fieldsDisabled"
@@ -307,6 +311,8 @@
             <DecisionActions
               v-if="showAppealDecisionOptions && formData.decision_type"
               v-model="decisionActions"
+              :currency-code="currencyCode"
+              :error="formErrors.refund_amount"
               :available-amount="computedAvailableRefundAmount"
               :next-stage-name="`Supreme Court (Stage 11)`"
               :disabled="submissionComplete || fieldsDisabled"
@@ -317,6 +323,8 @@
             <DecisionActions
               v-if="showSupremeCourtDecisionOptions && formData.decision_type"
               v-model="decisionActions"
+              :currency-code="currencyCode"
+              :error="formErrors.refund_amount"
               :available-amount="computedAvailableRefundAmount"
               next-stage-name=""
               :show-continue="false"
@@ -476,6 +484,7 @@ import Toast from './Toast.vue'
 import LoadingSpinner from './LoadingSpinner.vue'
 import ConfirmationDialog from './ConfirmationDialog.vue'
 import DecisionActions from './DecisionActions.vue'
+import { refundAmountError } from '../utils/refundPresentation.js'
 import SptFilingMethod from './SptFilingMethod.vue'
 
 const router = useRouter()
@@ -542,6 +551,7 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
+  currencyCode: { type: String, default: '' },
   availableAmount: {
     type: Number,
     default: 0
@@ -567,7 +577,7 @@ const submissionComplete = ref(false)
 const formData = reactive({
   // Common fields untuk semua stages
   create_refund: false,
-  refund_amount: 0,
+  refund_amount: '',
   continue_to_next_stage: false,
   user_routing_choice: null,
   decision_type: null,
@@ -586,7 +596,7 @@ const uploadingFiles = ref({}) // Track progress per file: { fileId: percentage 
 // ⭐ DECISION ACTIONS STATE (for independent refund/continue actions)
 const decisionActions = ref({
   createRefund: false,
-  refundAmount: 0,
+  refundAmount: '',
   continueToNextStage: false
 })
 
@@ -788,7 +798,7 @@ onMounted(() => {
   if (props.prefillData?.create_refund !== undefined || props.prefillData?.continue_to_next_stage !== undefined) {
     decisionActions.value = {
       createRefund: props.prefillData?.create_refund ?? false,
-      refundAmount: 0,
+      refundAmount: props.prefillData?.refund_amount ?? '',
       continueToNextStage: props.prefillData?.continue_to_next_stage ?? false
     }
     console.log('[StageForm MOUNT] Decision actions initialized from prefillData:', decisionActions.value)
@@ -796,7 +806,7 @@ onMounted(() => {
 
   // ⭐ INITIALIZE DECISION CHECKBOXES IN FORMDATA
   formData['create_refund'] = props.prefillData?.create_refund ?? false
-  formData['refund_amount'] = props.prefillData?.refund_amount ?? 0
+  formData['refund_amount'] = props.prefillData?.refund_amount ?? ''
   formData['continue_to_next_stage'] = props.prefillData?.continue_to_next_stage ?? false
   console.log('[StageForm MOUNT] Initialized formData with decision values:', {
     create_refund: formData['create_refund'],
@@ -840,7 +850,7 @@ watch(() => [props.fields, props.prefillData], ([newFields, newPrefillData]) => 
   if (newPrefillData?.create_refund !== undefined || newPrefillData?.continue_to_next_stage !== undefined) {
     decisionActions.value = {
       createRefund: newPrefillData?.create_refund ?? false,
-      refundAmount: 0,
+      refundAmount: newPrefillData?.refund_amount ?? '',
       continueToNextStage: newPrefillData?.continue_to_next_stage ?? false
     }
     console.log('[StageForm WATCH] Decision actions synced from prefillData:', decisionActions.value)
@@ -1206,13 +1216,17 @@ const closePdfViewer = () => {
   pdfViewerUrl.value = ''
 }
 
-const validateForm = () => {
+const validateForm = (draft = false) => {
   // Clear errors
   Object.keys(formErrors).forEach(key => {
     delete formErrors[key]
   })
 
   let isValid = true
+  if ([4, 7, 10, 12].includes(props.stageId)) {
+    const error = refundAmountError(formData.refund_amount, !draft && formData.create_refund)
+    if (error) { formErrors.refund_amount = error; isValid = false }
+  }
 
   // Validate required fields
   props.fields.forEach(field => {
@@ -1240,7 +1254,7 @@ const validateForm = () => {
     }
 
     // Check if required field is empty
-    if (field.required) {
+    if (field.required && !(draft && [4, 7, 10, 12].includes(props.stageId) && !Object.hasOwn(props.prefillData || {}, 'kianSubmissionStatus'))) {
       if (value === null || value === undefined || value === '') {
         formErrors[field.key] = `${field.label} is required`
         isValid = false
@@ -1362,7 +1376,7 @@ const viewCaseDetail = () => {
 const saveDraft = async () => {
   if (fieldsDisabled.value || submitting.value || props.isLoading) return
   // Validate form before saving draft
-  if (!validateForm()) {
+  if (!validateForm(true)) {
     // Validation errors are shown inline under each field, no need for toast
     return
   }

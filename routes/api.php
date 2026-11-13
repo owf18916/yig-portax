@@ -322,6 +322,12 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                     ], $guard['status']);
                 }
 
+                if (in_array($stage, [4, 7, 10, 12], true)) {
+                    \Illuminate\Support\Facades\Gate::authorize('update', $taxCase);
+                    abort_unless($user?->is_active && $user->hasPermission('submit_cases'), 403);
+                    $request->merge(app(DecisionPointRefundService::class)->normalizeInput($request->all(), $isDraft));
+                }
+
                 if ($stage === 1) {
                     app(\App\Services\SptFilingContract::class)->validate($request->all(), $taxCase);
                     $request->validate(['disputed_amount' => 'sometimes|required|numeric|min:0', 'spt_position_type' => 'sometimes|required|in:LB,KB,NIHIL']);
@@ -684,6 +690,10 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                     }
                 }
                 
+                if ($decisionRecord && in_array($stage, [4, 7, 10, 12], true)) {
+                    app(DecisionPointRefundService::class)->assertStoredAmount($decisionRecord, $request->input('refund_amount'));
+                }
+
                 if ($isDraft) {
                     // For draft, ONLY update the specific fields, DO NOT change case status
                     if (!empty($updateData)) {
@@ -768,6 +778,9 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                     DB::rollBack();
                 }
 
+                throw $e;
+            } catch (\Illuminate\Auth\Access\AuthorizationException | \Symfony\Component\HttpKernel\Exception\HttpException $e) {
+                if (DB::transactionLevel() > 0) DB::rollBack();
                 throw $e;
             } catch (\Exception $e) {
                 if (DB::transactionLevel() > 0) {

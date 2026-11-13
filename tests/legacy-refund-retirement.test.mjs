@@ -140,7 +140,8 @@ test('canonical routes keep explicit A/B selection and main 1–12/KIAN 16 keep 
     assert.notEqual(router.resolve(`/tax-cases/9/workflow/${stage}`).matched[0].components.default.target, '../pages/LegacyRefundUnsupported.vue')
   }
   const detail = await source('resources/js/pages/TaxCaseDetail.vue')
-  assert.match(await source('resources/js/components/DecisionActions.vue'), /Refund amounts are set in the dedicated Refund stages \(1-4\)/)
+  // Manual decision amount entry is covered by the compiled component tests.
+  assert.doesNotMatch(await source('resources/js/components/DecisionActions.vue'), /Refund amounts are set in the dedicated Refund stages/)
   assert.doesNotMatch(detail, /Legacy Stages|getStagesByBranch\('refund'\)|branch: 'refund'|refunds\/\$\{refund.id\}\/workflow/)
   assert.match(detail, /if \(!refundId\)/)
   const pushes = []

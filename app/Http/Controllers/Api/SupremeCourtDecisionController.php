@@ -91,6 +91,9 @@ class SupremeCourtDecisionController extends ApiController
             DB::commit();
 
             return $this->success($scDecision, 'Supreme court decision submitted', 201);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             return $this->error($e->getMessage(), 500);

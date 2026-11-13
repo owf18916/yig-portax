@@ -108,6 +108,7 @@ class DecisionPointContractNormalizationTest extends TestCase
             'skp_type' => 'LB',
             'skp_amount' => 800,
             'create_refund' => $refund,
+            'refund_amount' => $refund ? '123.45' : null,
             'continue_to_next_stage' => $continue,
         ])->assertOk();
 
@@ -152,6 +153,7 @@ class DecisionPointContractNormalizationTest extends TestCase
             'decision_amount' => 700,
             'decision_notes' => 'Canonical English fields',
             'create_refund' => true,
+            'refund_amount' => '123.45',
         ];
 
         $this->postJson($this->url(12), $payload)->assertOk();
@@ -260,6 +262,7 @@ class DecisionPointContractNormalizationTest extends TestCase
             'decision_amount' => 800,
             'decision_notes' => 'Decision result is not routing',
             'create_refund' => $refund,
+            'refund_amount' => $refund ? '123.45' : null,
             'continue_to_next_stage' => $continue,
         ];
     }
