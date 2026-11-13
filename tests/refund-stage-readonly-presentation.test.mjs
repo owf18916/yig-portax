@@ -23,7 +23,7 @@ for (const stage of [1, 2, 3, 4]) {
   pages.set(stage, { script: descriptor.scriptSetup.content.replace(/^import .*$/gm, ''), ssr: compile(true), client: compile(false) })
 }
 
-function fixture(stage, data, refundId = '41', query = { stageId: '0' }, failure = null) {
+function fixture(stage, data, refundId = '41', query = { stageId: '0' }, failure = null, fetchOverride = null) {
   const page = pages.get(stage)
   const calls = []
   const navigations = []
@@ -41,6 +41,7 @@ function fixture(stage, data, refundId = '41', query = { stageId: '0' }, failure
     fetch: async (url, options) => {
       calls.push({ url, method: options.method })
       if (options.body) calls.at(-1).body = JSON.parse(options.body)
+      if (fetchOverride) return fetchOverride(url, options)
       return failure && url.endsWith(failure.path) ? { ok: false, status: failure.status, json: async () => ({ message: failure.message }) } : { ok: true, json: async () => ({ data }) }
     },
   })
@@ -56,6 +57,10 @@ function fixture(stage, data, refundId = '41', query = { stageId: '0' }, failure
       const node = find(context.client(vue.proxyRefs(context.state), []))
       const model = node.testDirectives[0][1]
       return { model, selected: node.children.find(option => option.props.value === model), node }
+    },
+    buttons: () => {
+      const collect = node => [ ...(node?.type === 'button' ? [node] : []), ...(Array.isArray(node?.children) ? node.children.flatMap(collect) : []) ]
+      return collect(context.client(vue.proxyRefs(context.state), []))
     },
     continueButton: () => {
       const find = node => node?.type === 'button' && node.props.type === 'button' && node.props.class?.includes('bg-blue-600')
@@ -118,7 +123,8 @@ for (const preliminary of [false, true]) {
       assert.deepEqual(page.calls, Array(2).fill({ url: `/api/tax-cases/9/refunds/41/refund-stages/${stage}`, method: 'GET' }))
     })
     test(`Stage ${stage} eligible new evidence remains enabled: preliminary=${preliminary}`, async () => {
-      for (const currentStage of [stage - 1, stage]) {
+      // Stages 2/3 current_stage describes recorded completion, not the next editable form.
+      for (const currentStage of stage === 4 ? [stage - 1, stage] : [stage - 1]) {
         const page = fixture(stage, { refund_amount: '800.12', is_preliminary: preliminary, current_stage: currentStage, refund_status: 'pending', can_submit: true })
         await page.load()
         if (stage === 4) page.state.formData.value.received_amount = '800.12'
@@ -292,4 +298,173 @@ test('existing card entry and router keep both synthetic origin identities', asy
   }
   const router = await readFile(new URL('../resources/js/router/index.js', import.meta.url), 'utf8')
   assert.match(router, /path: '\/tax-cases\/:id\/refunds\/:refundId\/refund-stages\/1',\s*name: 'RefundStage1FormWithId'/)
+})
+
+// Corrective E: compiled handlers and in-memory responses; no browser or real API.
+const buttonText = node => typeof node.children === 'string' ? node.children.trim() : ''
+const forwardButton = page => page.buttons().find(node => /^Continue to Stage/.test(buttonText(node)))
+const clickBack = page => page.buttons().find(node => node.props.type === 'button' && buttonText(node) === 'Back').props.onClick()
+const assertTarget = (page, stage, refundId = '41', caseId = '9') => {
+  assert.equal(page.navigations.at(-1).name, `RefundStage${stage}FormWithId`)
+  assert.equal(page.navigations.at(-1).params.id, caseId)
+  assert.equal(page.navigations.at(-1).params.refundId, refundId)
+}
+
+for (const stage of [2, 3]) {
+  test(`Stage ${stage} submit -> next -> deterministic Back -> Continue uses one POST only`, async () => {
+    const data = { ...evidence, current_stage: stage - 1, refund_status: 'pending', can_submit: true }
+    const page = fixture(stage, data)
+    assert.equal(forwardButton(page), undefined, 'hidden before GET')
+    await page.load()
+    assert.equal(forwardButton(page), undefined, 'predecessor not complete')
+    await page.state.submitForm()
+    assertTarget(page, stage + 1)
+    assert.equal(page.calls.filter(call => call.method === 'POST').length, 1)
+    data.current_stage = stage
+    data.can_submit = false
+    const next = fixture(stage + 1, data)
+    await next.load()
+    clickBack(next)
+    assertTarget(next, stage)
+    await page.load()
+    assertControls(await page.render(), true, stage)
+    assert.equal(page.state.formData.value[stage === 2 ? 'request_number' : 'instruction_number'], stage === 2 ? 'REQ-A' : 'INS-A')
+    const before = page.calls.length
+    forwardButton(page).props.onClick()
+    assertTarget(page, stage + 1)
+    assert.equal(page.calls.length, before, 'Continue is pure navigation')
+    assert.equal(page.calls.filter(call => call.method === 'POST').length, 1)
+  })
+
+  test(`Stage ${stage} continuation across origins, currencies, Preliminary and reloads`, async () => {
+    for (const origin of [0, 4, 7, 10, 12]) for (const currency of ['USD', 'IDR']) {
+      const page = fixture(stage, { ...evidence, current_stage: stage, can_submit: origin === 0, is_preliminary: origin === 0, stage_id: origin, currency_code: currency })
+      for (let reload = 0; reload < 2; reload++) {
+        await page.load()
+        assertControls(await page.render(), true, stage)
+        forwardButton(page).props.onClick()
+        assertTarget(page, stage + 1)
+        assert.match(await page.render(), origin === 0 ? /Rp/ : new RegExp(currency))
+      }
+      assert.equal(page.calls.length, 2)
+      assert.ok(page.calls.every(call => call.method === 'GET'))
+    }
+  })
+
+  test(`Stage ${stage} incomplete or invalid progression ignores query and write flags`, async () => {
+    for (const current of [undefined, null, 0, 1, ...(stage === 3 ? [2] : []), 2.5, 3.5, 5, 'junk']) {
+      for (const canSubmit of [false, true]) {
+        const page = fixture(stage, { ...evidence, current_stage: current, can_submit: canSubmit }, '41', { stageId: '12', current_stage: '4' })
+        await page.load()
+        assert.equal(forwardButton(page), undefined)
+        page.state.continueToNextStage()
+        assert.equal(page.navigations.length, 0)
+        assert.ok(page.calls.every(call => call.method === 'GET'))
+      }
+    }
+  })
+
+  test(`Stage ${stage} denied, unknown, foreign or missing ID cannot continue`, async () => {
+    for (const status of [403, 404, 422]) {
+      const page = fixture(stage, evidence, '41', {}, { path: `/${stage}`, status, message: 'Denied' })
+      await page.load()
+      assert.equal(forwardButton(page), undefined)
+      page.state.continueToNextStage()
+      assert.equal(page.navigations.length, 0)
+      assert.doesNotMatch(await page.render(), /REQ-A|INS-A|Retained A/)
+    }
+    const page = fixture(stage, evidence, null)
+    await page.load()
+    page.state.continueToNextStage()
+    page.state.goBack()
+    assert.equal(page.calls.length, 0)
+    assert.equal(page.navigations.length, 0)
+  })
+}
+
+for (const stage of [2, 3, 4]) {
+  test(`Stage ${stage} loaded A is cleared synchronously on case/Refund change`, async () => {
+    const pending = []
+    let first = true
+    const page = fixture(stage, {}, '41', {}, null, async () => {
+      if (first) { first = false; return { ok: true, json: async () => ({ data: evidence }) } }
+      return new Promise(resolve => { pending.push(resolve) })
+    })
+    await page.load()
+    assert.equal(page.state.formData.value.notes, 'Retained A')
+    page.route.params.id = '10'
+    page.route.params.refundId = '42'
+    assert.equal(page.state.formData.value.notes, '')
+    assert.equal(page.state.refundNumber.value, '')
+    assert.equal(page.state.isLoading.value, true)
+    assert.equal(page.state.canSubmit.value, false)
+    if (stage < 4) {
+      assert.equal(forwardButton(page), undefined)
+      page.state.continueToNextStage()
+      assert.equal(page.navigations.length, 0)
+    }
+    pending[1]({ ok: true, json: async () => ({ data: { ...evidence, notes: 'Only B' } }) })
+    await new Promise(setImmediate)
+    pending[0]({ ok: true, json: async () => ({ data: evidence }) })
+    await new Promise(setImmediate)
+    assert.equal(page.state.formData.value.notes, 'Only B')
+    clickBack(page)
+    assertTarget(page, stage - 1, '42', '10')
+    assert.equal(page.calls.at(-1).url, `/api/tax-cases/10/refunds/42/refund-stages/${stage}`)
+  })
+
+  test(`Stage ${stage} ID change clears evidence and ignores late GET success or error`, async () => {
+    for (const staleError of [false, true]) {
+      const pending = []
+      const page = fixture(stage, {}, '41', {}, null, url => new Promise(resolve => pending.push({ url, resolve })))
+      const oldLoad = page.load()
+      page.route.params.refundId = '42'
+      assert.equal(page.state.formData.value.notes, '')
+      if (stage < 4) {
+        page.state.continueToNextStage()
+        assert.equal(forwardButton(page), undefined)
+      }
+      assert.equal(page.navigations.length, 0)
+      pending[1].resolve({ ok: true, json: async () => ({ data: { ...evidence, notes: 'Only B', request_number: 'REQ-B', instruction_number: 'INS-B', receipt_number: 'RCPT-B' } }) })
+      await new Promise(setImmediate)
+      pending[0].resolve(staleError ? { ok: false, status: 403, json: async () => ({ message: 'Stale denial' }) } : { ok: true, json: async () => ({ data: evidence }) })
+      await oldLoad
+      assert.equal(page.state.formData.value.notes, 'Only B')
+      assert.equal(page.state.apiError.value, '')
+      assert.equal(page.state.isLoading.value, false)
+      clickBack(page)
+      assertTarget(page, stage - 1, '42')
+      if (stage < 4) {
+        forwardButton(page).props.onClick()
+        assertTarget(page, stage + 1, '42')
+      } else assert.doesNotMatch(await page.render(), /Continue to Stage|Stage 5/)
+      assert.ok(page.calls.every(call => call.method === 'GET'))
+    }
+  })
+
+  test(`Stage ${stage} reload failure revokes capability; Back ignores browser history`, async () => {
+    let denied = false
+    const page = fixture(stage, {}, '41', {}, null, async () => denied ? { ok: false, status: 404, json: async () => ({ message: 'Gone' }) } : { ok: true, json: async () => ({ data: evidence }) })
+    await page.load()
+    denied = true
+    await page.load()
+    if (stage < 4) {
+      assert.equal(forwardButton(page), undefined)
+      page.state.continueToNextStage()
+      assert.equal(page.navigations.length, 0)
+    }
+    clickBack(page)
+    assertTarget(page, stage - 1)
+    page.buttons().find(node => buttonText(node) === 'Back to TaxCase Detail').props.onClick()
+    assert.equal(page.navigations.at(-1).name, 'TaxCaseDetail')
+    assert.equal(page.navigations.at(-1).params.id, '9')
+    assert.ok(page.calls.every(call => call.method === 'GET'))
+  })
+}
+
+test('selected direct-refresh routes remain explicit for Stages 2–4', async () => {
+  const source = await readFile(new URL('../resources/js/router/index.js', import.meta.url), 'utf8')
+  for (const stage of [2, 3, 4]) {
+    assert.match(source, new RegExp(`path: '/tax-cases/:id/refunds/:refundId/refund-stages/${stage}',\\s*name: 'RefundStage${stage}FormWithId'`))
+  }
 })

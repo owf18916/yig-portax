@@ -11,9 +11,10 @@
     <div class="max-w-4xl mx-auto p-6">
       <!-- Header -->
       <div class="mb-6">
-        <button @click="$router.back()" class="text-blue-600 hover:text-blue-800 mb-4 flex items-center gap-1">
+        <button @click="goBack" class="text-blue-600 hover:text-blue-800 mb-4 flex items-center gap-1">
           <span>←</span> Back
         </button>
+        <button type="button" @click="router.push({ name: 'TaxCaseDetail', params: { id: caseId } })" class="text-blue-600 hover:text-blue-800 mb-4 ml-4">Back to TaxCase Detail</button>
         <h1 class="text-3xl font-bold text-gray-900">Refund Stage 4/4</h1>
         <p class="text-gray-600 mt-2">Refund Completed - Refund Selesai</p>
       </div>
@@ -150,9 +151,9 @@
           <div class="flex gap-3 pt-4 border-t">
             <button
               type="button"
-              @click="$router.back()"
+              @click="goBack"
               class="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
-              :disabled="receiptCompleted || isSubmitting || !canSubmit"
+              :disabled="isSubmitting || !refundId"
             >
               Back
             </button>
@@ -181,7 +182,7 @@
 import { formatRefundAmount } from '../utils/refundPresentation.js'
 import { apiFetch as fetch } from '../composables/useSessionApi.js'
 
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useToast } from '@/composables/useToast'
 import FormField from '@/components/FormField.vue'
@@ -192,8 +193,9 @@ const { showSuccess, showError } = useToast()
 const route = useRoute()
 const router = useRouter()
 
-const caseId = route.params.id
-const refundId = route.params.refundId
+const caseId = computed(() => route.params.id)
+const refundId = computed(() => route.params.refundId)
+let loadVersion = 0
 
 const isLoading = ref(false)
 const isSubmitting = ref(false)
@@ -208,12 +210,13 @@ const refundMethod = ref('')
 const refundStatus = ref('')
 const receiptCompleted = ref(false)
 
-const formData = ref({
+const emptyFormData = () => ({
   receipt_number: '',
   received_date: new Date().toISOString().split('T')[0],
   received_amount: null,
   notes: ''
 })
+const formData = ref(emptyFormData())
 
 const formatCurrency = (value) => {
   if (!isPreliminary.value) return formatRefundAmount(value, currencyCode.value)
@@ -231,10 +234,24 @@ const completionMessage = computed(() => isPreliminary.value
   : 'Confirm receipt to complete only the selected Refund. Ordinary Refund completion leaves the TaxCase/SPT status and main workflow unchanged and does not close the case.')
 
 const loadRefundData = async () => {
+  const version = ++loadVersion
+  const selectedCaseId = caseId.value
+  const selectedRefundId = refundId.value
+  const isSelected = () => version === loadVersion && caseId.value === selectedCaseId && refundId.value === selectedRefundId
+  canSubmit.value = false
+  apiError.value = ''
+  formData.value = emptyFormData()
+  refundMethod.value = ''
+  refundNumber.value = ''
+  refundStatus.value = ''
+  refundAmount.value = 0
+  currencyCode.value = ''
+  isPreliminary.value = false
   try {
     isLoading.value = true
-    if (!refundId) throw new Error('Select a Refund explicitly from the case before saving payment evidence.')
-    const endpoint = `/api/tax-cases/${caseId}/refunds/${refundId}/refund-stages/4`
+    receiptCompleted.value = false
+    if (!selectedRefundId) throw new Error('Select a Refund explicitly from the case before saving payment evidence.')
+    const endpoint = `/api/tax-cases/${selectedCaseId}/refunds/${selectedRefundId}/refund-stages/4`
 
     const response = await fetch(endpoint, {
       method: 'GET',
@@ -245,6 +262,7 @@ const loadRefundData = async () => {
     if (!response.ok) throw new Error('Failed to load refund data')
 
     const result = await response.json()
+    if (!isSelected()) return
     const data = result.data || result
     currencyCode.value = data.currency_code || ''
     canSubmit.value = !!data.can_submit
@@ -263,18 +281,22 @@ const loadRefundData = async () => {
       formData.value.notes = data.notes || ''
     }
   } catch (error) {
+    if (!isSelected()) return
     apiError.value = error.message
     console.error('Failed to load refund:', error)
   } finally {
-    isLoading.value = false
+    if (isSelected()) isLoading.value = false
   }
 }
 
 const submitForm = async () => {
+  const selectedCaseId = caseId.value
+  const selectedRefundId = refundId.value
+  const isSelected = () => caseId.value === selectedCaseId && refundId.value === selectedRefundId
   try {
     isSubmitting.value = true
     apiError.value = ''
-    if (!canSubmit.value) throw new Error('This payment stage is locked or its predecessor is incomplete. Reload the selected Refund.')
+    if (isLoading.value || receiptCompleted.value || !canSubmit.value) throw new Error('This payment stage is locked or its predecessor is incomplete. Reload the selected Refund.')
 
     if (!formData.value.receipt_number) throw new Error('Receipt number is required')
     if (!formData.value.received_date) throw new Error('Received date is required')
@@ -284,8 +306,8 @@ const submitForm = async () => {
       throw new Error('Received amount must be greater than 0')
     }
 
-    if (!refundId) throw new Error('Select a Refund explicitly from the case before saving payment evidence.')
-    const endpoint = `/api/tax-cases/${caseId}/refunds/${refundId}/refund-stages/4`
+    if (!selectedRefundId) throw new Error('Select a Refund explicitly from the case before saving payment evidence.')
+    const endpoint = `/api/tax-cases/${selectedCaseId}/refunds/${selectedRefundId}/refund-stages/4`
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -307,15 +329,18 @@ const submitForm = async () => {
       throw new Error(Object.values(error.errors || {}).flat().join(' ') || error.message || error.error || `API Error: ${response.status}`)
     }
 
+    if (!isSelected()) return
     showSuccess('Success', 'Refund completed successfully!')
 
     setTimeout(() => {
+      if (!isSelected()) return
       router.push({
         name: 'TaxCaseDetail',
-        params: { id: caseId }
+        params: { id: selectedCaseId }
       })
     }, 1500)
   } catch (error) {
+    if (!isSelected()) return
     apiError.value = error.message
     showError('Error', error.message)
   } finally {
@@ -323,7 +348,13 @@ const submitForm = async () => {
   }
 }
 
+const goBack = () => {
+  if (!caseId.value || !refundId.value || isSubmitting.value) return
+  router.push({ name: 'RefundStage3FormWithId', params: { id: caseId.value, refundId: refundId.value } })
+}
+
 onMounted(() => {
   loadRefundData()
 })
+watch(() => [route.params.id, route.params.refundId], loadRefundData, { flush: 'sync' })
 </script>

@@ -30,7 +30,7 @@ function fixture(data, refundId = '41') {
     },
   })
   vm.runInContext(descriptor.scriptSetup.content.replace(/^import .*$/gm, '') + `
-    globalThis.state = { currencyCode, isLoading, isSubmitting, canSubmit, apiError, isPreliminary,
+    globalThis.state = { router, caseId, refundId, goBack, currencyCode, isLoading, isSubmitting, canSubmit, apiError, isPreliminary,
       refundNumber, refundAmount, refundMethod, refundStatus, receiptCompleted,
       formData, formatCurrency, amountWarning, completionMessage, loadRefundData, submitForm };
     ${renderCode}
