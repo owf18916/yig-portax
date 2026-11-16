@@ -1,3 +1,83 @@
+import { formatRefundAmount } from '../utils/refundPresentation.js'
+
+const REVISION_LABELS = {
+    'spt_position_type': 'Posisi SPT',
+    'spt_type': 'Jenis Pengajuan Lebih Bayar',
+    'period_id': 'Fiscal Period',
+    'currency_id': 'Currency',
+    'disputed_amount': 'SPT Amount',
+    'sp2_number': 'Nomor SP2 (SP2 Number)',
+    'issue_date': 'Tanggal Diterbitkan (Issue Date)',
+    'receipt_date': 'Tanggal Diterima (Receipt Date)',
+    'auditor_name': 'Auditor Name',
+    'auditor_phone': 'Auditor Phone',
+    'auditor_email': 'Auditor Email',
+    'sphp_number': 'Nomor SPHP (SPHP Number)',
+    'sphp_issue_date': 'Tanggal Diterbitkan (Issue Date)',
+    'sphp_receipt_date': 'Tanggal Diterima (Receipt Date)',
+    'royalty_finding': 'Royalty Finding Amount',
+    'service_finding': 'Service Finding Amount',
+    'other_finding': 'Other Finding Amount',
+    'other_finding_notes': 'Notes for Other Findings',
+    'skp_number': 'Nomor SKP (SKP Number)',
+    'skp_type': 'Jenis SKP (SKP Type)',
+    'skp_amount': 'Nilai SKP (SKP Amount)',
+    'royalty_correction': 'Royalty Correction Amount',
+    'service_correction': 'Service Correction Amount',
+    'other_correction': 'Other Correction Amount',
+    'correction_notes': 'Catatan untuk koreksi (Notes for Corrections)',
+    'user_routing_choice': 'Routing Choice (Refund/Objection)',
+    'objection_number': 'Nomor Surat Keberatan (Objection Letter Number)',
+    'submission_date': 'Tanggal Dilaporkan (Submission Date)',
+    'objection_amount': 'Nilai Keberatan (Objection Amount)',
+    'objection_grounds': 'Alasan Keberatan (Grounds for Objection)',
+    'supporting_evidence': 'Bukti Pendukung (Supporting Evidence)',
+    'decision_number': 'Decision Letter Number',
+    'decision_date': 'Tanggal Keputusan (Decision Date)',
+    'decision_type': 'Keputusan (Decision Type)',
+    'decision_amount': 'Nilai Keputusan (Decision Amount)',
+    'request_number': 'Nomor Surat Permintaan Penjelasan Banding (Request Number)',
+    'request_issue_date': 'Tanggal Diterbitkan (Issue Date)',
+    'request_receipt_date': 'Tanggal Diterima (Receipt Date)',
+    'explanation_letter_number': 'Nomor Surat Penjelasan (Explanation Letter Number)',
+    'explanation_submission_date': 'Tanggal Dilaporkan (Submission Date)',
+    'supreme_court_letter_number': 'Nomor Surat Peninjauan Kembali (Supreme Court Letter Number)',
+    'review_amount': 'Nilai (Review Amount)',
+
+  'spt_number': 'SPT Number', 'filing_date': 'Filing Date', 'received_date': 'Received Date',
+  'reported_amount': 'Reported Amount', 'vat_in_amount': 'Input VAT Amount', 'vat_out_amount': 'Output VAT Amount',
+  'description': 'Description', 'auditor_position': 'Auditor Position', 'notes': 'Notes',
+  'skp_due_date': 'SKP Due Date', 'spuh_number': 'SPUH Number', 'reply_number': 'Reply Letter Number', 'reply_date': 'Reply Date',
+  'appeal_number': 'Appeal Letter Number', 'dispute_number': 'Dispute Number', 'appeal_amount': 'Appeal Amount',
+  'appeal_grounds': 'Grounds for Appeal', 'decision_notes': 'Decision Notes', 'submission_number': 'Submission Number',
+  'submission_amount': 'Submission Amount', 'refund_amount': 'Refund Amount',
+  'supporting_docs': 'Supporting Documents', 'create_refund': 'Create Refund Process', 'continue_to_next_stage': 'Continue to Next Stage'
+}
+
+// Presentation metadata only; API keys and server allowlists remain authoritative.
+export const revisionFieldLabel = (field, stage, definitions = []) => {
+  if (field === 'disputed_amount') return String(stage) === '1' ? 'SPT Amount' : 'Disputed Amount'
+  return REVISION_LABELS[field] || definitions.find(def => def.key === field)?.label
+    || String(field).replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())
+}
+
+const MONEY_FIELDS = new Set(['reported_amount', 'disputed_amount', 'vat_in_amount', 'vat_out_amount',
+  'royalty_finding', 'service_finding', 'other_finding', 'skp_amount', 'royalty_correction',
+  'service_correction', 'other_correction', 'objection_amount', 'appeal_amount', 'decision_amount',
+  'submission_amount', 'review_amount', 'refund_amount'])
+export const isRevisionMoney = field => MONEY_FIELDS.has(field)
+export const revisionCurrency = taxCase => /^[A-Z]{3}$/.test(taxCase?.currency?.code || '') ? taxCase.currency.code : ''
+export const revisionMoneyPreview = (value, currency = '') => {
+  const raw = String(value ?? '')
+  return /^\d{1,18}(?:\.\d{1,2})?$/.test(raw) ? formatRefundAmount(raw, currency) : ''
+}
+export const revisionDisplayValue = (field, value, currency = '') => {
+  if (value === null || value === undefined || value === '') return '(empty)'
+  if (['create_refund', 'continue_to_next_stage'].includes(field)) return [true, 1, '1'].includes(value) ? 'Yes' : 'No'
+  if (isRevisionMoney(field)) return formatRefundAmount(value, currency)
+  return value
+}
+
 /**
  * Frontend Field Configuration for Revisions
  * Mirrors backend RevisionFieldConfig for consistency
@@ -125,7 +205,7 @@ export const getFieldLabels = (modelType) => {
  */
 export const getFieldLabel = (modelType, fieldName) => {
   const labels = getFieldLabels(modelType)
-  return labels[fieldName] || fieldName
+  return labels[fieldName] || revisionFieldLabel(fieldName)
 }
 
 /**

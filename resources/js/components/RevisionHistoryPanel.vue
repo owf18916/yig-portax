@@ -116,6 +116,7 @@
       v-if="showRequestModal"
       :case-id="caseId"
       :stage-id="stageId"
+      :tax-case="taxCase"
       :available-fields="availableFields"
       :fields="fields"
       :current-documents="currentDocuments"
@@ -127,6 +128,9 @@
     <BeforeAfterComparison 
       v-if="selectedRevision"
       :revision="selectedRevision"
+      :tax-case="taxCase"
+      :stage-id="stageId"
+      :fields="fields"
       @close="selectedRevision = null"
     />
 
@@ -161,14 +165,13 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { useRevisionFields } from '@/composables/useRevisionFields'
+import { revisionFieldLabel, revisionDisplayValue, revisionCurrency } from '@/composables/useRevisionFields'
 import { useToast } from '@/composables/useToast'
 import RequestRevisionModalV2 from './RequestRevisionModalV2.vue'
 import BeforeAfterComparison from './BeforeAfterComparison.vue'
 import RevisionApprovalModalV2 from './RevisionApprovalModalV2.vue'
 import SubmitRevisedDataModal from './SubmitRevisedDataModal.vue'
 
-const { getFieldLabel } = useRevisionFields()
 
 const props = defineProps({
   caseId: { type: Number, required: true },
@@ -300,26 +303,7 @@ const formatDate = (date) => {
   })
 }
 
-const fieldLabel = (field) => {
-  // Special labels for decision checkbox fields
-  if (field === 'create_refund') {
-    return 'Create Refund Process'
-  }
-  if (field === 'continue_to_next_stage') {
-    return 'Continue to Next Stage'
-  }
-  
-  // Look for the field in the fields array first (highest priority)
-  if (props.fields && props.fields.length > 0) {
-    const fieldDef = props.fields.find(f => f.key === field)
-    if (fieldDef && fieldDef.label) {
-      return fieldDef.label
-    }
-  }
-  
-  // Fallback to getFieldLabel from composable
-  return getFieldLabel(props.entityType, field)
-}
+const fieldLabel = field => revisionFieldLabel(field, props.stageId, props.fields)
 
 const showComparison = (revision) => {
   selectedRevision.value = revision
@@ -378,11 +362,6 @@ const getDocFileName = (docId, revision) => {
 }
 
 const formatProposedValue = (field, value) => {
-  // For boolean fields, show as Yes/No
-  if (field === 'create_refund' || field === 'continue_to_next_stage') {
-    return value ? 'Yes' : 'No'
-  }
-  
   // For period_id, show the period_code instead of the ID
   if (field === 'period_id' && props.periodsList && props.periodsList.length > 0) {
     const period = props.periodsList.find(p => p.id === value)
@@ -392,7 +371,7 @@ const formatProposedValue = (field, value) => {
   }
   
   // For other fields, return value as is
-  return value
+  return revisionDisplayValue(field, value, revisionCurrency(props.taxCase))
 }
 
 const getDocumentChanges = (revision) => {

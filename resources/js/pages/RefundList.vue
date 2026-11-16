@@ -46,7 +46,7 @@
                   {{ formatStageSource(refund.stage_source) }}
                 </span>
               </td>
-              <td class="px-4 py-3 text-gray-700">{{ refund.refund_number }}</td>
+              <td class="px-4 py-3 text-gray-700">{{ refundOriginDescription(refund.refund_number) }}<span v-if="refundOriginDescription(refund.refund_number) !== refund.refund_number" class="block text-xs font-normal text-gray-500">Reference: {{ refund.refund_number }}</span></td>
               <td class="px-4 py-3 text-right font-semibold text-gray-900">{{ formatCurrency(refund.refund_amount, currencyCode) }}</td>
               <td class="px-4 py-3 text-gray-700">{{ formatMethod(refund.refund_method) }}</td>
               <td class="px-4 py-3">
@@ -85,7 +85,7 @@
 <script setup>
 import { computed } from 'vue'
 import Card from '../components/Card.vue'
-import { formatRefundMethod } from '../utils/refundPresentation.js'
+import { refundOriginDescription, formatRefundMethod } from '../utils/refundPresentation.js'
 
 const props = defineProps({
   refunds: {

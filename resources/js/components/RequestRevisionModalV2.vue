@@ -95,15 +95,14 @@
             <!-- Disputed Amount -->
             <div v-if="selectedFields.includes('disputed_amount')" class="mb-3">
               <label class="form-label text-sm">{{ disputedAmountLabel }}</label>
-              <FormField
+              <input
                 v-model="proposedValues.disputed_amount"
-                type="formatted-number"
-                :decimal-places="2"
-                min="0"
+                type="text" inputmode="decimal"
                 placeholder="Enter new amount"
                 class="form-control"
                 required
               />
+              <p class="text-sm text-gray-500 mt-1" aria-live="polite">{{ amountPreview(proposedValues.disputed_amount) }}</p>
             </div>
 
             <!-- Dynamic Text/Email/Date Fields -->
@@ -150,7 +149,15 @@
               <!-- Number Input -->
               <div v-if="getFieldType(field) === 'number' && field !== 'disputed_amount'" class="mb-3">
                 <label class="form-label text-sm">{{ fieldLabel(field) }}</label>
-                <FormField
+                <input v-if="isRevisionMoney(field)"
+                  v-model="proposedValues[field]"
+                  type="text" inputmode="decimal"
+                  :aria-label="fieldLabel(field)"
+                  :placeholder="`Enter new amount for ${fieldLabel(field)}`"
+                  class="form-control" required
+                />
+                <p v-if="isRevisionMoney(field)" class="text-sm text-gray-500 mt-1" aria-live="polite">{{ amountPreview(proposedValues[field]) }}</p>
+                <FormField v-else
                   v-model="proposedValues[field]"
                   type="formatted-number"
                   :decimal-places="2"
@@ -337,10 +344,12 @@ import SptFilingMethod from './SptFilingMethod.vue'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useToast } from '@/composables/useToast'
 import FormField from './FormField.vue'
+import { revisionFieldLabel, isRevisionMoney, revisionCurrency, revisionMoneyPreview } from '../composables/useRevisionFields.js'
 
 const props = defineProps({
   caseId: { type: Number, required: true },
   stageId: { type: [String, Number], default: '1' },
+  taxCase: { type: Object, default: () => ({}) },
   currentPeriod: { type: Number },
   currentCurrency: { type: Number },
   currentAmount: { type: Number },
@@ -420,74 +429,13 @@ const canSubmit = computed(() => {
          uploadProgress.value === 0
 })
 
-const disputedAmountLabel = computed(() =>
-  String(props.stageId) === '1' ? 'Nilai SPT' : 'Disputed Amount (Nilai Sengketa)'
-)
-
-const fieldLabel = (field) => {
-  // Special cases for decision checkboxes
-  if (field === 'create_refund') return 'Create Refund Process'
-  if (field === 'continue_to_next_stage') return 'Continue to Next Stage'
-  if (field === 'supporting_docs') return 'Supporting Documents'
-  
-  // Look for the field in the fields array
-  if (props.fields && props.fields.length > 0) {
-    const fieldDef = props.fields.find(f => f.key === field)
-    if (fieldDef && fieldDef.label) {
-      return fieldDef.label
-    }
-  }
-  
-  // Fallback to hardcoded labels for common fields
-  const labels = {
-    'spt_position_type': 'Posisi SPT',
-    'spt_type': 'Jenis Pengajuan Lebih Bayar',
-    'period_id': 'Fiscal Period',
-    'currency_id': 'Currency',
-    'disputed_amount': disputedAmountLabel.value,
-    'sp2_number': 'Nomor SP2 (SP2 Number)',
-    'issue_date': 'Tanggal Diterbitkan (Issue Date)',
-    'receipt_date': 'Tanggal Diterima (Receipt Date)',
-    'auditor_name': 'Auditor Name',
-    'auditor_phone': 'Auditor Phone',
-    'auditor_email': 'Auditor Email',
-    'sphp_number': 'Nomor SPHP (SPHP Number)',
-    'sphp_issue_date': 'Tanggal Diterbitkan (Issue Date)',
-    'sphp_receipt_date': 'Tanggal Diterima (Receipt Date)',
-    'royalty_finding': 'Royalty Finding Amount',
-    'service_finding': 'Service Finding Amount',
-    'other_finding': 'Other Finding Amount',
-    'other_finding_notes': 'Notes for Other Findings',
-    'skp_number': 'Nomor SKP (SKP Number)',
-    'skp_type': 'Jenis SKP (SKP Type)',
-    'skp_amount': 'Nilai SKP (SKP Amount)',
-    'royalty_correction': 'Royalty Correction Amount',
-    'service_correction': 'Service Correction Amount',
-    'other_correction': 'Other Correction Amount',
-    'correction_notes': 'Catatan untuk koreksi (Notes for Corrections)',
-    'user_routing_choice': 'Routing Choice (Refund/Objection)',
-    'objection_number': 'Nomor Surat Keberatan (Objection Letter Number)',
-    'submission_date': 'Tanggal Dilaporkan (Submission Date)',
-    'objection_amount': 'Nilai Keberatan (Objection Amount)',
-    'objection_grounds': 'Alasan Keberatan (Grounds for Objection)',
-    'supporting_evidence': 'Bukti Pendukung (Supporting Evidence)',
-    'decision_number': 'Nomor Surat Keputusan Keberatan (Decision Number)',
-    'decision_date': 'Tanggal Keputusan (Decision Date)',
-    'decision_type': 'Keputusan (Decision Type)',
-    'decision_amount': 'Nilai Keputusan (Decision Amount)',
-    'request_number': 'Nomor Surat Permintaan Penjelasan Banding (Request Number)',
-    'request_issue_date': 'Tanggal Diterbitkan (Issue Date)',
-    'request_receipt_date': 'Tanggal Diterima (Receipt Date)',
-    'explanation_letter_number': 'Nomor Surat Penjelasan (Explanation Letter Number)',
-    'explanation_submission_date': 'Tanggal Dilaporkan (Submission Date)',
-    'supreme_court_letter_number': 'Nomor Surat Peninjauan Kembali (Supreme Court Letter Number)',
-    'review_amount': 'Nilai (Review Amount)'
-  }
-  return labels[field] || field
-}
+const disputedAmountLabel = computed(() => revisionFieldLabel('disputed_amount', props.stageId))
+const fieldLabel = field => revisionFieldLabel(field, props.stageId, props.fields)
+const amountPreview = value => revisionMoneyPreview(value, revisionCurrency(props.taxCase))
 
 const getFieldType = (field) => {
   if (field === 'spt_type') return 'spt-method'
+  if (isRevisionMoney(field)) return 'number'
   // Look for the field type in the fields array
   if (props.fields && props.fields.length > 0) {
     const fieldDef = props.fields.find(f => f.key === field)
@@ -692,6 +640,14 @@ const submit = async () => {
   } else if (!hasFieldValueChanges) {
     // If not doing docs, must have at least one field change
     error.value = 'Please provide at least one proposed change (modify field values or add/delete documents)'
+    return
+  }
+
+  const invalidAmount = selectedFields.value.find(field => isRevisionMoney(field)
+    && proposedValues.value[field] !== null && proposedValues.value[field] !== ''
+    && !revisionMoneyPreview(proposedValues.value[field]))
+  if (invalidAmount) {
+    fieldError.value = `${fieldLabel(invalidAmount)}: enter a nonnegative decimal with up to 18 integral digits and two decimal places.`
     return
   }
 

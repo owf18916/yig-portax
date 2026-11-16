@@ -68,7 +68,7 @@
           <div class="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg">
             <div>
               <p class="text-xs text-gray-600">Refund Number</p>
-              <p class="font-semibold text-gray-900">{{ refundNumber }}</p>
+              <p class="font-semibold text-gray-900">{{ refundOriginDescription(refundNumber) }}<span v-if="refundOriginDescription(refundNumber) !== refundNumber" class="block text-xs font-normal text-gray-500">Reference: {{ refundNumber }}</span></p>
             </div>
             <div>
               <p class="text-xs text-gray-600">{{ isPreliminary ? 'Refund Amount' : 'Current Refund Amount' }}</p>
@@ -184,7 +184,7 @@
 </template>
 
 <script setup>
-import { refundAmountDifference, formatRefundAmount } from '../utils/refundPresentation.js'
+import { refundOriginDescription, refundAmountDifference, formatRefundAmount } from '../utils/refundPresentation.js'
 import { apiFetch as fetch } from '../composables/useSessionApi.js'
 
 import { ref, computed, onMounted, watch } from 'vue'

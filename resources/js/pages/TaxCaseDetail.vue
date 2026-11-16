@@ -215,7 +215,7 @@
                     <!-- Refund Header -->
                     <div class="flex items-center justify-between mb-3">
                       <div>
-                        <p class="font-semibold text-gray-900">Refund #{{ refund.refund_number }}</p>
+                        <p class="font-semibold text-gray-900">{{ refundOriginDescription(refund.refund_number) }}<span v-if="refundOriginDescription(refund.refund_number) !== refund.refund_number" class="block text-xs font-normal text-gray-500">Reference: {{ refund.refund_number }}</span></p>
                         <p class="text-xs text-gray-600 mt-0.5">Current Refund Amount: {{ formatRefundAmount(refund.refund_amount, caseData.currency?.code) }} · {{ refund.refund_method }}</p>
                       </div>
                       <div v-if="Number(refund.stage_id) !== 0" class="text-xs text-gray-600">
@@ -345,7 +345,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useToast } from '../composables/useToast'
 import { useTaxCaseStore } from '../stores/taxCaseStore'
 import Card from '../components/Card.vue'
-import { formatRefundAmount, refundAmountDifference } from '../utils/refundPresentation.js'
+import { refundOriginDescription, formatRefundAmount, refundAmountDifference } from '../utils/refundPresentation.js'
 import Button from '../components/Button.vue'
 import Alert from '../components/Alert.vue'
 import LoadingSpinner from '../components/LoadingSpinner.vue'

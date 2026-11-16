@@ -49,10 +49,10 @@
                   <span class="field-name">{{ fieldLabel(field) }}</span>
                 </td>
                 <td class="col-original">
-                  <span class="value-badge old-value">{{ formatValue(change.original) }}</span>
+                  <span class="value-badge old-value">{{ formatValue(field, change.original) }}</span>
                 </td>
                 <td class="col-revised">
-                  <span class="value-badge new-value">{{ formatValue(change.revised) }}</span>
+                  <span class="value-badge new-value">{{ formatValue(field, change.revised) }}</span>
                 </td>
               </tr>
             </tbody>
@@ -95,8 +95,12 @@
 
 <script setup>
 import { computed } from 'vue'
+import { revisionFieldLabel, revisionDisplayValue, revisionCurrency } from '../composables/useRevisionFields.js'
 
 const props = defineProps({
+  taxCase: { type: Object, default: () => ({}) },
+  stageId: { type: [String, Number] },
+  fields: { type: Array, default: () => [] },
   revision: { type: Object, required: true }
 })
 
@@ -118,39 +122,8 @@ const changes = computed(() => {
   }, {})
 })
 
-const fieldLabel = (field) => {
-  const labels = {
-    'spt_number': 'SPT Number',
-    'filing_date': 'Filing Date',
-    'received_date': 'Received Date',
-    'reported_amount': 'Reported Amount',
-    'disputed_amount': 'Disputed Amount',
-    'vat_in_amount': 'VAT In Amount',
-    'vat_out_amount': 'VAT Out Amount',
-    'description': 'Description'
-  }
-  return labels[field] || field
-}
-
-const formatValue = (value) => {
-  if (value === null || value === undefined || value === '') {
-    return '(empty)'
-  }
-  
-  // Format currency if numeric
-  if (!isNaN(value) && value !== '') {
-    const num = parseFloat(value)
-    if (num > 999) {
-      return new Intl.NumberFormat('id-ID', {
-        style: 'currency',
-        currency: 'IDR',
-        minimumFractionDigits: 0
-      }).format(num)
-    }
-  }
-  
-  return String(value)
-}
+const fieldLabel = field => revisionFieldLabel(field, props.stageId, props.fields)
+const formatValue = (field, value) => revisionDisplayValue(field, value, revisionCurrency(props.taxCase))
 
 const formatDate = (date) => {
   if (!date) return '-'

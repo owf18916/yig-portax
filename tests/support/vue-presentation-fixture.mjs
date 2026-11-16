@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import * as vue from 'vue'
 import * as serverRenderer from 'vue/server-renderer'
-import { refundAmountError, formatRefundAmount } from '../../resources/js/utils/refundPresentation.js'
+import { refundOriginDescription, refundAmountError, formatRefundAmount } from '../../resources/js/utils/refundPresentation.js'
 import { parse, compileTemplate } from '@vue/compiler-sfc'
 
 export async function component(path, globals = {}) {
@@ -20,15 +20,15 @@ export async function component(path, globals = {}) {
   const clientCode = client.code.replace(/import \{([^}]+)\} from "vue"/g, (_, names) =>
     `const {${names.replace(/ as /g, ': ')}} = clientVue`).replace('export function render', 'function clientRenderFn')
   const names = [...script.matchAll(/^(?:const|function|async function) (\w+)/gm)].map(m => m[1])
-  const context = vm.createContext({ ...vue, vue, serverRenderer, FormData, refundAmountError, formatRefundAmount, clientVue: { ...vue, resolveComponent: name => name, withDirectives: node => node }, console: { log() {}, warn() {}, error() {} },
+  const context = vm.createContext({ ...vue, vue, serverRenderer, FormData, refundOriginDescription, refundAmountError, formatRefundAmount, clientVue: { ...vue, resolveComponent: name => name, withDirectives: node => node }, console: { log() {}, warn() {}, error() {} },
     onMounted() {}, onUnmounted() {}, watch() {}, defineEmits: () => () => {}, defineProps: () => ({}),
     useRoute: () => ({ params: { id: '9' } }), useRouter: () => ({ push() {} }),
     useRevisionAPI: () => ({ listRevisions: async () => [] }), session: {}, ...globals })
   vm.runInContext(`${script}\nglobalThis.state = { ${names.join(',')} };\n${code}\nglobalThis.render = ssrRender`, context)
   vm.runInContext(`{ ${clientCode}\nglobalThis.clientRender = clientRenderFn }`, context)
   const shell = { props: ['title', 'subtitle', 'message'], setup: (p, { slots }) => () => vue.h('div', [p.title, p.subtitle, p.message, slots.default?.()]) }
-  return { state: context.state, client: () => context.clientRender(vue.proxyRefs({ ...context.state.props, ...context.state }), []), render: async (bindings = {}) => serverRenderer.renderToString(vue.createSSRApp({
-    setup: () => ({ ...context.state.props, ...context.state, ...bindings }), ssrRender: context.render,
+  return { state: context.state, client: (bindings = {}) => context.clientRender(vue.proxyRefs({ refundOriginDescription, ...context.state.props, ...context.state, ...bindings }), []), render: async (bindings = {}) => serverRenderer.renderToString(vue.createSSRApp({
+    setup: () => ({ refundOriginDescription, ...context.state.props, ...context.state, ...bindings }), ssrRender: context.render,
     components: Object.fromEntries(['Button', 'Card', 'Alert', 'Toast', 'ConfirmationDialog', 'LoadingSpinner', 'FormField', 'StageForm', 'RevisionHistoryPanel', 'SptFilingMethod', 'DecisionActions'].map(n => [n, shell])),
   })) }
 }

@@ -73,7 +73,7 @@
           </div>
 
           <div v-if="isEditingExisting" class="bg-gray-50 border border-gray-200 rounded-lg p-4">
-            <p class="font-semibold">{{ refundNumber }}</p>
+            <p class="font-semibold">{{ refundOriginDescription(refundNumber) }}<span v-if="refundOriginDescription(refundNumber) !== refundNumber" class="block text-xs font-normal text-gray-500">Reference: {{ refundNumber }}</span></p>
             <p>Origin: {{ originLabel || 'Unavailable' }}</p>
             <p v-if="availabilityMessage" class="text-sm mt-2">{{ availabilityMessage }}</p>
           </div>
@@ -176,7 +176,7 @@
 </template>
 
 <script setup>
-import { refundAmountDifference, formatRefundAmount } from '../utils/refundPresentation.js'
+import { refundOriginDescription, refundAmountDifference, formatRefundAmount } from '../utils/refundPresentation.js'
 import { apiFetch as fetch } from '../composables/useSessionApi.js'
 
 import { ref, computed, onMounted, watch } from 'vue'

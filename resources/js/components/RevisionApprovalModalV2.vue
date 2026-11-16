@@ -118,7 +118,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useRevisionAPI } from '@/composables/useRevisionAPI'
-import { useRevisionFields } from '@/composables/useRevisionFields'
+import { revisionFieldLabel, revisionDisplayValue, revisionCurrency } from '@/composables/useRevisionFields'
 import { useToast } from '@/composables/useToast'
 
 const props = defineProps({
@@ -135,7 +135,6 @@ const props = defineProps({
 const emit = defineEmits(['close', 'approved', 'rejected'])
 
 const { decideRevision, loading: apiLoading, error: apiError } = useRevisionAPI()
-const { getFieldLabel } = useRevisionFields()
 const { showSuccess, showError } = useToast()
 
 const selectedDecision = ref(null)
@@ -165,18 +164,8 @@ const formatDate = (date) => {
   })
 }
 
-const fieldLabel = (field) => {
-  // Look for the field in the fields array first
-  if (props.fields && props.fields.length > 0) {
-    const fieldDef = props.fields.find(f => f.key === field)
-    if (fieldDef && fieldDef.label) {
-      return fieldDef.label
-    }
-  }
-  
-  // Fallback to getFieldLabel from composable
-  return getFieldLabel(props.entityType, field)
-}
+const fieldLabel = field => revisionFieldLabel(field, props.revision?.stage_code, props.fields)
+const displayValue = (field, value) => revisionDisplayValue(field, value, revisionCurrency(props.taxCase))
 
 const getOriginalValue = (field) => {
   console.log(`[getOriginalValue] Getting value for field: ${field}`)
@@ -205,7 +194,7 @@ const getOriginalValue = (field) => {
         }
       }
       
-      return displayValue
+      return revisionDisplayValue(field, displayValue, revisionCurrency(props.taxCase))
     }
   }
   
@@ -229,7 +218,7 @@ const getOriginalValue = (field) => {
       }
     }
     
-    return displayValue
+    return revisionDisplayValue(field, displayValue, revisionCurrency(props.taxCase))
   }
   
   console.log(`[getOriginalValue] Not found, returning N/A`)
@@ -246,7 +235,7 @@ const formatProposedValue = (field, value) => {
   }
   
   // For other fields, return value as is
-  return value
+  return displayValue(field, value)
 }
 
 const getDocFileName = (docId) => {

@@ -14,7 +14,7 @@ export const formatRefundMethod = (method) => {
 // Decimal string formatting keeps large integral digits and cents lossless.
 export const formatRefundAmount = (value, currencyCode = '') => {
   const text = String(value ?? '0')
-  if (!/^\d+(?:\.\d{1,2})?$/.test(text)) return [currencyCode, text].filter(Boolean).join(' ')
+  if (!/^-?\d+(?:\.\d{1,2})?$/.test(text)) return [currencyCode, text].filter(Boolean).join(' ')
   const [whole, fraction = ''] = text.split('.')
   return [currencyCode, `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${fraction.padEnd(2, '0')}`].filter(Boolean).join(' ')
 }
@@ -40,4 +40,11 @@ export const refundAmountDifference = (current, historical, currencyCode = '') =
   const difference = a - b
   const absolute = difference < 0n ? -difference : difference
   return `${difference < 0n ? '-' : ''}${formatRefundAmount(`${absolute / 100n}.${String(absolute % 100n).padStart(2, '0')}`, currencyCode)}`
+}
+
+// Only the canonical generated reference encodes origin; retain all other business references.
+export const refundOriginDescription = reference => {
+  const match = /^DECISION-(4|7|10|12)-\d+-\d+$/.exec(String(reference ?? ''))
+  const origins = { 4: 'SKP', 7: 'Objection', 10: 'Appeal', 12: 'Supreme Court' }
+  return match ? `Refund from ${origins[match[1]]} Decision (Stage ${match[1]})` : reference
 }

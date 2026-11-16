@@ -6,7 +6,7 @@ import vm from 'node:vm'
 import * as vue from 'vue'
 import * as serverRenderer from 'vue/server-renderer'
 import { parse, compileTemplate } from '@vue/compiler-sfc'
-import { formatRefundMethod, formatRefundAmount, refundAmountDifference } from '../resources/js/utils/refundPresentation.js'
+import { refundOriginDescription, formatRefundMethod, formatRefundAmount, refundAmountDifference } from '../resources/js/utils/refundPresentation.js'
 
 const pages = new Map()
 for (const stage of [1, 2, 3, 4]) {
@@ -34,7 +34,7 @@ function fixture(stage, data, refundId = '41', query = { stageId: '0' }, failure
       resolveComponent: name => name,
       withDirectives: (node, directives) => Object.assign(node, { testDirectives: directives }),
     },
-    serverRenderer, formatRefundMethod, formatRefundAmount, refundAmountDifference, console: { log() {}, error() {} },
+    serverRenderer, refundOriginDescription, formatRefundMethod, formatRefundAmount, refundAmountDifference, console: { log() {}, error() {} },
     onMounted() {}, useRoute: () => testRoute,
     useRouter: () => ({ back() {}, push: target => navigations.push(target) }), useToast: () => ({ showSuccess() {}, showError() {} }),
     setTimeout: callback => callback(),
@@ -46,7 +46,7 @@ function fixture(stage, data, refundId = '41', query = { stageId: '0' }, failure
     },
   })
   const names = [...page.script.matchAll(/^const (\w+) =/gm)].map(match => match[1])
-  vm.runInContext(`${page.script}\nglobalThis.state = { refundAmountDifference, ${names.join(', ')} };\n${page.ssr}\nglobalThis.ssr = ssrRender;`, context)
+  vm.runInContext(`${page.script}\nglobalThis.state = { refundOriginDescription, refundAmountDifference, ${names.join(', ')} };\n${page.ssr}\nglobalThis.ssr = ssrRender;`, context)
   vm.runInContext(`{ ${page.client}\nglobalThis.client = render; }`, context)
   return {
     state: context.state, calls, navigations, route: testRoute,
