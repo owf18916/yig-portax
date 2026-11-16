@@ -332,11 +332,11 @@ class RevisionController extends Controller
     }
 
     /**
-     * List all revisions for a TaxCase
+     * List a bounded page of revisions for a TaxCase
      * 
      * GET /api/tax-cases/{caseId}/revisions
      */
-    public function indexRevisions(TaxCase $taxCase): JsonResponse
+    public function indexRevisions(Request $request, TaxCase $taxCase): JsonResponse
     {
         // Route middleware enforces this too; retain it at the controller
         // boundary because history visibility follows TaxCase visibility,
@@ -345,20 +345,34 @@ class RevisionController extends Controller
 
         $user = auth()->user()->load('entity');
 
-        $revisions = $taxCase->revisions()
-            ->with([
-                'requestedBy:id,name,email',
-                'approvedBy:id,name,email',
-            ])
-            ->latest()
-            ->get();
+        $input = $request->validate([
+            'stage_code' => 'sometimes|required|integer|between:1,15',
+            'page' => 'sometimes|required|integer|min:1|max:1000000',
+        ]);
+        // The same endpoint is always bounded, including case-wide callers.
+        $query = $taxCase->revisions()
+            ->when(isset($input['stage_code']), fn ($q) => $q->where('stage_code', $input['stage_code']));
+        $pending = (clone $query)->where('revision_status', 'requested')
+            ->orderByDesc('created_at')->orderByDesc('id')->first(['id', 'created_at']);
+        $pendingPage = null;
+        if ($pending) {
+            $ahead = (clone $query)->where(function ($q) use ($pending) {
+                $q->where('created_at', '>', $pending->created_at)->orWhere(function ($q) use ($pending) {
+                    $q->where('created_at', $pending->created_at)->where('id', '>', $pending->id);
+                });
+            })->count();
+            $pendingPage = intdiv($ahead, 20) + 1;
+        }
+        $page = (clone $query)->with(['requestedBy:id,name,email', 'approvedBy:id,name,email'])
+            ->orderByDesc('created_at')->orderByDesc('id')->paginate(20, ['*'], 'page', $input['page'] ?? 1);
+        $revisions = $page->getCollection();
 
         $documentIds = $revisions->flatMap(fn ($revision) => array_merge(
             $revision->proposed_document_changes['files_to_delete'] ?? [],
             $revision->proposed_document_changes['files_to_add'] ?? []
         ))->filter()->unique()->values();
         $documents = Document::withTrashed()->whereIn('id', $documentIds)->where('tax_case_id', $taxCase->id)
-            ->get(['id', 'original_filename'])->keyBy('id');
+            ->get(['id', 'original_filename'])->keyBy('id')->toBase();
         $revisions->each(function ($revision) use ($documents, $user, $taxCase) {
             $ids = collect(array_merge($revision->proposed_document_changes['files_to_delete'] ?? [], $revision->proposed_document_changes['files_to_add'] ?? []));
             $revision->documents = $documents->only($ids->all())->toArray();
@@ -374,6 +388,11 @@ class RevisionController extends Controller
 
         return response()->json([
             'data' => $revisions,
+            'meta' => [
+                'current_page' => $page->currentPage(), 'last_page' => $page->lastPage(),
+                'per_page' => 20, 'total' => $page->total(),
+                'pending' => $pending ? ['id' => $pending->id, 'page' => $pendingPage] : null,
+            ],
         ]);
     }
 

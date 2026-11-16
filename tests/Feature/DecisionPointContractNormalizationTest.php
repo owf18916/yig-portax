@@ -676,6 +676,33 @@ class DecisionPointContractNormalizationTest extends TestCase
         $this->assertDatabaseCount('notification_attempts', 0);
     }
 
+    public function test_g3_stage_eleven_submission_rejects_precision_and_reloads_exact_cents(): void
+    {
+        \Illuminate\Support\Facades\Http::preventStrayRequests();
+        \Illuminate\Support\Facades\Mail::fake();
+        $this->prepareStage(11);
+        $this->case->appealDecision()->update(['continue_to_next_stage'=>true,'next_stage'=>11]);
+        $payload = ['action'=>'draft','supreme_court_letter_number'=>'G3-SUBMIT', 'submission_date'=>'2026-11-01'];
+        foreach (['12.345','1000000000000000','1e3','-1'] as $bad) {
+            $this->postJson($this->url(11), $payload + ['review_amount'=>$bad])->assertUnprocessable()->assertJsonValidationErrors('review_amount');
+            $this->assertDatabaseCount('supreme_court_submissions',0);
+        }
+        foreach (['12'=>'12.00','12.34'=>'12.34','0.01'=>'0.01'] as $input=>$expected) {
+            $this->postJson($this->url(11), $payload + ['review_amount'=>(string)$input])->assertOk();
+            $this->assertSame($expected, SupremeCourtSubmission::sole()->review_amount);
+            $this->getJson("/api/tax-cases/{$this->case->id}")->assertOk()->assertJsonPath('data.supreme_court_submission.review_amount',$expected);
+        }
+        // Nullable review_amount clears independently of the required sibling column.
+        $this->postJson($this->url(11), $payload + ['review_amount'=>null])->assertOk();
+        $this->assertNull(SupremeCourtSubmission::sole()->review_amount);
+        $this->assertEquals('0.01', SupremeCourtSubmission::sole()->submission_amount);
+        $payload['action'] = 'submit';
+        $this->postJson($this->url(11), $payload + ['review_amount'=>'12.34'])->assertOk();
+        $this->getJson("/api/tax-cases/{$this->case->id}")->assertOk()->assertJsonPath('data.supreme_court_submission.review_amount','12.34');
+        $this->postJson($this->url(11), $payload + ['review_amount'=>'99.99'])->assertConflict();
+        $this->assertSame('12.34', SupremeCourtSubmission::sole()->review_amount);
+    }
+
     private function prepareStage(int $stage): void
     {
         if ($stage > 4) \App\Models\SkpRecord::create(['tax_case_id' => $this->case->id, 'skp_number' => 'PRIOR-SKP', 'skp_type' => 'NIHIL', 'skp_amount' => 0]);

@@ -34,14 +34,13 @@
         :case-id="caseId"
         :stage-id="1"
         :tax-case="caseData"
-        :revisions="revisions"
         :current-user="currentUser"
         :current-documents="currentDocuments"
         :periods-list="periodsList"
         :available-fields="availableFields"
         :fields="fields"
-        @revision-requested="loadRevisions"
-        @refresh="loadRevisions"
+        @revision-requested="refreshTaxCase"
+        @refresh="refreshTaxCase"
       />
     </div>
   </div>
@@ -52,14 +51,12 @@ import { apiFetch as fetch } from '../composables/useSessionApi.js'
 
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { useRevisionAPI } from '@/composables/useRevisionAPI'
 import StageForm from '../components/StageForm.vue'
 import Alert from '../components/Alert.vue'
 import RevisionHistoryPanel from '../components/RevisionHistoryPanel.vue'
 
 const route = useRoute()
 const caseId = parseInt(route.params.id, 10)
-const { listRevisions } = useRevisionAPI()
 const caseNumber = ref('TAX-2026-001')
 const originalCaseNumber = ref('') // Store original case number pattern
 const preFilledMessage = ref('Loading...')
@@ -278,8 +275,7 @@ onMounted(async () => {
     caseStatus.value = caseFetchedData.case_status_id
     preFilledMessage.value = `✅ Pre-filled from ${caseFetchedData.case_type} case (${caseFetchedData.case_number})`
 
-    // Load revisions untuk form ini
-    await loadRevisions()
+
 
     // Load documents
     await loadDocuments()
@@ -319,19 +315,6 @@ onMounted(async () => {
   }
 })
 
-// Load revisions untuk case ini
-const loadRevisions = async () => {
-  try {
-    const revisionsData = await listRevisions('tax-cases', caseId)
-    revisions.value = revisionsData
-    
-    // Also refresh tax case data to update fields if revision was approved
-    await refreshTaxCase()
-  } catch (err) {
-    console.error('Failed to load revisions:', err)
-    revisions.value = []
-  }
-}
 
 // Refresh tax case data after approval
 const refreshTaxCase = async () => {

@@ -37,7 +37,6 @@
         :case-id="caseId"
         :stage-id="7"
         :tax-case="caseData"
-        :revisions="revisions"
         :current-user="currentUser"
         :current-documents="currentDocuments"
         :available-fields="availableFields"
@@ -54,7 +53,6 @@ import { apiFetch as fetch } from '../composables/useSessionApi.js'
 
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useRevisionAPI } from '@/composables/useRevisionAPI'
 import { useToast } from '@/composables/useToast'
 import StageForm from '../components/StageForm.vue'
 import RevisionHistoryPanel from '../components/RevisionHistoryPanel.vue'
@@ -62,7 +60,6 @@ import RevisionHistoryPanel from '../components/RevisionHistoryPanel.vue'
 const route = useRoute()
 const router = useRouter()
 const caseId = parseInt(route.params.id, 10)
-const { listRevisions } = useRevisionAPI()
 const { showError } = useToast()
 
 // Helper function to format date for HTML date input (YYYY-MM-DD)
@@ -79,7 +76,6 @@ const preFilledMessage = ref('Loading...')
 const isLoading = ref(true)
 const caseStatus = ref(null)
 const caseData = ref({})
-const revisions = ref([])
 const currentUser = ref(null)
 const currentDocuments = ref([])
 
@@ -208,7 +204,6 @@ const loadTaxCase = async () => {
       console.log('No objectionDecision found yet')
     }
 
-    await loadRevisions()
   } catch (error) {
     console.error('Error loading case:', error)
     preFilledMessage.value = '⚠️ Error loading case data'
@@ -218,16 +213,6 @@ const loadTaxCase = async () => {
   }
 }
 
-const loadRevisions = async () => {
-  try {
-    const result = await listRevisions('tax-cases', caseId)
-    if (result && Array.isArray(result)) {
-      revisions.value = result
-    }
-  } catch (error) {
-    console.error('Error loading revisions:', error)
-  }
-}
 
 const refreshTaxCase = async () => {
   console.log('[ObjectionDecisionForm] Refreshing tax case after submission...')

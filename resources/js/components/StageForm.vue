@@ -139,8 +139,8 @@
               <FormField
                 v-if="field.type === 'number'"
                 :label="field.label"
-                :type="[7, 10, 12].includes(stageId) && field.key === 'decision_amount' ? 'text' : 'number'"
-                :inputmode="[7, 10, 12].includes(stageId) && field.key === 'decision_amount' ? 'decimal' : undefined"
+                :type="([7, 10, 12].includes(stageId) && field.key === 'decision_amount' || stageId === 11 && field.key === 'review_amount') ? 'text' : 'number'"
+                :inputmode="([7, 10, 12].includes(stageId) && field.key === 'decision_amount' || stageId === 11 && field.key === 'review_amount') ? 'decimal' : undefined"
                 v-model="formData[field.key]"
                 :placeholder="field.placeholder"
                 :required="field.required"
@@ -1251,6 +1251,14 @@ const validateForm = (draft = false) => {
     if ([7, 10, 12].includes(props.stageId) && field.key === 'decision_amount' && value !== null && value !== undefined && value !== '') {
       if (!/^\d+(?:\.\d{1,2})?$/.test(String(value))) {
         formErrors[field.key] = 'Enter a nonnegative decision document amount with at most two decimal places'
+        isValid = false
+      }
+      return
+    }
+
+    if (props.stageId === 11 && field.key === 'review_amount' && value !== null && value !== undefined && value !== '') {
+      if (!/^\d{1,15}(?:\.\d{1,2})?$/.test(String(value))) {
+        formErrors[field.key] = 'Enter a nonnegative Review Amount with at most 15 whole digits and two decimal places'
         isValid = false
       }
       return

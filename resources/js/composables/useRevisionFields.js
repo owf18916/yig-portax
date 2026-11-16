@@ -93,6 +93,9 @@ export const revisionProposal = (stage, field, values) => {
   if (['create_refund', 'continue_to_next_stage'].includes(field) && typeof value !== 'boolean') {
     throw new Error('Choose Yes or No explicitly.')
   }
+  if (Number(stage) === 11 && field === 'review_amount' && !/^\d{1,15}(?:\.\d{1,2})?$/.test(String(value))) {
+    throw new Error('Enter a Review Amount with at most 15 whole digits and two decimal places.')
+  }
   return value
 }
 export const revisionCurrency = taxCase => /^[A-Z]{3}$/.test(taxCase?.currency?.code || '') ? taxCase.currency.code : ''

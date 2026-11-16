@@ -15,8 +15,16 @@
       </span>
     </div>
 
+    <p v-if="historyLoading" role="status">Loading revision history...</p>
+    <div v-else-if="historyError" role="alert">
+      {{ historyError }} <button @click="reload(pageMeta.current_page)">Retry</button>
+    </div>
+    <button v-if="!historyLoading && !historyError && pageMeta.pending && pageMeta.pending.page !== pageMeta.current_page"
+      class="btn btn-sm" @click="reload(pageMeta.pending.page)">
+      View pending Revision #{{ pageMeta.pending.id }}
+    </button>
     <!-- Revisions List -->
-    <div v-if="stageFilteredRevisions.length > 0" class="revisions-list">
+    <div v-if="!historyLoading && !historyError && stageFilteredRevisions.length > 0" class="revisions-list">
       <div 
         v-for="revision in sortedRevisions" 
         :key="revision.id"
@@ -107,10 +115,15 @@
     </div>
 
     <!-- No Revisions -->
-    <div v-else class="no-revisions">
+    <div v-if="!historyLoading && !historyError && stageFilteredRevisions.length === 0" class="no-revisions">
       <p class="text-muted">No revisions for this stage yet</p>
     </div>
 
+    <nav v-if="pageMeta.last_page > 1" aria-label="Revision history pages">
+      <button class="btn btn-sm" :disabled="historyLoading || pageMeta.current_page <= 1" @click="reload(pageMeta.current_page - 1)">Previous</button>
+      <span>Page {{ pageMeta.current_page }} of {{ pageMeta.last_page }}</span>
+      <button class="btn btn-sm" :disabled="historyLoading || pageMeta.current_page >= pageMeta.last_page" @click="reload(pageMeta.current_page + 1)">Next</button>
+    </nav>
     <!-- Request Revision Modal -->
     <RequestRevisionModalV2
       v-if="showRequestModal"
@@ -164,7 +177,8 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
+import { useRevisionAPI } from '@/composables/useRevisionAPI'
 import { revisionFieldLabel, revisionDisplayValue, revisionCurrency } from '@/composables/useRevisionFields'
 import { useToast } from '@/composables/useToast'
 import RequestRevisionModalV2 from './RequestRevisionModalV2.vue'
@@ -177,7 +191,6 @@ const props = defineProps({
   caseId: { type: Number, required: true },
   stageId: { type: [String, Number], default: '1' },
   taxCase: { type: Object, required: true },
-  revisions: { type: Array, default: () => [] },
   currentUser: { type: Object, default: null },
   currentDocuments: { type: Array, default: () => [] },
   periodsList: { type: Array, default: () => [] }, // List of periods for formatting
@@ -206,20 +219,39 @@ const showApprovalModal = ref(false)
 const revisionToApprove = ref(null)
 const showSubmitRevisedModal = ref(false)
 const revisionToSubmit = ref(null)
-const newlyRequestedRevision = ref(null)
-const locallyDecidedRevisions = ref(new Map())
-
-// Keep the successful canonical POST response visible while the one bounded
-// parent refresh is in flight. This also prevents a cached parent list from
-// making a just-created request disappear.
-const visibleRevisions = computed(() => {
-  const byId = new Map(props.revisions.map(revision => [revision.id, revision]))
-  if (newlyRequestedRevision.value?.id) {
-    byId.set(newlyRequestedRevision.value.id, newlyRequestedRevision.value)
+const { listRevisions } = useRevisionAPI()
+const pageRows = ref([])
+const pageMeta = ref({ current_page: 1, last_page: 1, total: 0, pending: null })
+const historyLoading = ref(true)
+const historyError = ref('')
+let loadSequence = 0
+const reload = async (page = 1) => {
+  const sequence = ++loadSequence
+  historyLoading.value = true
+  historyError.value = ''
+  pageRows.value = []
+  try {
+    const result = await listRevisions(props.entityType, props.caseId, { stageCode: props.stageId, page })
+    if (sequence !== loadSequence) return
+    pageRows.value = result.data
+    pageMeta.value = result.meta
+  } catch (error) {
+    if (sequence === loadSequence) historyError.value = error.message
+  } finally {
+    if (sequence === loadSequence) historyLoading.value = false
   }
-  locallyDecidedRevisions.value.forEach((revision, id) => byId.set(id, revision))
-  return [...byId.values()]
-})
+}
+watch(() => [props.caseId, props.stageId, props.entityType], () => {
+  showRequestModal.value = false
+  showApprovalModal.value = false
+  revisionToApprove.value = null
+  selectedRevision.value = null
+  showSubmitRevisedModal.value = false
+  revisionToSubmit.value = null
+  pageMeta.value = { current_page: 1, last_page: 1, total: 0, pending: null }
+  reload()
+}, { immediate: true, flush: 'sync' })
+onUnmounted(() => { ++loadSequence })
 
 // Check if user can request new revision
 const canRequestRevision = computed(() => {
@@ -229,14 +261,9 @@ const canRequestRevision = computed(() => {
     h => h.stage_id === stageIdNum && (h.status === 'submitted' || h.status === 'approved')
   )
   
-  const pending = stageFilteredRevisions.value.find(r => r.revision_status === 'requested')
-  const result = isStageSubmitted && !pending
-  
-  if (stageIdNum === 4) {
-    console.log(`[RevisionHistoryPanel DEBUG] Stage 4 - isStageSubmitted=${isStageSubmitted}, pending=${!!pending}, RESULT=${result}`)
-  }
-  
-  return result
+  const pending = pageMeta.value.pending
+  return isStageSubmitted && !pending && !historyLoading.value && !historyError.value
+
 })
 
 // Message for why button is disabled
@@ -250,7 +277,7 @@ const revisionStatusMessage = computed(() => {
     return '(Submit data first to request revisions)'
   }
   
-  const pending = stageFilteredRevisions.value.find(r => r.revision_status === 'requested')
+  const pending = pageMeta.value.pending
   if (pending) return `(Revision #${pending.id} awaiting review)`
   
   return ''
@@ -259,7 +286,7 @@ const revisionStatusMessage = computed(() => {
 // Filter revisions by CURRENT STAGE ONLY
 const stageFilteredRevisions = computed(() => {
   const stageIdNum = parseInt(props.stageId, 10)
-  return visibleRevisions.value.filter(r => {
+  return pageRows.value.filter(r => {
     // APIs and legacy rows may serialize numeric stage_code differently.
     return Number(r.stage_code) === stageIdNum
   })
@@ -268,7 +295,7 @@ const stageFilteredRevisions = computed(() => {
 // Sort revisions by date (newest first)
 const sortedRevisions = computed(() => {
   return [...stageFilteredRevisions.value].sort((a, b) => 
-    new Date(b.created_at) - new Date(a.created_at)
+    new Date(b.created_at) - new Date(a.created_at) || b.id - a.id
   )
 })
 
@@ -311,7 +338,7 @@ const showComparison = (revision) => {
 
 const onRevisionRequested = (revision) => {
   showRequestModal.value = false
-  newlyRequestedRevision.value = revision
+  reload()
   emit('revision-requested', revision)
   emit('refresh')
 }
@@ -329,6 +356,7 @@ const openSubmitRevisedModal = (revision) => {
 const onRevisedDataSubmitted = (submittedData) => {
   showSubmitRevisedModal.value = false
   revisionToSubmit.value = null
+  reload()
   emit('refresh')
   showSuccess('Revised Data Submitted', 'Your changes have been submitted for approval.')
 }
@@ -336,8 +364,7 @@ const onRevisedDataSubmitted = (submittedData) => {
 const onRevisionApproved = (revision) => {
   showApprovalModal.value = false
   revisionToApprove.value = null
-  locallyDecidedRevisions.value.set(revision.id, revision)
-  locallyDecidedRevisions.value = new Map(locallyDecidedRevisions.value)
+  reload()
   emit('refresh')
   showSuccess('Revision Approved', 'Changes have been successfully applied.')
 }
@@ -345,8 +372,7 @@ const onRevisionApproved = (revision) => {
 const onRevisionRejected = (revision) => {
   showApprovalModal.value = false
   revisionToApprove.value = null
-  locallyDecidedRevisions.value.set(revision.id, revision)
-  locallyDecidedRevisions.value = new Map(locallyDecidedRevisions.value)
+  reload()
   emit('refresh')
   showSuccess('Revision Rejected', 'The revision request has been rejected.')
 }

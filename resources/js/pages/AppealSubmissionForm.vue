@@ -32,7 +32,6 @@
         :case-id="caseId"
         :stage-id="8"
         :tax-case="caseData"
-        :revisions="revisions"
         :current-user="currentUser"
         :current-documents="currentDocuments"
         :available-fields="availableFields"
@@ -49,13 +48,11 @@ import { apiFetch as fetch } from '../composables/useSessionApi.js'
 
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { useRevisionAPI } from '@/composables/useRevisionAPI'
 import StageForm from '../components/StageForm.vue'
 import RevisionHistoryPanel from '../components/RevisionHistoryPanel.vue'
 
 const route = useRoute()
 const caseId = parseInt(route.params.id, 10)
-const { listRevisions } = useRevisionAPI()
 
 // Helper function to format date for HTML date input (YYYY-MM-DD)
 const formatDateForInput = (date) => {
@@ -71,7 +68,6 @@ const preFilledMessage = ref('Loading...')
 const isLoading = ref(true)
 const caseStatus = ref(null)
 const caseData = ref({})
-const revisions = ref([])
 const currentUser = ref(null)
 const currentDocuments = ref([])
 
@@ -171,8 +167,7 @@ onMounted(async () => {
     caseStatus.value = caseFetchedData.case_status_id
     preFilledMessage.value = `✅ Case: ${caseFetchedData.case_number}`
 
-    // Load revisions
-    await loadRevisions()
+
 
     // Load documents
     await loadDocuments()
@@ -200,14 +195,6 @@ onMounted(async () => {
   }
 })
 
-const loadRevisions = async () => {
-  try {
-    const revisionsData = await listRevisions('tax-cases', caseId)
-    revisions.value = revisionsData
-  } catch (error) {
-    console.error('Failed to load revisions:', error)
-  }
-}
 
 const loadDocuments = async () => {
   try {
@@ -250,8 +237,7 @@ const refreshTaxCase = async () => {
           workflowHistories: caseFetchedData.workflow_histories || []
         }
       }
-      
-      await loadRevisions()
+
       await loadDocuments()
     }
   } catch (error) {

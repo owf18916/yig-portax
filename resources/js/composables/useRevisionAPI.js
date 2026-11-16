@@ -166,18 +166,20 @@ export function useRevisionAPI() {
   }
 
   /**
-   * Get all revisions for an entity
+   * Get a bounded revision page for an entity
    * 
    * @param {string} entityType - Entity type
    * @param {number} entityId - Entity ID
-   * @returns {Promise<array>} Array of revision objects
+   * @returns {Promise<object>} { data: Revision[], meta: pagination and pending location }
    */
-  const listRevisions = async (entityType, entityId) => {
+  const listRevisions = async (entityType, entityId, { stageCode, page = 1 } = {}) => {
     loading.value = true
     error.value = null
 
     try {
-      const url = buildUrl(entityType, entityId, 'revisions')
+      const query = new URLSearchParams({ page })
+      if (stageCode !== undefined) query.set('stage_code', stageCode)
+      const url = buildUrl(entityType, entityId, `revisions?${query}`)
       
       const response = await fetch(url, {
         headers: {
@@ -185,7 +187,7 @@ export function useRevisionAPI() {
       })
 
       const data = await handleResponse(response)
-      return data.data || data.revisions || []
+      return data
     } catch (err) {
       error.value = err.message
       throw err

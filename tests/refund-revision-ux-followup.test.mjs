@@ -89,6 +89,8 @@ test('history preserves submitted/draft availability and formats only money', as
   const props = vue.reactive({ caseId: 9, stageId: 4, fields: [], entityType: 'tax-cases', currentDocuments: [], periodsList: [], revisions: [],
     taxCase: { currency: { code: 'USD' }, workflow_histories: [] } })
   const page = await component('components/RevisionHistoryPanel.vue', globals(props))
+  page.state.historyLoading.value = false
+  page.state.pageRows.value = props.revisions
   assert.equal(page.state.canRequestRevision.value, false)
   props.taxCase.workflow_histories.push({ stage_id: 4, status: 'submitted' })
   assert.equal(page.state.canRequestRevision.value, true)

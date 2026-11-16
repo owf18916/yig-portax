@@ -34,7 +34,6 @@
         :case-id="caseId"
         :stage-id="13"
         :tax-case="caseData"
-        :revisions="revisions"
         :current-user="currentUser"
         :current-documents="currentDocuments"
         :available-fields="availableFields"
@@ -51,14 +50,12 @@ import { apiFetch as fetch } from '../composables/useSessionApi.js'
 
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { useRevisionAPI } from '@/composables/useRevisionAPI'
 import StageForm from '../components/StageForm.vue'
 import RevisionHistoryPanel from '../components/RevisionHistoryPanel.vue'
 
 const route = useRoute()
 const caseId = parseInt(route.params.id, 10)
 const refundId = route.params.refundId ? parseInt(route.params.refundId, 10) : null
-const { listRevisions } = useRevisionAPI()
 
 // Compute API endpoint based on whether refundId is provided
 const apiEndpoint = computed(() => {
@@ -73,7 +70,6 @@ const preFilledMessage = ref('Loading...')
 const isLoading = ref(true)
 const caseStatus = ref(null)
 const caseData = ref({})
-const revisions = ref([])
 const currentUser = ref(null)
 const currentDocuments = ref([])
 
@@ -170,16 +166,6 @@ const loadStageData = async () => {
   }
 }
 
-const loadRevisions = async () => {
-  try {
-    const result = await listRevisions('tax-cases', caseId)
-    if (result && Array.isArray(result)) {
-      revisions.value = result
-    }
-  } catch (error) {
-    console.error('Error loading revisions:', error)
-  }
-}
 
 const loadDocuments = async () => {
   try {
@@ -226,7 +212,7 @@ onMounted(async () => {
     await Promise.all([
       loadCaseData(),
       loadStageData(),
-      loadRevisions(),
+
       loadDocuments(),
       loadCurrentUser()
     ])

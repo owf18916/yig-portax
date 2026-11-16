@@ -342,6 +342,11 @@ Route::middleware('auth')->prefix('tax-cases')->group(function () {
                         'create_refund' => 'sometimes|boolean',
                         'continue_to_next_stage' => 'sometimes|boolean',
                     ]);
+                } elseif ($stage === 11) {
+                    $request->validate(['review_amount' => \App\Models\SupremeCourtSubmission::REVIEW_AMOUNT_RULE]);
+                    if ($request->exists('review_amount')) {
+                        $request->merge(['review_amount' => \App\Models\SupremeCourtSubmission::normalizeReviewAmount($request->input('review_amount'))]);
+                    }
                 } elseif (in_array($stage, [7, 10, 12], true)) {
                     $required = $isDraft ? 'nullable' : 'required';
                     $decisionTypes = $stage === 10

@@ -49,6 +49,7 @@ class RevisionFieldConfig
             if (str_contains($rule, 'numeric')) $rule .= '|regex:/^\d{1,18}(?:\.\d{1,2})?$/D';
         }
         unset($rule);
+        if ($stage === 11) $rules['review_amount'] = SupremeCourtSubmission::REVIEW_AMOUNT_RULE;
         if ($stage === 4) $rules['skp_type'] .= '|in:LB,KB,NIHIL';
         if (in_array($stage, [7, 10, 12], true)) $rules['decision_type'] .= '|in:granted,partially_granted,rejected'.($stage === 10 ? ',skp_kb' : '');
         return compact('class', 'relation', 'rules') + ['fields' => array_keys($rules)];

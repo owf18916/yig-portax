@@ -653,6 +653,111 @@ class RevisionStateReconciliationTest extends TestCase
         $this->assertEquals(0, $this->target->fresh()->royalty_correction);
     }
 
+    public function test_g3_review_amount_exact_cents_and_nullable_audit_round_trip(): void
+    {
+        foreach (range(5, 11) as $stage) $this->history($stage);
+        $target = \App\Models\SupremeCourtSubmission::create([
+            'tax_case_id'=>$this->case->id, 'submission_number'=>'G3-SC',
+            'submission_date'=>'2026-11-01', 'submission_amount'=>'500.00', 'review_amount'=>'12',
+        ]);
+        $this->assertSame('12.00', $target->fresh()->toArray()['review_amount']);
+        $expectedBefore = '12.00';
+        foreach (['12.34'=>'12.34', '0.01'=>'0.01', '12'=>'12.00', 'null'=>null] as $input => $expected) {
+            $payload = $this->payload(['review_amount'=>$expected === null ? null : (string)$input], ['review_amount']);
+            $payload['stage_code'] = 11;
+            $revision = $this->actingAs($this->requester)->postJson($this->requestUrl(), $payload)->assertCreated()->json('revision');
+            $this->assertSame($expectedBefore, $revision['original_data']['review_amount']);
+            $this->assertSame($expected, $revision['proposed_values']['review_amount']);
+            $this->actingAs($this->approver)->patchJson("/api/tax-cases/{$this->case->id}/revisions/{$revision['id']}/decide", ['decision'=>'approve'])->assertOk();
+            $saved = \App\Models\Revision::findOrFail($revision['id']);
+            $this->assertSame($expected, $target->fresh()->review_amount);
+            $this->assertSame($expectedBefore, $saved->audit_data['before']['review_amount']);
+            $this->assertSame($expected, $saved->audit_data['after']['review_amount']);
+            $this->assertSame($expected, $saved->revised_data['review_amount']);
+            $expectedBefore = $expected;
+        }
+        $this->assertEquals('500.00', $target->fresh()->submission_amount);
+        foreach (['12.345', '1000000000000000', '-1', '1e3'] as $bad) {
+            $payload = $this->payload(['review_amount'=>$bad], ['review_amount']); $payload['stage_code']=11;
+            $this->actingAs($this->requester)->postJson($this->requestUrl(), $payload)->assertUnprocessable();
+        }
+        $this->assertDatabaseCount('revisions', 4);
+        // Boundary parsing is exact; SQLite does not enforce PostgreSQL numeric storage.
+        $this->assertSame('999999999999999.99', \App\Models\SupremeCourtSubmission::normalizeReviewAmount('999999999999999.99'));
+        $this->assertSame('999999999999999.00', \App\Models\SupremeCourtSubmission::normalizeReviewAmount('999999999999999'));
+    }
+
+    public function test_g3_history_pages_are_bounded_stable_stage_scoped_and_pending_is_reachable(): void
+    {
+        $url = "/api/tax-cases/{$this->case->id}/revisions";
+        $this->actingAs($this->approver)->getJson($url.'?stage_code=4')->assertOk()->assertJsonCount(0, 'data')->assertJsonPath('meta.total', 0);
+        $ids = [];
+        foreach (range(1, 45) as $n) {
+            $revision = \App\Models\Revision::create([
+                'revisable_type'=>'TaxCase', 'revisable_id'=>$this->case->id, 'stage_code'=>4,
+                'revision_status'=>$n === 1 ? 'requested' : ($n % 2 ? 'approved' : 'rejected'),
+                'requested_at'=>now(), 'original_data'=>[], 'proposed_values'=>['skp_number'=>'G3-'.$n], 'requested_by'=>$this->requester->id,
+            ]);
+            $revision->forceFill(['created_at'=>'2026-11-01 12:00:00'])->save();
+            $ids[] = $revision->id;
+            if (in_array($n, [1, 20, 21], true)) {
+                $this->getJson($url.'?stage_code=4')->assertOk()->assertJsonCount(min($n,20), 'data')->assertJsonPath('meta.total', $n);
+            }
+        }
+        $foreignStage = \App\Models\Revision::create(['revisable_type'=>'TaxCase','revisable_id'=>$this->case->id,'stage_code'=>7,'revision_status'=>'requested','requested_at'=>now(),'original_data'=>[],'requested_by'=>$this->requester->id]);
+        DB::enableQueryLog(); DB::flushQueryLog();
+        $first = $this->getJson($url.'?stage_code=4')->assertOk()->assertJsonCount(20, 'data')->assertJsonPath('meta.total',45)->assertJsonPath('meta.last_page',3)->assertJsonPath('meta.pending.id',$ids[0])->assertJsonPath('meta.pending.page',3);
+        $queries = DB::getQueryLog(); DB::disableQueryLog();
+        $second = $this->getJson($url.'?stage_code=4&page=2')->assertOk()->assertJsonCount(20, 'data');
+        $third = $this->getJson($url.'?stage_code=4&page=3')->assertOk()->assertJsonCount(5, 'data')->assertJsonPath('data.4.can_decide',true);
+        $actual = array_merge(array_column($first->json('data'),'id'),array_column($second->json('data'),'id'),array_column($third->json('data'),'id'));
+        $this->assertSame(array_reverse($ids), $actual);
+        $this->assertNotContains($foreignStage->id,$actual);
+        $this->getJson($url)->assertOk()->assertJsonCount(20,'data')->assertJsonPath('meta.total',46);
+        $this->getJson($url.'?stage_code=7')->assertOk()->assertJsonCount(1,'data');
+        $this->getJson($url.'?stage_code=4&page=999')->assertOk()->assertJsonCount(0,'data');
+        foreach (['page=0','page=-1','page=1.5','page=1000001','stage_code=16','stage_code[]=4'] as $bad) $this->getJson($url.'?'.$bad)->assertUnprocessable();
+        $this->actingAs($this->approver)->patchJson("/api/tax-cases/{$this->case->id}/revisions/{$ids[0]}/decide", ['decision'=>'reject','rejection_reason'=>'Reject synthetic pending request'])->assertOk();
+        $this->getJson($url.'?stage_code=4&page=3')->assertOk()->assertJsonPath('meta.pending',null)->assertJsonPath('data.4.revision_status','rejected');
+        // Inspect completed query logs; never execute SQL from a query listener.
+        $revisionReads = array_values(array_filter($queries, fn($q)=>str_contains($q['query'],'from "revisions"')));
+        $this->assertCount(4,$revisionReads); // pending, rank, total, current page
+        $this->assertStringContainsString('limit 20', $revisionReads[3]['query']);
+        $this->assertLessThan(18, count($queries));
+        $this->actingAs($this->requester)->getJson($url.'?stage_code=4&page=3')->assertOk()->assertJsonPath('data.4.can_decide',false);
+        $outsider = User::factory()->create(['entity_id'=>$this->approver->entity_id,'role_id'=>$this->requester->role_id,'is_active'=>true]);
+        // A separate affiliate is not allowed to see another entity's page.
+        $entity = Entity::create(['code'=>'G3-OTHER','name'=>'Other','entity_type'=>'AFFILIATE','tax_id'=>'G3-O']);
+        $outsider->update(['entity_id'=>$entity->id]);
+        $this->actingAs($outsider)->getJson($url.'?stage_code=4&page=3')->assertForbidden();
+    }
+
+    public function test_g3_only_page_documents_are_loaded_and_foreign_filenames_are_never_exposed(): void
+    {
+        $other = $this->case->replicate(); $other->case_number='G3-OTHER-CASE'; $other->save();
+        $documents = [];
+        foreach ([$this->case->id, $other->id] as $caseId) {
+            $documents[] = \App\Models\Document::create(['tax_case_id'=>$caseId, 'stage_code'=>'4',
+                'documentable_type'=>TaxCase::class, 'documentable_id'=>$caseId, 'document_type'=>'supporting_document',
+                'file_path'=>'synthetic/g3.pdf','original_filename'=>$caseId === $this->case->id ? 'g3-deleted.pdf' : 'g3-private.pdf',
+                'uploaded_at'=>now(),'uploaded_by'=>$this->requester->id]);
+        }
+        $documents[0]->delete();
+        $revision = \App\Models\Revision::create(['revisable_type'=>'TaxCase','revisable_id'=>$this->case->id,
+            'stage_code'=>4,'revision_status'=>'approved','requested_at'=>now(),'requested_by'=>$this->requester->id,
+            'original_data'=>[],'proposed_document_changes'=>['files_to_delete'=>[$documents[0]->id,$documents[1]->id]]]);
+        $url = "/api/tax-cases/{$this->case->id}/revisions?stage_code=4";
+        $this->actingAs($this->approver)->getJson($url)->assertOk()
+            ->assertJsonPath('data.0.documents.'.$documents[0]->id.'.original_filename','g3-deleted.pdf')
+            ->assertDontSee('g3-private.pdf');
+        foreach (range(1,20) as $n) {
+            $copy=$revision->replicate(); $copy->proposed_document_changes=[]; $copy->save();
+        }
+        $this->getJson($url)->assertOk()->assertJsonCount(20,'data')->assertDontSee('g3-deleted.pdf')->assertDontSee('g3-private.pdf');
+        $this->getJson($url.'&page=2')->assertOk()->assertJsonCount(1,'data')->assertSee('g3-deleted.pdf')->assertDontSee('g3-private.pdf');
+        $this->actingAs($this->requester)->patchJson("/api/tax-cases/{$other->id}/revisions/{$revision->id}/decide", ['decision'=>'approve'])->assertNotFound();
+    }
+
     private function requestUrl(): string { return "/api/tax-cases/{$this->case->id}/revisions/request"; }
     private function payload(array $values, array $fields): array { return ['stage_code'=>4,'fields'=>$fields,'reason'=>'A sufficiently detailed revision reason','proposed_values'=>$values,'proposed_document_changes'=>['files_to_delete'=>[],'files_to_add'=>[]]]; }
     private function history(int $stage): void { WorkflowHistory::create(['tax_case_id'=>$this->case->id,'stage_id'=>$stage,'stage_from'=>$stage,'stage_to'=>$stage<12?$stage+1:null,'action'=>'submitted','status'=>'submitted','user_id'=>$this->requester->id]); }

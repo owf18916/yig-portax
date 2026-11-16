@@ -37,7 +37,6 @@
         :case-id="caseId"
         :stage-id="4"
         :tax-case="caseData"
-        :revisions="revisions"
         :current-user="currentUser"
         :current-documents="currentDocuments"
         :available-fields="availableFields"
@@ -54,14 +53,12 @@ import { apiFetch as fetch } from '../composables/useSessionApi.js'
 
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { useRevisionAPI } from '@/composables/useRevisionAPI'
 import StageForm from '../components/StageForm.vue'
 import RevisionHistoryPanel from '../components/RevisionHistoryPanel.vue'
 import DecisionActions from '../components/DecisionActions.vue'
 
 const route = useRoute()
 const caseId = parseInt(route.params.id, 10)
-const { listRevisions } = useRevisionAPI()
 
 // Helper function to format date for HTML date input (YYYY-MM-DD)
 const formatDateForInput = (date) => {
@@ -77,7 +74,6 @@ const preFilledMessage = ref('Loading...')
 const isLoading = ref(true)
 const caseStatus = ref(null)
 const caseData = ref({})
-const revisions = ref([])
 const currentUser = ref(null)
 const currentDocuments = ref([])
 const showDecisionOptions = ref(false)
@@ -334,8 +330,7 @@ onMounted(async () => {
     caseStatus.value = caseFetchedData.case_status_id
     preFilledMessage.value = `✅ Case: ${caseFetchedData.case_number}`
 
-    // Load revisions
-    await loadRevisions()
+
 
     // Load documents
     await loadDocuments()
@@ -363,14 +358,6 @@ onMounted(async () => {
   }
 })
 
-const loadRevisions = async () => {
-  try {
-    const revisionsData = await listRevisions('tax-cases', caseId)
-    revisions.value = revisionsData
-  } catch (error) {
-    console.error('Failed to load revisions:', error)
-  }
-}
 
 const loadDocuments = async () => {
   try {
@@ -429,8 +416,7 @@ const refreshTaxCase = async () => {
           continueToNextStage: skpRecord.continue_to_next_stage ?? false
         }
       }
-      
-      await loadRevisions()
+
       await loadDocuments()
     }
   } catch (error) {

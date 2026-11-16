@@ -57,7 +57,7 @@ class RevisionService
                 ->where('stage_code', $stage)->where('revision_status', 'requested')->lockForUpdate()->exists();
             if ($duplicate) throw ValidationException::withMessages(['revision' => 'A pending revision already exists for this target and stage.']);
 
-            $original = Arr::only($lockedTarget->getAttributes(), array_keys($values));
+            $original = $this->snapshot($lockedTarget, array_keys($values));
             $revision = Revision::create([
                 'revisable_type' => 'TaxCase', 'revisable_id' => $taxCase->id,
                 'target_type' => $target::class, 'target_id' => $target->getKey(), 'stage_code' => $stage,
@@ -105,7 +105,7 @@ class RevisionService
                 if (in_array($stage, [7, 10, 12], true) && (array_key_exists('decision_type', $values) || array_key_exists('decision_amount', $values))) $values['decision_amount'] = $normalized['decision_amount'];
             }
             if ($stage === 1) app(SptFilingContract::class)->validate($values, $case);
-            $before = Arr::only($target->getAttributes(), array_keys($values));
+            $before = $this->snapshot($target, array_keys($values));
             $refund = $this->prepareRefundReconciliation($case, $target, $stage, $values);
 
             if (isset(self::NEXT_STAGE[$stage]) && array_key_exists('continue_to_next_stage', $values)) {
@@ -122,7 +122,7 @@ class RevisionService
             }
 
             $target->refresh();
-            $after = Arr::only($target->getAttributes(), array_keys($values));
+            $after = $this->snapshot($target, array_keys($values));
             $audit = [
                 'revision_id'=>$locked->id, 'target_type'=>$target::class, 'target_id'=>$target->getKey(), 'stage'=>$stage,
                 'before'=>$before, 'after'=>$after, 'changed_fields'=>array_keys($values),
@@ -171,7 +171,20 @@ class RevisionService
             if ($value === '' && str_contains($contract['rules'][$field], 'nullable')) $value = null;
         }
         unset($value);
-        return Validator::make($values, Arr::only($contract['rules'], array_keys($values)))->validate();
+        $values = Validator::make($values, Arr::only($contract['rules'], array_keys($values)))->validate();
+        if ($contract['class'] === \App\Models\SupremeCourtSubmission::class && array_key_exists('review_amount', $values)) {
+            $values['review_amount'] = \App\Models\SupremeCourtSubmission::normalizeReviewAmount($values['review_amount']);
+        }
+        return $values;
+    }
+
+    private function snapshot(Model $target, array $fields): array
+    {
+        $data = Arr::only($target->getAttributes(), $fields);
+        if ($target instanceof \App\Models\SupremeCourtSubmission && array_key_exists('review_amount', $data)) {
+            $data['review_amount'] = $target->review_amount;
+        }
+        return $data;
     }
 
     private function assertSubmitted(TaxCase $case, Model $target, int $stage): void
