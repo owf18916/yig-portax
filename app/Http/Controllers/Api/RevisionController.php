@@ -189,6 +189,7 @@ class RevisionController extends Controller
                     $document->forceDelete();
                 }
             }
+            if ($e instanceof \Illuminate\Auth\Access\AuthorizationException) throw $e;
             Log::error('RevisionController: Error requesting revision', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
@@ -285,6 +286,7 @@ class RevisionController extends Controller
                 'revision' => $revision->load(['requestedBy']),
             ], 200);
         } catch (\Exception $e) {
+            if ($e instanceof \Illuminate\Auth\Access\AuthorizationException) throw $e;
             return response()->json([
                 'error' => $e->getMessage(),
             ], 422);

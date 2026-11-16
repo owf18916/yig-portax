@@ -40,7 +40,7 @@
               <select 
                 v-model="proposedValues.period_id"
                 class="form-control"
-                required
+                :required="!canClear('period_id')"
               >
                 <option value="">-- Select Period --</option>
                 <option v-for="opt in periodOptions" :key="opt.value" :value="opt.value">
@@ -55,7 +55,7 @@
               <select 
                 v-model="proposedValues.currency_id"
                 class="form-control"
-                required
+                :required="!canClear('currency_id')"
               >
                 <option value="">-- Select Currency --</option>
                 <option v-for="opt in currencyOptions" :key="opt.value" :value="opt.value">
@@ -70,7 +70,7 @@
               <select 
                 v-model="proposedValues.skp_type"
                 class="form-control"
-                required
+                :required="!canClear('skp_type')"
               >
                 <option value="">-- Select SKP Type --</option>
                 <option value="LB">SKP LB (Lebih Bayar - Overpayment)</option>
@@ -84,7 +84,7 @@
               <select 
                 v-model="proposedValues.user_routing_choice"
                 class="form-control"
-                required
+                :required="!canClear('user_routing_choice')"
               >
                 <option value="">-- Select Routing Choice --</option>
                 <option value="objection">Proceed to Objection (Stage 5)</option>
@@ -100,13 +100,19 @@
                 type="text" inputmode="decimal"
                 placeholder="Enter new amount"
                 class="form-control"
-                required
+                :required="!canClear('disputed_amount')"
               />
               <p class="text-sm text-gray-500 mt-1" aria-live="polite">{{ amountPreview(proposedValues.disputed_amount) }}</p>
             </div>
 
             <!-- Dynamic Text/Email/Date Fields -->
             <div v-for="field in selectedFields" :key="field" class="mb-3">
+              <template v-if="field !== 'supporting_docs'">
+                <p class="text-sm text-gray-500">Saved value: {{ savedValue(field) }}</p>
+                <button v-if="canClear(field)" type="button" class="text-sm underline"
+                  @click="proposedValues[field] = null">Clear {{ fieldLabel(field) }}</button>
+                <p v-if="proposedValues[field] === null" class="text-sm">Proposed value: (empty)</p>
+              </template>
               <SptFilingMethod v-if="field === 'spt_type'"
                 v-model="proposedValues.spt_type"
                 :position="selectedFields.includes('spt_position_type') ? proposedValues.spt_position_type : taxCase.spt_position_type"
@@ -119,7 +125,7 @@
                   type="text"
                   :placeholder="`Enter new value for ${fieldLabel(field)}`"
                   class="form-control"
-                  required
+                  :required="!canClear(field)"
                 />
               </div>
 
@@ -131,7 +137,7 @@
                   type="email"
                   :placeholder="`Enter new email for ${fieldLabel(field)}`"
                   class="form-control"
-                  required
+                  :required="!canClear(field)"
                 />
               </div>
 
@@ -142,7 +148,7 @@
                   v-model="proposedValues[field]"
                   type="date"
                   class="form-control"
-                  required
+                  :required="!canClear(field)"
                 />
               </div>
 
@@ -154,7 +160,7 @@
                   type="text" inputmode="decimal"
                   :aria-label="fieldLabel(field)"
                   :placeholder="`Enter new amount for ${fieldLabel(field)}`"
-                  class="form-control" required
+                  class="form-control" :required="!canClear(field)"
                 />
                 <p v-if="isRevisionMoney(field)" class="text-sm text-gray-500 mt-1" aria-live="polite">{{ amountPreview(proposedValues[field]) }}</p>
                 <FormField v-else
@@ -165,7 +171,7 @@
                   step="0.01"
                   :placeholder="`Enter new amount for ${fieldLabel(field)}`"
                   class="form-control"
-                  required
+                  :required="!canClear(field)"
                 />
               </div>
 
@@ -175,7 +181,7 @@
                 <select 
                   v-model="proposedValues[field]"
                   class="form-control"
-                  required
+                  :required="!canClear(field)"
                 >
                   <option value="">-- Select {{ fieldLabel(field) }} --</option>
                   <option v-for="opt in getFieldOptions(field)" :key="opt.value" :value="opt.value">
@@ -192,7 +198,7 @@
                   :placeholder="`Enter new text for ${fieldLabel(field)}`"
                   rows="3"
                   class="form-control textarea"
-                  required
+                  :required="!canClear(field)"
                 ></textarea>
               </div>
 
@@ -206,6 +212,8 @@
                   >
                   <span class="ml-2 form-label text-sm">{{ fieldLabel(field) }}</span>
                 </label>
+                <button type="button" class="text-sm underline" @click="proposedValues[field] = false">Set {{ fieldLabel(field) }} to No</button>
+                <p class="text-sm">{{ typeof proposedValues[field] === 'boolean' ? `Proposed value: ${proposedValues[field] ? 'Yes' : 'No'}` : 'Check for Yes or explicitly set to No.' }}</p>
               </div>
             </div>
 
@@ -344,7 +352,7 @@ import SptFilingMethod from './SptFilingMethod.vue'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useToast } from '@/composables/useToast'
 import FormField from './FormField.vue'
-import { revisionFieldLabel, isRevisionMoney, revisionCurrency, revisionMoneyPreview } from '../composables/useRevisionFields.js'
+import { revisionCanClear, revisionProposal, revisionDisplayValue, revisionFieldLabel, isRevisionMoney, revisionCurrency, revisionMoneyPreview } from '../composables/useRevisionFields.js'
 
 const props = defineProps({
   caseId: { type: Number, required: true },
@@ -399,11 +407,7 @@ watch(() => props.currentDocuments, (newDocs) => {
 
 // Form state
 const selectedFields = ref([])
-const proposedValues = ref({
-  period_id: null,
-  currency_id: null,
-  disputed_amount: null
-})
+const proposedValues = ref({})
 const proposedDocChanges = ref({
   files_to_delete: [],
   files_to_add: []
@@ -431,6 +435,15 @@ const canSubmit = computed(() => {
 
 const disputedAmountLabel = computed(() => revisionFieldLabel('disputed_amount', props.stageId))
 const fieldLabel = field => revisionFieldLabel(field, props.stageId, props.fields)
+const canClear = field => revisionCanClear(props.stageId, field)
+const savedValue = field => {
+  const relations = { 2: 'sp2_record', 3: 'sphp_record', 4: 'skp_record', 5: 'objection_submission',
+    6: 'spuh_record', 7: 'objection_decision', 8: 'appeal_submission', 9: 'appeal_explanation_request',
+    10: 'appeal_decision', 11: 'supreme_court_submission', 12: 'supreme_court_decision' }
+  const target = Number(props.stageId) === 1 ? props.taxCase : props.taxCase[relations[Number(props.stageId)]]
+  return target && Object.prototype.hasOwnProperty.call(target, field)
+    ? revisionDisplayValue(field, target[field], revisionCurrency(props.taxCase)) : '(unavailable)'
+}
 const amountPreview = value => revisionMoneyPreview(value, revisionCurrency(props.taxCase))
 
 const getFieldType = (field) => {
@@ -555,21 +568,8 @@ const getFieldOptions = (field) => {
 
 const handleFieldToggle = () => {
   fieldError.value = ''
-  // Initialize value for newly selected fields
-  selectedFields.value.forEach(field => {
-    if (!(field in proposedValues.value)) {
-      if (field === 'supporting_docs') {
-        // Already handled by proposedDocChanges
-      } else if (['spt_type', 'spt_position_type'].includes(field)) {
-        proposedValues.value[field] = props.taxCase[field] ?? null
-      } else if (getFieldType(field) === 'number') {
-        proposedValues.value[field] = null
-      } else {
-        proposedValues.value[field] = ''
-      }
-    }
-  })
-
+  // Selection alone is not a proposal. Checkbox choices also require explicit
+  // confirmation of Yes or No; never invent false from an untouched control.
   // Do not retain a value for an unselected field: both payload collections
   // are built from this same selected set below.
   Object.keys(proposedValues.value).forEach(field => {
@@ -611,19 +611,17 @@ const submit = async () => {
     return
   }
 
-  // Validate that at least one change is provided
-  // Check if field values have actual changes (not null)
-  const checkboxFields = ['create_refund', 'continue_to_next_stage']
-  const hasFieldValueChanges = selectedFields.value.some(field => {
-    if (field === 'supporting_docs') return false // Skip doc field for this check
-    // For checkbox fields, allow false values (they are valid changes)
-    if (checkboxFields.includes(field)) {
-      return proposedValues.value[field] !== null && proposedValues.value[field] !== undefined
+  const selectedBusinessFields = selectedFields.value.filter(field => field !== 'supporting_docs')
+  const proposedValuesPayload = {}
+  for (const field of selectedBusinessFields) {
+    try {
+      proposedValuesPayload[field] = revisionProposal(props.stageId, field, proposedValues.value)
+    } catch (err) {
+      fieldError.value = `${fieldLabel(field)}: ${err.message}`
+      return
     }
-    if (field === 'spt_type') return proposedValues.value[field] !== props.taxCase.spt_type
-    // For other fields, check for non-null and non-empty
-    return proposedValues.value[field] !== null && proposedValues.value[field] !== ''
-  })
+  }
+  const hasFieldValueChanges = selectedBusinessFields.length > 0
 
   // Check if document changes exist (add or delete)
   const hasDocumentChanges = (
@@ -657,16 +655,6 @@ const submit = async () => {
     // Build both collections from the same canonical selected business keys.
     // Presence is deliberately used here: false, 0, an empty string, and null
     // are legitimate values whose acceptance is determined by server rules.
-    const selectedBusinessFields = selectedFields.value.filter(field => field !== 'supporting_docs')
-    const missingValue = selectedBusinessFields.find(field => !Object.prototype.hasOwnProperty.call(proposedValues.value, field))
-    if (missingValue) {
-      fieldError.value = `Please provide a proposed value for ${fieldLabel(missingValue)}`
-      return
-    }
-    const proposedValuesPayload = Object.fromEntries(
-      selectedBusinessFields.map(field => [field, proposedValues.value[field]])
-    )
-
     const payload = {
       // A documents-only revision retains its established document marker;
       // otherwise fields and proposed_values have identical key sets.

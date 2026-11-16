@@ -66,6 +66,35 @@ const MONEY_FIELDS = new Set(['reported_amount', 'disputed_amount', 'vat_in_amou
   'service_correction', 'other_correction', 'objection_amount', 'appeal_amount', 'decision_amount',
   'submission_amount', 'review_amount', 'refund_amount'])
 export const isRevisionMoney = field => MONEY_FIELDS.has(field)
+// Mirrors RevisionFieldConfig::REQUIRED_VALUES; checked across all 12 stages.
+const REQUIRED_REVISION_VALUES = {
+  1: ['spt_position_type', 'reported_amount', 'disputed_amount'],
+  3: ['sphp_number', 'sphp_issue_date'],
+  4: ['skp_number', 'issue_date', 'skp_type', 'skp_amount'],
+  5: ['objection_number', 'submission_date', 'objection_amount'],
+  6: ['spuh_number', 'issue_date', 'receipt_date'],
+  7: ['decision_number', 'decision_date', 'decision_type', 'decision_amount'],
+  8: ['appeal_number', 'submission_date', 'appeal_amount'],
+  10: ['decision_number', 'decision_date', 'decision_type', 'decision_amount'],
+  11: ['submission_number', 'submission_date', 'submission_amount'],
+  12: ['decision_number', 'decision_date', 'decision_type', 'decision_amount'],
+}
+export const revisionCanClear = (stage, field) => !['create_refund', 'continue_to_next_stage'].includes(field)
+  && !(REQUIRED_REVISION_VALUES[Number(stage)] || []).includes(field)
+export const revisionProposal = (stage, field, values) => {
+  if (!Object.prototype.hasOwnProperty.call(values, field) || values[field] === undefined) {
+    throw new Error('Enter a proposed value or explicitly clear the field.')
+  }
+  const value = values[field]
+  if (value === null || value === '') {
+    if (!revisionCanClear(stage, field)) throw new Error('This field cannot be cleared; enter a value.')
+    return null
+  }
+  if (['create_refund', 'continue_to_next_stage'].includes(field) && typeof value !== 'boolean') {
+    throw new Error('Choose Yes or No explicitly.')
+  }
+  return value
+}
 export const revisionCurrency = taxCase => /^[A-Z]{3}$/.test(taxCase?.currency?.code || '') ? taxCase.currency.code : ''
 export const revisionMoneyPreview = (value, currency = '') => {
   const raw = String(value ?? '')

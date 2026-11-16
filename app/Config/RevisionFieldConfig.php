@@ -22,10 +22,35 @@ class RevisionFieldConfig
         12 => [SupremeCourtDecision::class, 'supremeCourtDecision', ['decision_number'=>'nullable|string|max:255','decision_date'=>'nullable|date','decision_type'=>'nullable|string|max:255','decision_amount'=>'nullable|numeric|min:0','decision_notes'=>'nullable|string|max:5000','create_refund'=>'boolean','refund_amount'=>'nullable|numeric|min:0']],
     ];
 
+    // Non-null storage and final-business requirements, applied only when a
+    // field is selected. Omission still preserves the saved value.
+    private const REQUIRED_VALUES = [
+        1 => ['spt_position_type', 'reported_amount', 'disputed_amount'],
+        3 => ['sphp_number', 'sphp_issue_date'],
+        4 => ['skp_number', 'issue_date', 'skp_type', 'skp_amount'],
+        5 => ['objection_number', 'submission_date', 'objection_amount'],
+        6 => ['spuh_number', 'issue_date', 'receipt_date'],
+        7 => ['decision_number', 'decision_date', 'decision_type', 'decision_amount'],
+        8 => ['appeal_number', 'submission_date', 'appeal_amount'],
+        10 => ['decision_number', 'decision_date', 'decision_type', 'decision_amount'],
+        11 => ['submission_number', 'submission_date', 'submission_amount'],
+        12 => ['decision_number', 'decision_date', 'decision_type', 'decision_amount'],
+    ];
+
     public static function contract(int $stage): ?array
     {
         if (!isset(self::CONTRACTS[$stage])) return null;
         [$class, $relation, $rules] = self::CONTRACTS[$stage];
+        foreach ($rules as $field => &$rule) {
+            if ($rule === 'boolean') $rule = 'required|boolean';
+            if (in_array($field, self::REQUIRED_VALUES[$stage] ?? [], true)) {
+                $rule = 'required|'.str_replace('nullable|', '', $rule);
+            }
+            if (str_contains($rule, 'numeric')) $rule .= '|regex:/^\d{1,18}(?:\.\d{1,2})?$/D';
+        }
+        unset($rule);
+        if ($stage === 4) $rules['skp_type'] .= '|in:LB,KB,NIHIL';
+        if (in_array($stage, [7, 10, 12], true)) $rules['decision_type'] .= '|in:granted,partially_granted,rejected'.($stage === 10 ? ',skp_kb' : '');
         return compact('class', 'relation', 'rules') + ['fields' => array_keys($rules)];
     }
 

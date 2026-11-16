@@ -107,7 +107,7 @@ class MainWorkflowStateResolver
     public static function evidenceRelations(): array
     {
         return array_values(array_unique(array_merge(
-            ['workflowHistories', 'status', 'kianSubmissions'],
+            ['workflowHistories', 'status', 'kianSubmissions', 'approvedRoutingRevisions'],
             array_filter(array_column(StageDefinitions::STAGES, 'relation'))
         )));
     }

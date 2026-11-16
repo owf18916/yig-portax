@@ -40,6 +40,7 @@ class TaxWorkflowMatrixService
                 'entity',
                 'period.fiscalYear',
                 'workflowHistories',
+                'approvedRoutingRevisions',
                 'kianSubmissions',
                 'status',
                 'sp2Record',

@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
@@ -44,6 +45,10 @@ class RevisionService
         if ($stage === 1) app(SptFilingContract::class)->validate($values, $taxCase);
 
         return DB::transaction(function () use ($taxCase, $target, $requestedBy, $values, $proposedDocumentChanges, $reason, $selectedFields, $stage) {
+            // Serialize with account revocation and authorize a fresh actor, never
+            // the session model that passed the earlier controller policy.
+            $requestedBy = User::whereKey($requestedBy->id)->lockForUpdate()->firstOrFail();
+            Gate::forUser($requestedBy)->authorize('request', [new Revision(), $taxCase]);
             TaxCase::whereKey($taxCase->id)->lockForUpdate()->firstOrFail();
             $lockedTarget = $target::whereKey($target->getKey())->lockForUpdate()->firstOrFail();
             $this->assertRevisionDocuments($taxCase, $stage, $proposedDocumentChanges, $lockedTarget);
@@ -69,8 +74,12 @@ class RevisionService
     public function decideRevision(Revision $revision, TaxCase $taxCase, User $actor, string $decision, ?string $reason = null): Revision
     {
         return DB::transaction(function () use ($revision, $taxCase, $actor, $decision, $reason) {
+            $actor = User::whereKey($actor->id)->lockForUpdate()->firstOrFail();
             $case = TaxCase::whereKey($taxCase->id)->lockForUpdate()->firstOrFail();
             $locked = Revision::whereKey($revision->id)->lockForUpdate()->firstOrFail();
+            $locked->setRelation('revisable', $case);
+            Gate::forUser($actor)->authorize('decide', $locked);
+            $locked->unsetRelation('revisable');
             if ((int)$locked->revisable_id !== (int)$case->id || !in_array($locked->revisable_type, [TaxCase::class, 'TaxCase'], true)) {
                 throw new RuntimeException('Revision does not belong to this tax case.');
             }
@@ -158,6 +167,10 @@ class RevisionService
         if (array_diff(array_keys($values), $selectedBusiness) || array_diff($selectedBusiness, array_keys($values))) {
             throw ValidationException::withMessages(['fields' => 'Selected fields and proposed values must match exactly.']);
         }
+        foreach ($values as $field => &$value) {
+            if ($value === '' && str_contains($contract['rules'][$field], 'nullable')) $value = null;
+        }
+        unset($value);
         return Validator::make($values, Arr::only($contract['rules'], array_keys($values)))->validate();
     }
 

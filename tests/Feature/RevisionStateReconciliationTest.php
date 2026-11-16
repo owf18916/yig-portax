@@ -26,8 +26,8 @@ class RevisionStateReconciliationTest extends TestCase
         $affiliate = Entity::create(['code'=>'REV-A','name'=>'Revision Affiliate','entity_type'=>'AFFILIATE','tax_id'=>'REV-A']);
         $holding = Entity::create(['code'=>'REV-H','name'=>'Revision Holding','entity_type'=>'HOLDING','tax_id'=>'REV-H']);
         $role = Role::create(['code'=>'REV-STAFF','name'=>'Staff']);
-        $this->requester = User::factory()->create(['entity_id'=>$affiliate->id,'role_id'=>$role->id]);
-        $this->approver = User::factory()->create(['entity_id'=>$holding->id,'role_id'=>$role->id]);
+        $this->requester = User::factory()->create(['entity_id'=>$affiliate->id,'role_id'=>$role->id, 'is_active'=>true]);
+        $this->approver = User::factory()->create(['entity_id'=>$holding->id,'role_id'=>$role->id, 'is_active'=>true]);
         $year = FiscalYear::create(['year'=>2026,'start_date'=>'2026-01-01','end_date'=>'2026-12-31']);
         $currency = Currency::create(['code'=>'REV','name'=>'Revision Currency','symbol'=>'R']);
         $open = CaseStatus::create(['code'=>'OPEN','name'=>'Open']);
@@ -291,8 +291,14 @@ class RevisionStateReconciliationTest extends TestCase
             'decision_date' => '2026-09-30', 'decision_type' => 'rejected', 'decision_amount' => 0, 'status' => 'submitted']);
         $payload = ['stage_code' => 7, 'fields' => ['decision_type', 'decision_amount'], 'reason' => 'Invalid partial must remain unapplied.',
             'proposed_values' => ['decision_type' => 'partially_granted', 'decision_amount' => '200.001'], 'proposed_document_changes' => []];
+        $this->actingAs($this->requester)->postJson($this->requestUrl(), ['payload' => json_encode($payload)])->assertUnprocessable();
+        $this->assertDatabaseCount('revisions', 0);
+        $invalid = $payload['proposed_values'];
+        $payload['proposed_values']['decision_amount'] = '200.00';
         $revision = $this->actingAs($this->requester)->postJson($this->requestUrl(), ['payload' => json_encode($payload)])
             ->assertCreated()->json('revision');
+        // Legacy stored proposals are still rejected at approval, atomically.
+        \App\Models\Revision::findOrFail($revision['id'])->update(['proposed_values'=>$invalid]);
         $this->actingAs($this->approver)->patchJson("/api/tax-cases/{$this->case->id}/revisions/{$revision['id']}/decide", ['decision' => 'approve'])->assertUnprocessable();
         $this->assertSame('rejected', $decision->fresh()->decision_type);
         $this->assertDatabaseHas('revisions', ['id' => $revision['id'], 'revision_status' => 'requested', 'audit_data' => null]);
@@ -320,7 +326,7 @@ class RevisionStateReconciliationTest extends TestCase
         $payload = ['stage_code' => 10, 'fields' => ['decision_type', 'decision_amount'], 'reason' => 'Correct the exact amount stated in the appeal document.',
             'proposed_values' => ['decision_type' => $outcome, 'decision_amount' => $amount], 'proposed_document_changes' => []];
         $request = $this->actingAs($this->requester)->postJson($this->requestUrl(), ['payload' => json_encode($payload)]);
-        if (in_array($amount, ['-1', 'abc', 'NaN', 'Infinity'], true)) {
+        if (!$valid) {
             $request->assertUnprocessable();
             $this->assertSame('123.45', $target->fresh()->decision_amount);
             $this->assertDatabaseCount('revisions', 0);
@@ -524,6 +530,127 @@ class RevisionStateReconciliationTest extends TestCase
         $this->actingAs($this->approver)->patchJson("/api/tax-cases/{$this->case->id}/revisions/{$revision['id']}/decide", ['decision'=>'reject', 'rejection_reason'=>'Retain the original authority.'])->assertOk();
         $this->assertSame($before, $refund->fresh()->getAttributes());
         $this->assertSame('100.00', $this->target->fresh()->refund_amount);
+    }
+
+    public static function revokedActions(): array { return [['request'], ['approve'], ['reject']]; }
+
+    public function test_active_viewers_keep_entity_boundaries_without_a_new_role_gate(): void
+    {
+        // Revision has always used case visibility, not submit_cases/active-role.
+        DB::table('roles')->where('id', $this->requester->role_id)->update(['is_active'=>false]);
+        $revision = $this->request(['skp_number'=>'ACTIVE-VIEWER'], ['skp_number'])->assertCreated()->json('revision');
+        $foreign = Entity::create(['code'=>'G2-FOREIGN','name'=>'Other Affiliate','entity_type'=>'AFFILIATE','tax_id'=>'G2-FOREIGN']);
+        $outsider = User::factory()->create(['entity_id'=>$foreign->id,'role_id'=>$this->requester->role_id,'is_active'=>true]);
+        $this->actingAs($outsider)->postJson($this->requestUrl(), ['payload'=>json_encode($this->payload(['skp_number'=>'FOREIGN'], ['skp_number']))])->assertForbidden();
+        $this->patchJson("/api/tax-cases/{$this->case->id}/revisions/{$revision['id']}/decide", ['decision'=>'approve'])->assertForbidden();
+        $otherCase = $this->case->replicate(); $otherCase->case_number='G2-OTHER'; $otherCase->save();
+        $this->actingAs($this->approver)->patchJson("/api/tax-cases/{$otherCase->id}/revisions/{$revision['id']}/decide", ['decision'=>'approve'])->assertNotFound();
+        $this->patchJson("/api/tax-cases/{$this->case->id}/revisions/{$revision['id']}/decide", ['decision'=>'reject','rejection_reason'=>'Authorized Holding decision.'])->assertOk();
+        $this->assertSame('SKP-OLD',$this->target->fresh()->skp_number);
+    }
+
+    public function test_all_selected_nonnullable_storage_columns_are_required(): void
+    {
+        foreach (range(1,12) as $stage) {
+            $contract = \App\Config\RevisionFieldConfig::contract($stage);
+            $model = new $contract['class'];
+            $columns = collect(\Illuminate\Support\Facades\Schema::getColumns($model->getTable()))->keyBy('name');
+            foreach ($contract['fields'] as $field) {
+                $this->assertTrue($columns->has($field), "Missing target column {$stage}:{$field}");
+                if (!$columns[$field]['nullable']) $this->assertStringContainsString('required', $contract['rules'][$field], "Non-null target {$stage}:{$field}");
+            }
+        }
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('revokedActions')]
+    public function test_revoked_actor_with_stale_authenticated_model_cannot_write(string $action): void
+    {
+        $revision = $action === 'request' ? null : $this->request(['skp_number'=>'REVOKED'], ['skp_number'])->assertCreated()->json('revision');
+        $actor = $action === 'request' ? $this->requester : $this->approver;
+        $this->actingAs($actor);
+        $this->assertTrue($actor->is_active);
+        DB::table('users')->where('id', $actor->id)->update(['is_active'=>false]);
+        $before = $this->target->fresh()->getAttributes();
+        $revisionBefore = DB::table('revisions')->get()->toJson();
+        $refundBefore = DB::table('refund_processes')->get()->toJson();
+        $docsBefore = DB::table('documents')->get()->toJson();
+        if ($action === 'request') {
+            $this->postJson($this->requestUrl(), ['payload'=>json_encode($this->payload(['skp_number'=>'REVOKED'], ['skp_number']))])->assertForbidden();
+        } else {
+            $this->patchJson("/api/tax-cases/{$this->case->id}/revisions/{$revision['id']}/decide", ['decision'=>$action, 'rejection_reason'=>'Account was revoked.'])->assertForbidden();
+        }
+        $this->assertSame($before, $this->target->fresh()->getAttributes());
+        $this->assertSame($revisionBefore, DB::table('revisions')->get()->toJson());
+        $this->assertSame($refundBefore, DB::table('refund_processes')->get()->toJson());
+        $this->assertSame($docsBefore, DB::table('documents')->get()->toJson());
+        // A newly hydrated inactive actor is denied by the controller policy too.
+        $this->actingAs($actor->fresh());
+        $this->postJson($this->requestUrl(), ['payload'=>json_encode($this->payload(['skp_number'=>'REVOKED'], ['skp_number']))])->assertForbidden();
+    }
+
+    public static function routingToggles(): array
+    {
+        $rows = [];
+        foreach ([4, 7, 10] as $stage) foreach ([true, false] as $before) foreach ([false, true] as $downstream) $rows[] = [$stage, $before, $downstream];
+        return $rows;
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('routingToggles')]
+    public function test_approved_toggle_supersedes_only_original_route_and_preserves_history(int $stage, bool $before, bool $downstream): void
+    {
+        foreach (range(5, max(5, $stage)) as $s) if ($s <= $stage) $this->history($s);
+        $target = $stage === 4 ? $this->target : ([7=>ObjectionDecision::class, 10=>\App\Models\AppealDecision::class][$stage])::create([
+            'tax_case_id'=>$this->case->id, 'decision_number'=>'G2-ROUTE', 'decision_date'=>'2026-11-01',
+            'decision_type'=>'rejected', 'decision_amount'=>'0.00', 'status'=>'submitted',
+        ]);
+        $target->continue_to_next_stage = $before;
+        if ($stage !== 4) $target->next_stage = $before ? $stage + 1 : null;
+        $target->save();
+        $this->case->workflowHistories()->where('stage_id',$stage)->update(['stage_to'=>$before ? $stage + 1 : null]);
+        $histories = DB::table('workflow_histories')->get()->toJson();
+        $payload = $this->payload(['continue_to_next_stage'=>!$before], ['continue_to_next_stage']); $payload['stage_code']=$stage;
+        $revision = $this->actingAs($this->requester)->postJson($this->requestUrl(), ['payload'=>json_encode($payload)])->assertCreated()->json('revision');
+        if ($downstream) $this->history($stage+1);
+        $response = $this->actingAs($this->approver)->patchJson("/api/tax-cases/{$this->case->id}/revisions/{$revision['id']}/decide", ['decision'=>'approve']);
+        if ($downstream) {
+            $response->assertUnprocessable();
+            $this->assertSame($before, $target->fresh()->continue_to_next_stage);
+            $this->assertDatabaseHas('revisions',['id'=>$revision['id'],'revision_status'=>'requested']);
+            return;
+        }
+        $response->assertOk();
+        foreach ([1, 2] as $read) {
+            $case = $this->case->fresh();
+            $route = app(\App\Services\TaxWorkflowMatrix\StageRoutingResolver::class)->{'resolveAfterStage'.$stage}($case);
+            $this->assertSame($before ? 'excluded' : 'included', $route['state']);
+            $this->assertSame($revision['id'], $route['source'][0]['revision_id']);
+            $this->assertArrayNotHasKey('approved_routing_revisions', $case->toArray());
+            DB::enableQueryLog(); DB::flushQueryLog();
+            app(\App\Services\TaxWorkflowMatrix\StageRoutingResolver::class)->{'resolveAfterStage'.$stage}($case);
+            $this->assertCount(0, DB::getQueryLog()); DB::disableQueryLog();
+        }
+        $this->assertSame($histories, DB::table('workflow_histories')->get()->toJson());
+        $this->assertLessThanOrEqual(3, $this->case->fresh()->approvedRoutingRevisions->count());
+        // A later unrelated note does not revoke the explicit route amendment.
+        $noteField = $stage === 4 ? 'correction_notes' : 'decision_notes';
+        $payload = $this->payload([$noteField=>'An unrelated explanatory note.'], [$noteField]); $payload['stage_code']=$stage;
+        $note = $this->actingAs($this->requester)->postJson($this->requestUrl(), ['payload'=>json_encode($payload)])->assertCreated()->json('revision');
+        $this->actingAs($this->approver)->patchJson("/api/tax-cases/{$this->case->id}/revisions/{$note['id']}/decide", ['decision'=>'approve'])->assertOk();
+        $route = app(\App\Services\TaxWorkflowMatrix\StageRoutingResolver::class)->{'resolveAfterStage'.$stage}($this->case->fresh());
+        $this->assertSame($before ? 'excluded' : 'included', $route['state']);
+    }
+
+    public function test_nullable_clear_is_applied_but_required_and_malformed_values_never_create_requests(): void
+    {
+        $this->target->update(['correction_notes'=>'Saved note']);
+        foreach ([['skp_type'=>null], ['skp_amount'=>null], ['skp_number'=>''], ['continue_to_next_stage'=>''], ['royalty_correction'=>'1e5'], ['royalty_correction'=>'1.234']] as $values) {
+            $this->request($values, array_keys($values))->assertUnprocessable();
+            $this->assertDatabaseCount('revisions',0);
+        }
+        $revision = $this->request(['correction_notes'=>null, 'royalty_correction'=>'0'], ['correction_notes','royalty_correction'])->assertCreated()->json('revision');
+        $this->actingAs($this->approver)->patchJson("/api/tax-cases/{$this->case->id}/revisions/{$revision['id']}/decide", ['decision'=>'approve'])->assertOk();
+        $this->assertNull($this->target->fresh()->correction_notes);
+        $this->assertEquals(0, $this->target->fresh()->royalty_correction);
     }
 
     private function requestUrl(): string { return "/api/tax-cases/{$this->case->id}/revisions/request"; }

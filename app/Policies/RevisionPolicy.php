@@ -15,7 +15,7 @@ class RevisionPolicy
      */
     public function request(User $user, Revision $revisionModel, Model $revisable): bool
     {
-        return $revisable instanceof TaxCase && $user->can('view', $revisable);
+        return $user->is_active && $revisable instanceof TaxCase && $user->can('view', $revisable);
     }
 
     /**
@@ -25,7 +25,7 @@ class RevisionPolicy
     {
         // Only HOLDING entity can approve/reject
         $taxCase = $this->taxCase($revision);
-        return $taxCase !== null
+        return $user->is_active && $taxCase !== null
             && $user->can('view', $taxCase)
             && $user->entity?->entity_type === 'HOLDING';
     }

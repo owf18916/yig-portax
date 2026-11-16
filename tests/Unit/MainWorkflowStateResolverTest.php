@@ -211,6 +211,7 @@ class MainWorkflowStateResolverTest extends TestCase
     ): TaxCase {
         $case = new TaxCase(['current_stage' => $currentStage, 'is_completed' => $isCompleted]);
         $case->id = 99;
+        $case->setRelation('approvedRoutingRevisions', new Collection);
         $case->setRelation('kianSubmissions', new Collection);
         $case->setRelation('status', new CaseStatus(['code' => 'OPEN']));
         $case->setRelation('workflowHistories', new Collection(array_map(

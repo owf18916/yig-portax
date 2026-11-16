@@ -39,6 +39,9 @@ class TaxCase extends Model
 
     protected $table = 'tax_cases';
 
+    // Internal routing evidence; keep existing case response fields unchanged.
+    protected $hidden = ['approvedRoutingRevisions'];
+
     protected $fillable = [
         'user_id',
         'entity_id',
@@ -186,6 +189,25 @@ class TaxCase extends Model
     public function lastRevision(): BelongsTo
     {
         return $this->belongsTo(Revision::class, 'last_revision_id');
+    }
+
+    /** At most one approved routing amendment per main decision stage. */
+    public function approvedRoutingRevisions(): HasMany
+    {
+        return $this->revisions()->where('revision_status', 'approved')
+            ->whereIn('stage_code', [4, 7, 10])
+            ->whereNotNull('proposed_values->continue_to_next_stage')
+            ->where('audit_data->routing_impact->changed', true)
+            ->whereNotExists(function ($query) {
+                $query->selectRaw('1')->from('revisions as newer')
+                    ->whereColumn('newer.revisable_id', 'revisions.revisable_id')
+                    ->whereIn('newer.revisable_type', ['TaxCase', self::class])
+                    ->whereColumn('newer.stage_code', 'revisions.stage_code')
+                    ->whereColumn('newer.id', '>', 'revisions.id')
+                    ->where('newer.revision_status', 'approved')
+                    ->whereNotNull('newer.proposed_values->continue_to_next_stage')
+                    ->where('newer.audit_data->routing_impact->changed', true);
+            });
     }
 
     public function supremeCourtSubmission(): HasOne
