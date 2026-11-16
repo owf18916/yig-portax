@@ -2,6 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import * as vue from 'vue'
+import { formatRefundAmount, refundAmountDifference } from '../resources/js/utils/refundPresentation.js'
 import { component } from './support/vue-presentation-fixture.mjs'
 
 test('Stage 4 post-submit Continue follows refreshed server gate; Submit remains independent', async () => {
@@ -48,3 +49,19 @@ test('detail gates only Stage 4 Refund continuation; persisted detail and other 
   page.state.caseData.value = { stage4_kian_access_blocked: false }
   assert.equal(page.state.isRefundStageAccessible(refund, 2), true)
 })
+
+for (const currency of ['USD', 'IDR']) {
+  test(`G1 ${currency} case Refund card shows independent amount sources without per-card requests`, async () => {
+    const page = await component('pages/TaxCaseDetail.vue', {
+      useTaxCaseStore: () => ({}), useToast: () => ({}), refundAmountDifference,
+      fetch: () => { throw new Error('Rendering cards must not fetch') },
+    })
+    page.state.loadState.value = 'success'
+    page.state.caseData.value = { id: 9, currency: { code: currency }, refund_processes: [{ id: 41, stage_id: 7, refund_amount: '8000.00', refund_number: 'G1', bank_transfer_requests: [{ transfer_amount: '10000.00' }] }] }
+    const html = await page.render({ formatRefundAmount, refundAmountDifference })
+    assert.match(html, /Current Refund Amount/)
+    assert.match(html, new RegExp(`${currency} 10,000\\.00`))
+    assert.match(html, new RegExp(`-${currency} 2,000\\.00`))
+    assert.match(html, /Information only; no automatic adjustment/)
+  })
+}

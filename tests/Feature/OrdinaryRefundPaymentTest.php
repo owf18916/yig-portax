@@ -38,6 +38,8 @@ class OrdinaryRefundPaymentTest extends TestCase
     {
         parent::setUp();
         Queue::fake();
+        \Illuminate\Support\Facades\Http::preventStrayRequests();
+        \Illuminate\Support\Facades\Mail::fake();
         Storage::fake('local');
         $entity = Entity::create(['code' => 'PRA', 'name' => 'Affiliate', 'entity_type' => 'AFFILIATE', 'tax_id' => 'PRA']);
         $holding = Entity::create(['code' => 'PRH', 'name' => 'Holding', 'entity_type' => 'HOLDING', 'tax_id' => 'PRH']);
@@ -67,6 +69,71 @@ class OrdinaryRefundPaymentTest extends TestCase
         }
 
         return app(\App\Services\DecisionPointRefundService::class)->createIfRequested($decision, $stage, $this->staff->id);
+    }
+
+    public static function documentaryRevisionStates(): array
+    {
+        $cases = [];
+        foreach ([4, 7, 10] as $origin) foreach ([1, 2, 3, 4] as $paymentStage) $cases["origin=$origin payment=$paymentStage"] = [$origin, $paymentStage];
+        $cases['10000 to 8000 after Stage 2'] = [7, 2, '10000.00', '8000.00'];
+        return $cases;
+    }
+
+    #[DataProvider('documentaryRevisionStates')]
+    public function test_approved_revision_changes_current_authority_and_preserves_historical_continuation(int $origin, int $paymentStage, string $initial = '800.12', string $revised = '600.34'): void
+    {
+        $refund = $this->refund($origin);
+        $decisionType = $refund->triggered_by_decision_type;
+        $decisionType::whereKey($refund->triggered_by_decision_id)->update(['refund_amount'=>$initial]);
+        $refund->update(['refund_amount'=>$initial]);
+        for ($stage = 2; $stage <= $paymentStage; $stage++) $this->postJson($this->url($refund, $stage), array_replace($this->payload($stage), $stage === 3 ? ['transfer_amount'=>$initial] : ($stage === 4 ? ['received_amount'=>$initial] : [])))->assertOk();
+        $before = BankTransferRequest::first()?->getAttributes();
+        $decision = $refund->triggered_by_decision_type::findOrFail($refund->triggered_by_decision_id);
+        $service = app(\App\Services\RevisionService::class);
+        $revision = $service->requestRevision($this->case->fresh(), $this->staff, ['refund_amount'=>$revised], [], 'Correct documentary authority only.', ['refund_amount'], $origin);
+        $this->assertSame($initial, $refund->fresh()->refund_amount);
+        $service->decideRevision($revision, $this->case, $this->holding, 'approve');
+        $this->assertSame('approved', $service->decideRevision($revision, $this->case, $this->holding, 'reject')->revision_status);
+        $this->assertSame($revised, $decision->fresh()->refund_amount);
+        $this->assertSame($revised, $refund->fresh()->refund_amount);
+        $this->assertDatabaseCount('refund_processes', 1);
+        $this->assertSame($before, BankTransferRequest::first()?->getAttributes());
+        $authority = $revision->fresh()->audit_data['refund_authority'];
+        $this->assertSame($refund->id, $authority['refund_process_id']);
+        $this->assertSame($initial, $authority['before']);
+        $this->assertSame($revised, $authority['after']);
+        foreach ([1, 2, 3, 4] as $stage) $this->getJson($this->url($refund, $stage))->assertOk()
+            ->assertJsonPath('data.refund_amount', $revised)->assertJsonPath('data.historical_payment_amount', $paymentStage === 1 ? null : $initial);
+        $historical = $paymentStage === 1 ? $revised : $initial;
+        for ($stage = max(2, $paymentStage + 1); $stage <= 4; $stage++) {
+            $data = $this->payload($stage);
+            if ($stage === 3) $data['transfer_amount'] = $historical;
+            if ($stage === 4) $data['received_amount'] = $historical;
+            $this->postJson($this->url($refund, $stage), $data)->assertOk();
+            $this->postJson($this->url($refund, $stage), $data)->assertOk();
+        }
+        $this->assertSame($historical, BankTransferRequest::sole()->transfer_amount);
+        $this->assertSame($historical, BankTransferRequest::sole()->received_amount);
+        // A second documentary change must preserve the same original payment basis.
+        $again = $service->requestRevision($this->case->fresh(), $this->staff, ['refund_amount'=>'500.00'], [], 'Second documentary correction.', ['refund_amount'], $origin);
+        $completed = BankTransferRequest::sole()->getAttributes();
+        $service->decideRevision($again, $this->case, $this->holding, 'approve');
+        $this->postJson($this->url($refund, 4), array_replace($this->payload(4), ['received_amount'=>$historical]))->assertOk();
+        $this->assertSame($completed, BankTransferRequest::sole()->getAttributes());
+    }
+
+    public function test_equality_cannot_conceal_payment_tampering_after_documentary_revision(): void
+    {
+        $refund = $this->refund(7);
+        $this->postJson($this->url($refund, 2), $this->payload(2))->assertOk();
+        $service = app(\App\Services\RevisionService::class);
+        $revision = $service->requestRevision($this->case->fresh(), $this->staff, ['refund_amount'=>'600.34'], [], 'Documentary correction.', ['refund_amount'], 7);
+        $service->decideRevision($revision, $this->case, $this->holding, 'approve');
+        BankTransferRequest::sole()->update(['transfer_amount'=>'600.34']);
+        $before = BankTransferRequest::sole()->getAttributes();
+        $this->getJson($this->url($refund, 3))->assertOk()->assertJsonPath('data.can_submit', false);
+        $this->postJson($this->url($refund, 3), array_replace($this->payload(3), ['transfer_amount'=>'600.34']))->assertUnprocessable();
+        $this->assertSame($before, BankTransferRequest::sole()->getAttributes());
     }
 
     private function url(RefundProcess $refund, int $stage): string
@@ -211,6 +278,8 @@ class OrdinaryRefundPaymentTest extends TestCase
                         }
                     }
                     $keys[] = 'currency_code';
+                    $keys[] = 'historical_payment_amount';
+                    $this->assertSame($activeCount ? '800.12' : null, $data['historical_payment_amount']);
                     if ($stage === 2) $keys[] = 'is_preliminary';
                     $this->assertSame('IDR', $data['currency_code']);
                     $actualKeys = array_keys($data);

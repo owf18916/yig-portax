@@ -21,6 +21,8 @@ class RevisionStateReconciliationTest extends TestCase
     {
         parent::setUp();
         Queue::fake();
+        \Illuminate\Support\Facades\Http::preventStrayRequests();
+        \Illuminate\Support\Facades\Mail::fake();
         $affiliate = Entity::create(['code'=>'REV-A','name'=>'Revision Affiliate','entity_type'=>'AFFILIATE','tax_id'=>'REV-A']);
         $holding = Entity::create(['code'=>'REV-H','name'=>'Revision Holding','entity_type'=>'HOLDING','tax_id'=>'REV-H']);
         $role = Role::create(['code'=>'REV-STAFF','name'=>'Staff']);
@@ -73,7 +75,7 @@ class RevisionStateReconciliationTest extends TestCase
     {
         $this->request(['refund_amount' => 0], ['refund_amount'])
             ->assertCreated()
-            ->assertJsonPath('revision.proposed_values.refund_amount', 0);
+            ->assertJsonPath('revision.proposed_values.refund_amount', '0.00');
     }
 
     public function test_nullable_stage_four_value_is_preserved(): void
@@ -219,7 +221,7 @@ class RevisionStateReconciliationTest extends TestCase
     public function test_refund_reversal_and_amount_changes_respect_editable_boundary(): void
     {
         $this->target->update(['create_refund'=>true,'refund_amount'=>100]);
-        $refund = RefundProcess::create(['tax_case_id'=>$this->case->id,'stage_id'=>4,'refund_number'=>'REV-REF','refund_amount'=>100,'refund_method'=>'bank_transfer','refund_status'=>'pending','status'=>'draft','sequence_number'=>1,'submitted_by'=>$this->requester->id]);
+        $refund = app(\App\Services\DecisionPointRefundService::class)->createIfRequested($this->target, 4, $this->requester->id);
         $revision = $this->request(['refund_amount'=>150],['refund_amount'])->assertCreated()->json('revision');
         $this->actingAs($this->approver)->patchJson("/api/tax-cases/{$this->case->id}/revisions/{$revision['id']}/decide",['decision'=>'approve'])->assertOk();
         $this->assertSame('150.00',$refund->fresh()->refund_amount);
@@ -234,7 +236,7 @@ class RevisionStateReconciliationTest extends TestCase
     public function test_initial_refund_can_be_reconciled_to_existing_rejected_state(): void
     {
         $this->target->update(['create_refund'=>true,'refund_amount'=>100]);
-        $refund = RefundProcess::create(['tax_case_id'=>$this->case->id,'stage_id'=>4,'refund_number'=>'REV-SAFE','refund_amount'=>100,'refund_method'=>'bank_transfer','refund_status'=>'pending','status'=>'draft','sequence_number'=>1,'submitted_by'=>$this->requester->id]);
+        $refund = app(\App\Services\DecisionPointRefundService::class)->createIfRequested($this->target, 4, $this->requester->id);
         $revision = $this->request(['create_refund'=>false],['create_refund'])->assertCreated()->json('revision');
         $this->actingAs($this->approver)->patchJson("/api/tax-cases/{$this->case->id}/revisions/{$revision['id']}/decide",['decision'=>'approve'])->assertOk();
         $this->assertFalse($this->target->fresh()->create_refund);
@@ -357,6 +359,171 @@ class RevisionStateReconciliationTest extends TestCase
         $this->history(11);
         $this->actingAs($this->approver)->patchJson("/api/tax-cases/{$this->case->id}/revisions/{$revision['id']}/decide", ['decision' => 'approve'])->assertUnprocessable();
         $this->assertSame('123.45', $target->fresh()->decision_amount);
+    }
+
+    public static function invalidRefundRevisionAmounts(): array
+    {
+        return array_map(fn ($v) => [$v], ['0', '-1', null, '1e3', '1.001', '1000000000000000000.00', 1.25]);
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalidRefundRevisionAmounts')]
+    public function test_invalid_explicit_refund_change_is_rejected_before_request(mixed $amount): void
+    {
+        $this->target->update(['create_refund'=>true, 'refund_amount'=>'100.00']);
+        $refund = app(\App\Services\DecisionPointRefundService::class)->createIfRequested($this->target, 4, $this->requester->id);
+        $before = $refund->getAttributes();
+        $this->request(['refund_amount'=>$amount], ['refund_amount'])->assertUnprocessable();
+        $this->assertSame($before, $refund->fresh()->getAttributes());
+        $this->assertSame('100.00', $this->target->fresh()->refund_amount);
+        $this->assertDatabaseCount('revisions', 0);
+    }
+
+    public static function refundAnomalies(): array
+    {
+        return array_map(fn ($v) => [$v], ['zero', 'mismatch', 'source', 'pointer', 'method', 'deleted', 'duplicate', 'deleted-transfer', 'duplicate-transfer', 'malformed-transfer', 'adjusted-transfer']);
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('refundAnomalies')]
+    public function test_unrelated_revision_never_repairs_anomalies_and_explicit_change_fails_closed(string $anomaly): void
+    {
+        $this->target->update(['create_refund'=>true, 'refund_amount'=>'100.00']);
+        $refund = app(\App\Services\DecisionPointRefundService::class)->createIfRequested($this->target, 4, $this->requester->id);
+        if ($anomaly === 'zero') $refund->update(['refund_amount'=>'0.00']);
+        if ($anomaly === 'mismatch') $refund->update(['refund_amount'=>'90.00']);
+        if ($anomaly === 'source') $refund->update(['stage_source'=>'APPEAL']);
+        if ($anomaly === 'pointer') $refund->update(['triggered_by_decision_id'=>999999]);
+        if ($anomaly === 'method') $refund->update(['refund_method'=>'cash']);
+        if ($anomaly === 'deleted') $refund->delete();
+        if ($anomaly === 'duplicate') {
+            $row = $refund->getAttributes(); unset($row['id']);
+            $row['refund_number'] = 'DUPLICATE'; $row['deleted_at'] = now();
+            DB::table('refund_processes')->insert($row);
+        }
+        if (str_contains($anomaly, 'transfer')) {
+            $refund->update(['refund_status'=>'approved']);
+            $transfer = BankTransferRequest::create(['refund_process_id'=>$refund->id, 'transfer_amount'=>$anomaly === 'adjusted-transfer' ? '90.00' : '100.00', 'request_number'=>'REQ', 'request_date'=>'2026-11-01', 'transfer_date'=>'2026-11-02', 'transfer_status'=>'pending', 'created_by'=>$this->requester->id]);
+            if ($anomaly === 'deleted-transfer') $transfer->delete();
+            if ($anomaly === 'duplicate-transfer') $transfer->replicate()->save();
+            if ($anomaly === 'malformed-transfer') $transfer->update(['request_number'=>'']);
+        }
+        $before = RefundProcess::withTrashed()->orderBy('id')->get()->toArray();
+        $payments = BankTransferRequest::withTrashed()->orderBy('id')->get()->toArray();
+        $note = $this->request(['correction_notes'=>'Documentary note only.'], ['correction_notes'])->assertCreated()->json('revision');
+        $this->actingAs($this->approver)->patchJson("/api/tax-cases/{$this->case->id}/revisions/{$note['id']}/decide", ['decision'=>'approve'])->assertOk();
+        $revision = $this->request(['refund_amount'=>'80.00'], ['refund_amount'])->assertCreated()->json('revision');
+        $this->actingAs($this->approver)->patchJson("/api/tax-cases/{$this->case->id}/revisions/{$revision['id']}/decide", ['decision'=>'approve'])->assertUnprocessable();
+        $this->assertSame($before, RefundProcess::withTrashed()->orderBy('id')->get()->toArray());
+        $this->assertSame($payments, BankTransferRequest::withTrashed()->orderBy('id')->get()->toArray());
+        $this->assertSame('100.00', $this->target->fresh()->refund_amount);
+    }
+
+    public static function kianDocumentOwners(): array
+    {
+        return [[0, 4], [1, 4], [0, 7], [1, 7], [0, 10], [1, 10]];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('kianDocumentOwners')]
+    public function test_main_revision_cannot_delete_or_reassign_kian_supporting_documents(?int $owner, int $origin): void
+    {
+        if ($origin !== 4) {
+            $type = $origin === 7 ? ObjectionDecision::class : \App\Models\AppealDecision::class;
+            $type::create(['tax_case_id'=>$this->case->id, 'decision_number'=>'G1-DOC', 'decision_date'=>'2026-11-01', 'decision_amount'=>'1.00', 'decision_type'=>'rejected', 'status'=>'submitted']);
+            $this->history($origin);
+        }
+        \Illuminate\Support\Facades\Storage::fake('local');
+        $path = 'synthetic/signed.pdf';
+        \Illuminate\Support\Facades\Storage::disk('local')->put($path, '%PDF synthetic signed evidence');
+        $kian = \App\Models\KianSubmission::create(['tax_case_id'=>$this->case->id, 'stage_id'=>$origin, 'status'=>'submitted', 'kian_number'=>'G1-K', 'submission_date'=>'2026-11-01', 'kian_amount'=>'0.00']);
+        $document = \App\Models\Document::create(['tax_case_id'=>$this->case->id, 'stage_code'=>(string)$origin, 'documentable_type'=>\App\Models\KianSubmission::class, 'documentable_id'=>$owner === 1 ? $kian->id : $owner, 'document_type'=>'supporting_document', 'file_path'=>$path, 'original_filename'=>'signed.pdf', 'file_mime_type'=>'application/pdf', 'file_size'=>30, 'uploaded_at'=>now(), 'uploaded_by'=>$this->requester->id]);
+        $before = $document->fresh()->getAttributes();
+        foreach (['files_to_delete', 'files_to_add'] as $operation) {
+            $payload = $this->payload([], ['supporting_docs']); $payload['stage_code'] = $origin; $payload['proposed_document_changes'][$operation] = [$document->id];
+            $this->actingAs($this->requester)->postJson($this->requestUrl(), $payload)->assertNotFound();
+        }
+        $this->assertSame($before, $document->fresh()->getAttributes());
+        $this->assertSame('%PDF synthetic signed evidence', \Illuminate\Support\Facades\Storage::disk('local')->get($path));
+        $this->assertSame('submitted', $kian->fresh()->status);
+        $this->assertDatabaseCount('revisions', 0);
+    }
+
+    public function test_approval_rechecks_document_ownership_and_rolls_back_all_business_changes(): void
+    {
+        $this->target->update(['create_refund'=>true, 'refund_amount'=>'100.00']);
+        $refund = app(\App\Services\DecisionPointRefundService::class)->createIfRequested($this->target, 4, $this->requester->id);
+        $refundBefore = $refund->fresh()->getAttributes();
+        $document = \App\Models\Document::create(['tax_case_id'=>$this->case->id, 'stage_code'=>'4', 'documentable_type'=>SkpRecord::class, 'documentable_id'=>$this->target->id, 'document_type'=>'supporting_document', 'file_path'=>'synthetic/main.pdf', 'original_filename'=>'main.pdf', 'file_mime_type'=>'application/pdf', 'file_size'=>30, 'uploaded_at'=>now(), 'uploaded_by'=>$this->requester->id]);
+        $payload = $this->payload(['skp_number'=>'CHANGED', 'refund_amount'=>'80.00'], ['skp_number', 'refund_amount', 'supporting_docs']);
+        $payload['proposed_document_changes']['files_to_delete'] = [$document->id];
+        $revision = $this->actingAs($this->requester)->postJson($this->requestUrl(), $payload)->assertCreated()->json('revision');
+        // A canonical signed-document association becomes Submitted while the proposal waits.
+        $kian = \App\Models\KianSubmission::create(['tax_case_id'=>$this->case->id, 'stage_id'=>4, 'status'=>'draft', 'kian_number'=>'RACE', 'submission_date'=>'2026-11-01', 'kian_amount'=>'0.00', 'notes'=>'Synthetic draft for ownership race']);
+        $document->update(['documentable_type'=>\App\Models\KianSubmission::class, 'documentable_id'=>0]);
+        $kian->update(['status'=>'submitted']);
+        $before = $document->fresh()->getAttributes();
+        $url = "/api/tax-cases/{$this->case->id}/revisions/{$revision['id']}/decide";
+        $this->actingAs($this->approver)->patchJson($url, ['decision'=>'approve'])->assertUnprocessable();
+        $this->assertSame('SKP-OLD', $this->target->fresh()->skp_number);
+        $this->assertSame('100.00', $this->target->fresh()->refund_amount);
+        $this->assertSame($refundBefore, $refund->fresh()->getAttributes());
+        $this->assertSame($before, $document->fresh()->getAttributes());
+        $this->assertDatabaseHas('revisions', ['id'=>$revision['id'], 'revision_status'=>'requested']);
+    }
+
+    public function test_legitimate_main_document_can_be_attached_and_deleted(): void
+    {
+        $document = \App\Models\Document::create(['tax_case_id'=>$this->case->id, 'stage_code'=>'4', 'documentable_type'=>\App\Models\WorkflowHistory::class, 'documentable_id'=>4, 'document_type'=>'supporting_document', 'file_path'=>'synthetic/main.pdf', 'original_filename'=>'main.pdf', 'file_mime_type'=>'application/pdf', 'file_size'=>30, 'uploaded_at'=>now(), 'uploaded_by'=>$this->requester->id]);
+        foreach (['files_to_add', 'files_to_delete'] as $operation) {
+            $payload = $this->payload([], ['supporting_docs']); $payload['proposed_document_changes'][$operation] = [$document->id];
+            $revision = $this->actingAs($this->requester)->postJson($this->requestUrl(), $payload)->assertCreated()->json('revision');
+            $this->actingAs($this->approver)->patchJson("/api/tax-cases/{$this->case->id}/revisions/{$revision['id']}/decide", ['decision'=>'approve'])->assertOk();
+        }
+        $this->assertTrue($document->fresh()->trashed());
+    }
+
+    public static function scopedDocumentFailures(): array
+    {
+        return array_map(fn ($v) => [$v], ['foreign-case', 'foreign-stage', 'wrong-owner', 'deleted', 'retired-response', 'legacy-response-link']);
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('scopedDocumentFailures')]
+    public function test_forged_document_scope_and_retired_links_are_denied_at_both_boundaries(string $shape): void
+    {
+        $document = \App\Models\Document::create(['tax_case_id'=>$this->case->id, 'stage_code'=>'4', 'documentable_type'=>SkpRecord::class, 'documentable_id'=>$this->target->id, 'document_type'=>'supporting_document', 'file_path'=>'synthetic/main.pdf', 'original_filename'=>'main.pdf', 'uploaded_at'=>now(), 'uploaded_by'=>$this->requester->id]);
+        if ($shape === 'foreign-case') {
+            $other = $this->case->replicate(); $other->case_number = 'G1-FOREIGN'; $other->save();
+            $document->update(['tax_case_id'=>$other->id]);
+        }
+        if ($shape === 'foreign-stage') $document->update(['stage_code'=>'7']);
+        if ($shape === 'wrong-owner') $document->update(['documentable_id'=>999999]);
+        if ($shape === 'deleted') $document->delete();
+        if ($shape === 'retired-response') $document->update(['document_type'=>'kian_final_response']);
+        if ($shape === 'legacy-response-link') {
+            $kian = \App\Models\KianSubmission::create(['tax_case_id'=>$this->case->id, 'stage_id'=>4, 'kian_number'=>'G1-LEGACY', 'submission_date'=>'2026-11-01', 'kian_amount'=>'0.00', 'status'=>'submitted']);
+            DB::table('kian_submissions')->where('id', $kian->id)->update(['response_document_id'=>$document->id]);
+        }
+        $payload = $this->payload(['skp_number'=>'FORGED'], ['skp_number', 'supporting_docs']);
+        $payload['proposed_document_changes']['files_to_delete'] = [$document->id];
+        $before = \App\Models\Document::withTrashed()->findOrFail($document->id)->getAttributes();
+        $this->actingAs($this->requester)->postJson($this->requestUrl(), $payload)->assertNotFound();
+        // Stored proposals from older code are subject to the same approval-time check.
+        $revision = $this->request(['skp_number'=>'FORGED'], ['skp_number'])->assertCreated()->json('revision');
+        \App\Models\Revision::findOrFail($revision['id'])->update(['proposed_document_changes'=>$payload['proposed_document_changes']]);
+        $this->actingAs($this->approver)->patchJson("/api/tax-cases/{$this->case->id}/revisions/{$revision['id']}/decide", ['decision'=>'approve'])->assertUnprocessable();
+        $this->assertSame($before, \App\Models\Document::withTrashed()->findOrFail($document->id)->getAttributes());
+        $this->assertSame('SKP-OLD', $this->target->fresh()->skp_number);
+    }
+
+    public function test_note_only_matching_refund_and_rejected_amount_proposal_do_not_write_financial_records(): void
+    {
+        $this->target->update(['create_refund'=>true, 'refund_amount'=>'100.00']);
+        $refund = app(\App\Services\DecisionPointRefundService::class)->createIfRequested($this->target, 4, $this->requester->id);
+        $before = $refund->fresh()->getAttributes();
+        $revision = $this->request(['correction_notes'=>'A note without monetary intent.'], ['correction_notes'])->assertCreated()->json('revision');
+        $this->actingAs($this->approver)->patchJson("/api/tax-cases/{$this->case->id}/revisions/{$revision['id']}/decide", ['decision'=>'approve'])->assertOk();
+        $revision = $this->request(['refund_amount'=>'80.00'], ['refund_amount'])->assertCreated()->json('revision');
+        $this->actingAs($this->approver)->patchJson("/api/tax-cases/{$this->case->id}/revisions/{$revision['id']}/decide", ['decision'=>'reject', 'rejection_reason'=>'Retain the original authority.'])->assertOk();
+        $this->assertSame($before, $refund->fresh()->getAttributes());
+        $this->assertSame('100.00', $this->target->fresh()->refund_amount);
     }
 
     private function requestUrl(): string { return "/api/tax-cases/{$this->case->id}/revisions/request"; }

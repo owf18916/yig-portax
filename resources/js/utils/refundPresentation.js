@@ -26,3 +26,18 @@ export const refundAmountError = (value, required) => {
   if (required && !/[1-9]/.test(text)) return 'Refund Amount must be greater than zero.'
   return ''
 }
+
+// Informational documentary difference, calculated without floating point or FX.
+export const refundAmountDifference = (current, historical, currencyCode = '') => {
+  const cents = value => {
+    const text = String(value ?? '')
+    if (!/^\d{1,18}(?:\.\d{1,2})?$/.test(text)) return null
+    const [whole, fraction = ''] = text.split('.')
+    return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'))
+  }
+  const a = cents(current), b = cents(historical)
+  if (a === null || b === null) return null
+  const difference = a - b
+  const absolute = difference < 0n ? -difference : difference
+  return `${difference < 0n ? '-' : ''}${formatRefundAmount(`${absolute / 100n}.${String(absolute % 100n).padStart(2, '0')}`, currencyCode)}`
+}

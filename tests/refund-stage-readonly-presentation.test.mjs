@@ -6,7 +6,7 @@ import vm from 'node:vm'
 import * as vue from 'vue'
 import * as serverRenderer from 'vue/server-renderer'
 import { parse, compileTemplate } from '@vue/compiler-sfc'
-import { formatRefundMethod, formatRefundAmount } from '../resources/js/utils/refundPresentation.js'
+import { formatRefundMethod, formatRefundAmount, refundAmountDifference } from '../resources/js/utils/refundPresentation.js'
 
 const pages = new Map()
 for (const stage of [1, 2, 3, 4]) {
@@ -34,7 +34,7 @@ function fixture(stage, data, refundId = '41', query = { stageId: '0' }, failure
       resolveComponent: name => name,
       withDirectives: (node, directives) => Object.assign(node, { testDirectives: directives }),
     },
-    serverRenderer, formatRefundMethod, formatRefundAmount, console: { log() {}, error() {} },
+    serverRenderer, formatRefundMethod, formatRefundAmount, refundAmountDifference, console: { log() {}, error() {} },
     onMounted() {}, useRoute: () => testRoute,
     useRouter: () => ({ back() {}, push: target => navigations.push(target) }), useToast: () => ({ showSuccess() {}, showError() {} }),
     setTimeout: callback => callback(),
@@ -46,7 +46,7 @@ function fixture(stage, data, refundId = '41', query = { stageId: '0' }, failure
     },
   })
   const names = [...page.script.matchAll(/^const (\w+) =/gm)].map(match => match[1])
-  vm.runInContext(`${page.script}\nglobalThis.state = { ${names.join(', ')} };\n${page.ssr}\nglobalThis.ssr = ssrRender;`, context)
+  vm.runInContext(`${page.script}\nglobalThis.state = { refundAmountDifference, ${names.join(', ')} };\n${page.ssr}\nglobalThis.ssr = ssrRender;`, context)
   vm.runInContext(`{ ${page.client}\nglobalThis.client = render; }`, context)
   return {
     state: context.state, calls, navigations, route: testRoute,
@@ -467,4 +467,30 @@ test('selected direct-refresh routes remain explicit for Stages 2–4', async ()
   for (const stage of [2, 3, 4]) {
     assert.match(source, new RegExp(`path: '/tax-cases/:id/refunds/:refundId/refund-stages/${stage}',\\s*name: 'RefundStage${stage}FormWithId'`))
   }
+})
+
+for (const currency of ['USD', 'IDR']) for (const stage of [1, 2, 3, 4]) {
+  test(`G1 ${currency} Stage ${stage} separates current and historical authority with one selected GET`, async () => {
+    const data = { ...evidence, currency_code: currency, refund_amount: '600.34', historical_payment_amount: '800.12', is_preliminary: false }
+    const f = fixture(stage, data)
+    await f.load()
+    const html = await f.render()
+    assert.match(html, /Current Refund Amount/)
+    assert.match(html, /Historical Payment Amount/)
+    assert.match(html, new RegExp(`${currency} 800\\.12`))
+    assert.match(html, new RegExp(`-${currency} 199\\.78`))
+    assert.match(html, /Information only; no automatic adjustment/)
+    assert.equal(f.calls.length, 1)
+    if (stage === 3) assert.equal(f.state.formData.value.transfer_amount, '800.12')
+  })
+  test(`G1 ${currency} Stage ${stage} displays absence without historical zero`, async () => {
+    const f = fixture(stage, { refund_amount: '600.34', historical_payment_amount: null, currency_code: currency, is_preliminary: false, current_stage: 4 })
+    await f.load()
+    assert.match(await f.render(), /Not yet recorded/)
+  })
+}
+
+test('G1 informational difference preserves maximum decimal precision', () => {
+  assert.equal(refundAmountDifference('999999999999999999.99', '999999999999999999.98', 'USD'), 'USD 0.01')
+  assert.equal(refundAmountDifference('1.00', null, 'USD'), null)
 })

@@ -46,6 +46,8 @@ class RevisionService
         return DB::transaction(function () use ($taxCase, $target, $requestedBy, $values, $proposedDocumentChanges, $reason, $selectedFields, $stage) {
             TaxCase::whereKey($taxCase->id)->lockForUpdate()->firstOrFail();
             $lockedTarget = $target::whereKey($target->getKey())->lockForUpdate()->firstOrFail();
+            $this->assertRevisionDocuments($taxCase, $stage, $proposedDocumentChanges, $lockedTarget);
+            $this->normalizeRefundRevision($lockedTarget, $stage, $values);
             $duplicate = Revision::where('target_type', $target::class)->where('target_id', $target->getKey())
                 ->where('stage_code', $stage)->where('revision_status', 'requested')->lockForUpdate()->exists();
             if ($duplicate) throw ValidationException::withMessages(['revision' => 'A pending revision already exists for this target and stage.']);
@@ -86,6 +88,7 @@ class RevisionService
             $this->assertSubmitted($case, $target, $stage);
             $this->assertStageTwelveOpen($case, $stage);
             $values = $this->validateValues($contract, array_keys($locked->proposed_values ?? []), $locked->proposed_values ?? []);
+            $this->normalizeRefundRevision($target, $stage, $values);
             $downstream = $this->assertNoDownstream($case, $stage);
             if (in_array($stage, [1, 4, 7, 10, 12], true)) {
                 $merged = array_replace($target->getAttributes(), $values);
@@ -116,6 +119,7 @@ class RevisionService
                 'before'=>$before, 'after'=>$after, 'changed_fields'=>array_keys($values),
                 'actor'=>$actor->id, 'reason'=>$locked->reason, 'downstream_check'=>$downstream,
                 'routing_impact'=>$this->routingImpact($stage, $values), 'refund_reconciliation'=>$refundResult,
+                'refund_authority'=>$refund['authority'] ?? null,
                 'kian_reconciliation'=>$kianResult, 'target_version_before'=>$locked->target_version,
                 'target_version_after'=>$this->version($target), 'applied_at'=>now()->toISOString(),
             ];
@@ -182,24 +186,55 @@ class RevisionService
     private function prepareRefundReconciliation(TaxCase $case, Model $target, int $stage, array $values): array
     {
         if (!in_array($stage, self::DECISION_STAGES, true)) return ['action'=>'none','process'=>null];
-        $process = RefundProcess::where('tax_case_id',$case->id)->where('stage_id',$stage)->lockForUpdate()->first();
         $beforeFlag = (bool)$target->getAttribute('create_refund');
         $afterFlag = array_key_exists('create_refund',$values) ? (bool)$values['create_refund'] : $beforeFlag;
-        $beforeAmount = (string)$target->getAttribute('refund_amount');
-        $afterAmount = array_key_exists('refund_amount',$values) ? (string)$values['refund_amount'] : $beforeAmount;
-        if ($process && (!$afterFlag || ($afterAmount !== $beforeAmount && (string)$process->refund_amount !== $afterAmount))) {
-            if (!$process->isRefundStage1() || $process->status !== 'draft' || $process->refund_status !== 'pending') throw new RuntimeException('Refund reconciliation is blocked because the RefundProcess has progressed beyond the editable boundary.');
+        // Unrelated proposals never repair, retire or create financial records.
+        if (!array_key_exists('refund_amount', $values) && $beforeFlag === $afterFlag) return ['action'=>'none','process'=>null];
+        $beforeAmount = $this->refundService->amount($target->refund_amount, $beforeFlag);
+        $afterAmount = $values['refund_amount'] ?? $beforeAmount;
+        if ($beforeFlag === $afterFlag && $beforeAmount === $afterAmount) return ['action'=>'none','process'=>null];
+        $processes = RefundProcess::withTrashed()->where(function ($query) use ($case, $target, $stage) {
+            $query->where(fn ($q) => $q->where('tax_case_id', $case->id)->where('stage_id', $stage))
+                ->orWhere(fn ($q) => $q->where('triggered_by_decision_type', $target::class)->where('triggered_by_decision_id', $target->id));
+        })->orderBy('id')->limit(2)->lockForUpdate()->get();
+        if ($processes->count() > 1 || $processes->first()?->trashed()) throw new RuntimeException('Historical or duplicate Refund requires separate review.');
+        $process = $processes->first();
+        if ($process && ((int)$process->tax_case_id !== (int)$case->id || (int)$process->stage_id !== $stage)) throw new RuntimeException('Refund source is linked to another case or stage.');
+        if (!$beforeFlag) {
+            if ($process) throw new RuntimeException('Existing Refund conflicts with the prior decision intent.');
+            return ['action'=>$afterFlag ? 'create' : 'none','process'=>null];
         }
-        if ($process && !$afterFlag) return ['action'=>'reject_initial','process'=>$process];
-        if ($process && $afterAmount !== (string)$process->refund_amount) return ['action'=>'sync_amount','process'=>$process,'amount'=>$afterAmount];
-        if (!$process && $afterFlag) return ['action'=>'create','process'=>null];
-        return ['action'=>'none','process'=>$process];
+        if (!$process) throw new RuntimeException('The linked Refund is missing; separate review is required.');
+        // Validate the old current authority and all existing payment evidence before changing it.
+        $transfer = app(OrdinaryRefundPayment::class)->assertRevisionAuthority($case, $process);
+        if ($process->triggered_by_decision_type !== $target::class || (int)$process->triggered_by_decision_id !== (int)$target->id) throw new RuntimeException('Refund source does not match the Revision target.');
+        if (!$afterFlag) {
+            if ($transfer || !$process->isRefundStage1() || $process->status !== 'draft' || $process->refund_status !== 'pending') throw new RuntimeException('Refund intent cannot change after payment activity.');
+            return ['action'=>'reject_initial','process'=>$process];
+        }
+        return ['action'=>'sync_amount','process'=>$process,'amount'=>$afterAmount,'authority'=>[
+            'refund_process_id'=>$process->id, 'transfer_id'=>$transfer?->id,
+            'historical_amount'=>$transfer?->transfer_amount, 'before'=>$beforeAmount, 'after'=>$afterAmount,
+        ]];
+    }
+
+    private function normalizeRefundRevision(Model $target, int $stage, array &$values): void
+    {
+        if (!in_array($stage, self::DECISION_STAGES, true)) return;
+        $required = (bool)($values['create_refund'] ?? $target->create_refund);
+        if (array_key_exists('refund_amount', $values)) $values['refund_amount'] = $this->refundService->amount($values['refund_amount'], $required);
+        elseif ($required && !(bool)$target->create_refund) $this->refundService->amount($target->refund_amount, true);
     }
 
     private function applyRefundReconciliation(Model $target, int $stage, int $actor, array $plan): string
     {
         if ($plan['action']==='create') { $this->refundService->createIfRequested($target, $stage, $actor); return 'created_idempotently'; }
-        if ($plan['action']==='sync_amount') { $plan['process']->update(['refund_amount'=>$plan['amount']]); return 'initial_amount_synchronized'; }
+        if ($plan['action']==='sync_amount') {
+            $this->refundService->assertStoredAmount($target, $plan['amount']);
+            $plan['process']->update(['refund_amount'=>$plan['amount']]);
+            if ($this->refundService->amount($plan['process']->fresh()->refund_amount, true) !== $plan['amount']) throw new RuntimeException('Refund Amount could not be stored exactly.');
+            return 'current_amount_synchronized; historical_payment_preserved';
+        }
         if ($plan['action']==='reject_initial') { $plan['process']->update(['refund_status'=>'rejected','status'=>'rejected','status_comment'=>'Reconciled by approved upstream revision']); return 'initial_process_rejected_preserving_history'; }
         return 'unchanged';
     }
@@ -207,16 +242,41 @@ class RevisionService
     private function applyDocuments(Revision $revision, TaxCase $case, Model $target): void
     {
         $changes = $this->normalizeDocumentChanges($revision->proposed_document_changes ?? []);
-        $ids = array_merge($changes['files_to_delete'], $changes['files_to_add']);
-        if (Document::withTrashed()->whereIn('id', $ids)->where('documentable_type', \App\Models\KianSubmission::class)->where('document_type', 'kian_final_response')->exists()) {
-            throw ValidationException::withMessages(['documents' => 'KIAN final response evidence cannot be revised.']);
-        }
+        $this->assertRevisionDocuments($case, (int)$revision->stage_code, $changes, $target);
         if ($changes['files_to_delete']) Document::whereIn('id',$changes['files_to_delete'])->where('tax_case_id',$case->id)->where('stage_code',(string)$revision->stage_code)->delete();
         if ($changes['files_to_add']) Document::whereIn('id',$changes['files_to_add'])->where('tax_case_id',$case->id)->where('stage_code',(string)$revision->stage_code)->update(['documentable_type'=>$target::class,'documentable_id'=>$target->getKey()]);
     }
 
+    public function assertRevisionDocuments(TaxCase $case, int $stage, array $changes, ?Model $target = null): void
+    {
+        $changes = $this->normalizeDocumentChanges($changes);
+        $ids = array_values(array_unique(array_merge($changes['files_to_delete'], $changes['files_to_add'])));
+        if (!$ids) return;
+        if (!$target && ($contract = RevisionFieldConfig::contract($stage))) $target = $this->resolveTarget($case, $stage, $contract);
+        // Canonical KIAN writers also lock case first. The persisted reverse link
+        // covers retired evidence even if its morph owner is a legacy main owner.
+        $linked = \App\Models\KianSubmission::withTrashed()->where('tax_case_id', $case->id)
+            ->whereIn('response_document_id', $ids)->orderBy('id')->limit(1)->lockForUpdate()->get(['id']);
+        abort_unless($linked->isEmpty(), 404, 'Document not found for this tax case.');
+        $documents = Document::withTrashed()->whereIn('id', $ids)->orderBy('id')->lockForUpdate()->get();
+        abort_unless($documents->count() === count($ids), 404, 'Document not found for this tax case.');
+        foreach ($documents as $document) {
+            $mainOwner = in_array($document->documentable_type, ['TaxCase', TaxCase::class], true)
+                && (int)$document->documentable_id === (int)$case->id;
+            // StageForm's established main-workflow upload owner is the stage code,
+            // not a WorkflowHistory primary key. Preserve this scoped association.
+            $mainOwner = $mainOwner || ($document->documentable_type === \App\Models\WorkflowHistory::class && (int)$document->documentable_id === $stage);
+            if ($target) $mainOwner = $mainOwner || ($document->documentable_type === $target::class && (int)$document->documentable_id === (int)$target->getKey());
+            abort_unless(!$document->trashed() && (int)$document->tax_case_id === (int)$case->id
+                && (string)$document->stage_code === (string)$stage && $mainOwner
+                && !in_array($document->documentable_type, ['KianSubmission', \App\Models\KianSubmission::class], true)
+                && $document->document_type !== 'kian_final_response', 404, 'Document not found for this tax case.');
+        }
+    }
+
     private function normalizeDocumentChanges(array $changes): array
     {
+        Validator::make($changes, ['files_to_delete'=>'sometimes|array', 'files_to_add'=>'sometimes|array', 'files_to_delete.*'=>'integer|min:1', 'files_to_add.*'=>'integer|min:1'])->validate();
         return ['files_to_delete'=>collect($changes['files_to_delete']??[])->map(fn($id)=>(int)$id)->filter()->unique()->values()->all(),'files_to_add'=>collect($changes['files_to_add']??[])->map(fn($id)=>(int)$id)->filter()->unique()->values()->all()];
     }
 

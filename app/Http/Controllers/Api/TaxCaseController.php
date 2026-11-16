@@ -241,7 +241,7 @@ class TaxCaseController extends ApiController
             'appealDecision',
             'supremeCourtSubmission',
             'supremeCourtDecision',
-            'refundProcesses.bankTransferRequests:id,refund_process_id,transfer_status,instruction_received_date,received_date,created_at',
+            'refundProcesses.bankTransferRequests:id,refund_process_id,transfer_amount,transfer_status,instruction_received_date,received_date,created_at',
             'kianSubmission',
             'kianSubmissions',
             'workflowHistories',

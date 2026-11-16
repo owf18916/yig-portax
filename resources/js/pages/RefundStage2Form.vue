@@ -59,6 +59,11 @@
       <!-- Form Card -->
       <div class="bg-white rounded-lg shadow border border-gray-200">
         <form @submit.prevent="submitForm" class="space-y-6 p-6">
+          <div v-if="!isPreliminary" class="bg-gray-50 p-4 rounded-lg">
+            <p>Current Refund Amount (latest approved decision): {{ formatCurrency(refundAmount) }}</p>
+            <p>Historical Payment Amount (original Stage 2 transaction): {{ historicalPaymentAmount === null ? 'Not yet recorded' : formatCurrency(historicalPaymentAmount) }}</p>
+            <p v-if="historicalPaymentAmount !== null && String(historicalPaymentAmount) !== String(refundAmount)">Difference (current minus historical): {{ refundAmountDifference(refundAmount, historicalPaymentAmount, currencyCode) }}. Information only; no automatic adjustment.</p>
+          </div>
           <!-- Refund Summary -->
           <div class="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg">
             <div>
@@ -66,7 +71,7 @@
               <p class="font-semibold text-gray-900">{{ refundNumber }}</p>
             </div>
             <div>
-              <p class="text-xs text-gray-600">Refund Amount</p>
+              <p class="text-xs text-gray-600">{{ isPreliminary ? 'Refund Amount' : 'Current Refund Amount' }}</p>
               <p class="font-semibold text-gray-900">{{ formatCurrency(refundAmount) }}</p>
             </div>
             <div>
@@ -168,7 +173,7 @@
 </template>
 
 <script setup>
-import { formatRefundAmount } from '../utils/refundPresentation.js'
+import { refundAmountDifference, formatRefundAmount } from '../utils/refundPresentation.js'
 import { apiFetch as fetch } from '../composables/useSessionApi.js'
 
 import { ref, computed, onMounted, watch } from 'vue'
@@ -192,6 +197,7 @@ const currentRefundStage = ref(0)
 const apiError = ref('')
 
 const currencyCode = ref('')
+const historicalPaymentAmount = ref(null)
 const isPreliminary = ref(false)
 const refundNumber = ref('')
 const refundAmount = ref(0)
@@ -227,6 +233,7 @@ const loadRefundData = async () => {
   refundNumber.value = ''
   refundAmount.value = 0
   currencyCode.value = ''
+  historicalPaymentAmount.value = null
   isPreliminary.value = false
   try {
     isLoading.value = true
@@ -257,6 +264,7 @@ const loadRefundData = async () => {
     if (!isSelected()) return
     const data = result.data || result
     currencyCode.value = data.currency_code || ''
+    historicalPaymentAmount.value = data.historical_payment_amount ?? data.transfer_amount ?? null
     isPreliminary.value = !!data.is_preliminary
     canSubmit.value = !!data.can_submit
     

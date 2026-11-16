@@ -392,13 +392,9 @@ class RevisionController extends Controller
             return;
         }
 
-        $ownedCount = Document::query()
-            ->where(fn ($q) => $q->where('documentable_type', '<>', \App\Models\KianSubmission::class)->orWhere('document_type', '<>', 'kian_final_response'))
-            ->whereIn('id', $documentIds)
-            ->where('tax_case_id', $taxCase->id)
-            ->when($stageCode > 0, fn ($query) => $query->where('stage_code', (string) $stageCode))
-            ->count();
-
-        abort_unless($ownedCount === $documentIds->count(), 404, 'Document not found for this tax case.');
+        \Illuminate\Support\Facades\DB::transaction(function () use ($documentIds, $taxCase, $stageCode) {
+            TaxCase::whereKey($taxCase->id)->lockForUpdate()->firstOrFail();
+            $this->revisionService->assertRevisionDocuments($taxCase, $stageCode, ['files_to_delete'=>$documentIds->all()]);
+        });
     }
 }

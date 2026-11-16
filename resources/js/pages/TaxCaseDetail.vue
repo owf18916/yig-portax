@@ -216,7 +216,12 @@
                     <div class="flex items-center justify-between mb-3">
                       <div>
                         <p class="font-semibold text-gray-900">Refund #{{ refund.refund_number }}</p>
-                        <p class="text-xs text-gray-600 mt-0.5">{{ formatCurrency(refund.refund_amount, caseData.currency?.code) }} · {{ refund.refund_method }}</p>
+                        <p class="text-xs text-gray-600 mt-0.5">Current Refund Amount: {{ formatRefundAmount(refund.refund_amount, caseData.currency?.code) }} · {{ refund.refund_method }}</p>
+                      </div>
+                      <div v-if="Number(refund.stage_id) !== 0" class="text-xs text-gray-600">
+                        <p>Current source: latest approved decision.</p>
+                        <p>Historical Payment Amount (original Stage 2 transaction): {{ refund.bank_transfer_requests?.length === 1 ? formatRefundAmount(refund.bank_transfer_requests[0].transfer_amount, caseData.currency?.code) : (refund.bank_transfer_requests?.length ? 'Requires review' : 'Not yet recorded') }}</p>
+                        <p v-if="refund.bank_transfer_requests?.length === 1 && String(refund.refund_amount) !== String(refund.bank_transfer_requests[0].transfer_amount)">Difference (current minus historical): {{ refundAmountDifference(refund.refund_amount, refund.bank_transfer_requests[0].transfer_amount, caseData.currency?.code) }}. Information only; no automatic adjustment.</p>
                       </div>
                       <div class="text-right">
                         <span :class="[
@@ -340,6 +345,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useToast } from '../composables/useToast'
 import { useTaxCaseStore } from '../stores/taxCaseStore'
 import Card from '../components/Card.vue'
+import { formatRefundAmount, refundAmountDifference } from '../utils/refundPresentation.js'
 import Button from '../components/Button.vue'
 import Alert from '../components/Alert.vue'
 import LoadingSpinner from '../components/LoadingSpinner.vue'

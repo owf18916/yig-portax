@@ -78,9 +78,14 @@
             <p v-if="availabilityMessage" class="text-sm mt-2">{{ availabilityMessage }}</p>
           </div>
 
+          <div v-if="isEditingExisting && !isPreliminary" class="bg-gray-50 p-4 rounded-lg">
+            <p>Current Refund Amount (latest approved decision): {{ formatCurrency(formData.refund_amount) }}</p>
+            <p>Historical Payment Amount (original Stage 2 transaction): {{ historicalPaymentAmount === null ? 'Not yet recorded' : formatCurrency(historicalPaymentAmount) }}</p>
+            <p v-if="historicalPaymentAmount !== null && String(historicalPaymentAmount) !== String(formData.refund_amount)">Difference (current minus historical): {{ refundAmountDifference(formData.refund_amount, historicalPaymentAmount, currencyCode) }}. Information only; no automatic adjustment.</p>
+          </div>
           <!-- Refund Amount -->
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Refund Amount {{ isPreliminary ? '(IDR)' : (currencyCode ? `(${currencyCode})` : '') }} *</label>
+            <label class="block text-sm font-medium text-gray-700 mb-2">{{ isPreliminary ? 'Refund Amount' : 'Current Refund Amount' }} {{ isPreliminary ? '(IDR)' : (currencyCode ? `(${currencyCode})` : '') }} *</label>
             <div class="relative">
               <span class="absolute left-3 top-3 text-gray-500">{{ isPreliminary ? 'IDR' : currencyCode }}</span>
               <FormField
@@ -171,7 +176,7 @@
 </template>
 
 <script setup>
-import { formatRefundAmount } from '../utils/refundPresentation.js'
+import { refundAmountDifference, formatRefundAmount } from '../utils/refundPresentation.js'
 import { apiFetch as fetch } from '../composables/useSessionApi.js'
 
 import { ref, computed, onMounted, watch } from 'vue'
@@ -194,6 +199,7 @@ const stageId = computed(() => {
 const isEditingExisting = computed(() => !!refundId.value)
 const isReadOnly = ref(false)  // Track if stage is read-only (completed)
 const currencyCode = ref('')
+const historicalPaymentAmount = ref(null)
 const isPreliminary = ref(false)
 const refundNumber = ref('')
 const originLabel = ref('')
@@ -242,6 +248,7 @@ const loadExistingRefund = async () => {
   try {
     isLoading.value = true
     existingLoaded.value = false
+    historicalPaymentAmount.value = null
     canContinue.value = false
     apiError.value = ''
     const endpoint = `/api/tax-cases/${selectedCaseId}/refunds/${selectedRefundId}/refund-stages/1`
@@ -264,6 +271,7 @@ const loadExistingRefund = async () => {
     if (!isSelected()) return
     const data = result.data || result
     currencyCode.value = data.currency_code || ''
+    historicalPaymentAmount.value = data.historical_payment_amount ?? data.transfer_amount ?? null
     isPreliminary.value = !!data.is_preliminary
     
     console.log('[RefundStage1] Loaded refund data:', data)
