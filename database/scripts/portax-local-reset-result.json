@@ -1,0 +1,291 @@
+{
+    "mode": "LOCAL COMMITTED",
+    "server": {
+        "db": "yig_portax",
+        "host": "127.0.0.1",
+        "port": "5432"
+    },
+    "transaction_outcome": "COMMIT",
+    "report": [
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 0,
+                "table": "failed_jobs"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 0,
+                "table": "preliminary_refund_requests"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 0,
+                "table": "status_histories"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 0,
+                "table": "supreme_court_decisions"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 1,
+                "table": "bank_transfer_requests"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 1,
+                "table": "supreme_court_submissions"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 10,
+                "table": "notification_attempts"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 10,
+                "table": "tax_cases"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 12,
+                "table": "notification_logs"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 13,
+                "table": "revisions"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 2,
+                "table": "appeal_decisions"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 2,
+                "table": "appeal_explanation_requests"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 2,
+                "table": "appeal_submissions"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 4,
+                "table": "jobs"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 4,
+                "table": "objection_decisions"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 4,
+                "table": "spuh_records"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 5,
+                "table": "kian_submissions"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 5,
+                "table": "objection_submissions"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 58,
+                "table": "documents"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 6,
+                "table": "audit_logs"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 6,
+                "table": "skp_records"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 64,
+                "table": "workflow_histories"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 7,
+                "table": "sphp_records"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 8,
+                "table": "sp2_records"
+            }
+        },
+        {
+            "item": "deleted",
+            "details": {
+                "rows": 9,
+                "table": "refund_processes"
+            }
+        },
+        {
+            "item": "document_storage",
+            "details": {
+                "deleted_metadata_rows": 58,
+                "physical_files_deleted": false
+            }
+        },
+        {
+            "item": "preview",
+            "details": {
+                "keeper": "JA18MarC",
+                "remove": [
+                    {
+                        "id": 1,
+                        "deleted_at": null,
+                        "case_number": "PA24MarC"
+                    },
+                    {
+                        "id": 2,
+                        "deleted_at": null,
+                        "case_number": "PA23MarC"
+                    },
+                    {
+                        "id": 3,
+                        "deleted_at": null,
+                        "case_number": "PA20MarC"
+                    },
+                    {
+                        "id": 4,
+                        "deleted_at": null,
+                        "case_number": "SA24MarC"
+                    },
+                    {
+                        "id": 5,
+                        "deleted_at": null,
+                        "case_number": "SA26SepV"
+                    },
+                    {
+                        "id": 6,
+                        "deleted_at": null,
+                        "case_number": "PA16MarC"
+                    },
+                    {
+                        "id": 7,
+                        "deleted_at": null,
+                        "case_number": "JA17MarV"
+                    },
+                    {
+                        "id": 8,
+                        "deleted_at": null,
+                        "case_number": "JA26JanV"
+                    },
+                    {
+                        "id": 9,
+                        "deleted_at": null,
+                        "case_number": "JA21MarC"
+                    },
+                    {
+                        "id": 11,
+                        "deleted_at": null,
+                        "case_number": "JA25JulV"
+                    }
+                ],
+                "database": "yig_portax",
+                "keeper_id": 10,
+                "cases_before": 11
+            }
+        },
+        {
+            "item": "retained_case_rows",
+            "details": {
+                "documents": 14,
+                "tax_cases": 1,
+                "audit_logs": 1,
+                "skp_records": 1,
+                "sp2_records": 1,
+                "sphp_records": 1,
+                "spuh_records": 1,
+                "appeal_decisions": 1,
+                "kian_submissions": 2,
+                "refund_processes": 4,
+                "notification_logs": 1,
+                "appeal_submissions": 1,
+                "workflow_histories": 13,
+                "objection_decisions": 1,
+                "notification_attempts": 1,
+                "objection_submissions": 1,
+                "supreme_court_decisions": 1,
+                "supreme_court_submissions": 1,
+                "appeal_explanation_requests": 1
+            }
+        },
+        {
+            "item": "verification",
+            "details": {
+                "keeper": "JA18MarC",
+                "status": "SUCCESS",
+                "keeper_id": 10,
+                "cases_after": 1,
+                "cases_before": 11,
+                "unmapped_queue_jobs": 0,
+                "mapped_trial_rows_remaining": 0,
+                "all_surviving_rows_unchanged": true
+            }
+        }
+    ]
+}
